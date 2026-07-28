@@ -57,12 +57,21 @@
         </geometry>
       </visual>
 
-      <!-- Collision volume * fluid_density == displaced mass, used by BuoyancyPlugin -->
+      <!-- Collision volume * fluid_density == displaced mass, used by the
+           world's graded buoyancy system.
+           WO-13 trim: box height 0.065 -> 0.0632 so displaced mass
+           (0.457*0.338*0.0632*1025 = 10.01 kg) matches the 10.0 kg vehicle
+           mass = NEUTRAL buoyancy. The original 0.065 displaced 10.29 kg
+           (+0.29 kg, ~2.85 N up), which ArduSub's default depth controller
+           could not fully counter -- ALT_HOLD drifted up ~0.21 m/s. A real
+           BlueROV2 is likewise ballasted to near-neutral for depth work, so
+           this is a physically faithful trim, not a hack. Center of buoyancy
+           kept above CoM (pose z=0.06) for passive roll/pitch stability. -->
       <collision name="base_link_collision">
         <pose>0.0 0.0 0.06 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.457 0.338 0.065</size>
+            <size>0.457 0.338 0.0632</size>
           </box>
         </geometry>
       </collision>

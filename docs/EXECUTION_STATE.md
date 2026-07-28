@@ -24,13 +24,27 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active work order: WO-13** (confirm ArduSub boots & dives).
-- **Active sub-step:** integration boot — underwater world + gps_spoof relay
-  (passthrough) + ArduSub SITL (direct binary) + MAVLink bridge; then arm,
-  dive, hold depth, confirm thruster control.
-- **Last completed:** WO-11 (BlueROV2 model vendored + ArduSub-wired, profile
-  added, load-check clean) and WO-12 (self-contained underwater world boots
-  with graded buoyancy). Both committed.
+- **Active work order: CHECKPOINT 1 — surface regression half.** Underwater half
+  is DONE (WO-13 passed). Remaining: re-verify the 3 surface attacks
+  (GPS/AIS/C2) + AUTO-mode arming in one clean surface boot, then log Checkpoint
+  1 and move to WO-14.
+- **Last completed:** WO-13 — ArduSub boots/arms/dives/holds-depth on the
+  BlueROV2 in the underwater world; symmetric ±0.82 m/s vertical thruster
+  authority; ALT_HOLD drift <0.5 m/15s. Evidence:
+  `evidence/wo13_ardusub_dive_run.log`. Committed.
+
+### Key operational gotcha (cost real time — do not relearn)
+- The BlueROV2 uses `<lock_step>1</lock_step>`: if ArduSub dies, Gazebo FREEZES
+  (odometry stops; MAVLink heartbeat goes stale as sys 0). Launch long-running
+  SITL + bridge so they persist the whole session (harness background-task
+  mechanism), NOT `nohup ... &` inside a one-shot Bash call — that call's
+  process group is torn down on return and silently kills the child.
+- Always VERIFY arming (heartbeat SAFETY_ARMED flag, retry) before trusting any
+  RC-override motion test. An unverified arm that failed makes the vehicle look
+  like it has "no thrust" (it just drifts passively). This produced several
+  false negatives.
+- TRUE depth ground truth: `/model/bluerov2/odometry` (always publishes), NOT
+  `dynamic_pose/info` (only emits moving models → None when settled).
 
 ### How to boot the underwater stack (verified working through model-load)
 ```
@@ -117,10 +131,13 @@ Legend: [x] done · [~] in progress · [ ] not started
       can submerge AND surface for WO-17), seabed at -100 m, spherical coords =
       profile home, includes bluerov2 at z=-2. Boots headless: buoyancy + all 6
       thrusters + ArduPilotPlugin + IMU all load with zero errors.
-- [~] **WO-13 — Confirm ArduSub boots & dives** (arm, dive, hold depth, thruster
-      control; visually/telemetry confirmed, not just log-inferred). ACTIVE.
-- [ ] **CHECKPOINT 1** — full regression: surface (all 3 attacks pass, AUTO
-      arming succeeds, C2 true-pos visible) + underwater (boots/dives/holds/arms).
+- [x] **WO-13 — Confirm ArduSub boots & dives.** PASS: boots, arms (verified),
+      dives 10 m at 0.82 m/s, ALT_HOLD holds depth <0.5 m/15s, symmetric ±0.82
+      m/s vertical authority (surfacing works). Buoyancy trimmed to near-neutral
+      (collision box 0.065->0.0632). Evidence `evidence/wo13_ardusub_dive_run.log`.
+- [~] **CHECKPOINT 1** — underwater half DONE (WO-13). Surface half REMAINING:
+      one clean surface boot re-verifying GPS spoof + AIS ghost/impersonate + C2
+      true-pos + AUTO-mode arming, then record the checkpoint result.
 
 ### Phase B (shared) — repeatable, domain-aware harness
 - [ ] **WO-14 — `tools/run_sim.sh`** (param by profile; real health checks;
@@ -159,6 +176,10 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-07-29: WO-13 PASS — first end-to-end underwater run in the project.
+  ArduSub + BlueROV2 + underwater world: arm/dive/hold-depth/full thruster
+  authority all verified vs Gazebo ground truth. Trimmed model to near-neutral
+  buoyancy for depth hold. Committed. Next: surface half of Checkpoint 1.
 - 2026-07-29: WO-11 + WO-12 done. DAVE BlueROV2 vendored & repointed to the
   relay port; self-contained underwater world authored; both load clean
   headless (buoyancy + 6 thrusters + ArduPilotPlugin + IMU, zero errors).
