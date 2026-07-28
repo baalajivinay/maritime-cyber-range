@@ -1,0 +1,74 @@
+WO-10: C2 replay/inject verification -- does inject_forged_rc_override move
+the vessel's TRUE Gazebo position, not just what MAVLink reports?
+
+Boot method (full stack, native Gazebo/VRX, no docker):
+  1. sim_config/start_vrx.sh (headless VRX/Gazebo, sydney_regatta world,
+     wamv_ardupilot.sdf) -- confirmed up via "Publishing dynamic pose
+     messages on [/world/sydney_regatta/dynamic_pose/info]".
+  2. attacks/gps_spoof.py run with spoofing left OFF (pure passthrough
+     relay, 9002 <-> 9100) -- confirmed bound: "GPS spoof relay: bound
+     ('127.0.0.1', 9002), Gazebo at ('127.0.0.1', 9100)". Run with stdin
+     wired to a FIFO held open by a keepalive writer, so control_cli's
+     input() blocks quietly instead of spinning or hitting EOF.
+  3. ArduPilot SITL invoked directly (build/sitl/bin/ardurover --model
+     JSON --speedup 1 --slave 0 --sim-address=127.0.0.1 -I0 --home
+     -33.724223,150.679736,0.0,0.0), bypassing sim_vehicle.py/MAVProxy,
+     which needs a real tty and exits immediately without one (confirmed:
+     MAVProxy connected, printed "MAV>", unloaded all modules, exited).
+     SITL bound SERIAL0 on tcp:5760.
+  4. A standalone MAVLink fan-out bridge (this session's scratch script,
+     not yet committed -- this is exactly what WO-14's run_sim.sh should
+     formalize) connects to tcp:127.0.0.1:5760 as the sole GCS, requests
+     MAV_DATA_STREAM_ALL, and mirrors traffic bidirectionally to the
+     three UDP endpoints this project's scripts already expect: 14551
+     (dashboard), 14552 (auto_mission), 14553 (c2_replay). Verified: a
+     client on udpin:127.0.0.1:14551 received HEARTBEAT and
+     GLOBAL_POSITION_INT immediately.
+
+Test method:
+  Connected on 14553 (attacks/c2_replay.py's own connect()), set MANUAL
+  mode and armed (ARMED STATE: True). Captured the vessel's TRUE Gazebo
+  position independently of MAVLink, using the same gz-topic technique
+  nodes/ais_emulator/ais_emulator.py uses (subscribe to
+  /world/sydney_regatta/dynamic_pose/info, parse the wamv block), both
+  before and after calling attacks/c2_replay.py's real
+  inject_forged_rc_override(conn, throttle_pwm=1800, steering_pwm=1500,
+  duration_s=10.0) unmodified.
+
+Methodology pitfall found and fixed: a first pass read GLOBAL_POSITION_INT
+via a single recv_match() call immediately after the override loop. Result
+was byte-identical lat/lon before and after (dlat=dlon=0.0000000) --
+inject_forged_rc_override's 10s loop only sends RC_CHANNELS_OVERRIDE and
+never drains incoming telemetry, so ~10s of GLOBAL_POSITION_INT messages
+piled up in the UDP socket buffer; a single recv_match() pops the OLDEST
+queued message, not the latest, making it look like nothing moved. Fixed
+by draining the buffer for 1.5s and keeping the last message seen
+(latest_global_position() helper) before trusting the reading. This was a
+test-script artifact, not a product bug -- noting it here since it would
+silently produce a false negative if repeated at Checkpoint 1.
+
+Result (corrected run):
+  TRUE Gazebo position before:  (-533.180, 161.394, -0.031)
+  TRUE Gazebo position after:   (-534.797, 161.586, -0.158)
+  TRUE Gazebo displacement:     dx=-1.617m, dy=0.191m, dist=1.628m
+
+  MAVLink GLOBAL_POSITION_INT before: lat=-33.7227731, lon=150.6739773
+  MAVLink GLOBAL_POSITION_INT after:  lat=-33.7227739, lon=150.6739651
+  MAVLink-reported displacement: dlat=-0.0000008 deg (~0.09m),
+                                  dlon=-0.0000122 deg (~1.13m at this
+                                  latitude)
+
+  Both readings agree in sign and rough magnitude on the dominant
+  east-west component (TRUE dx=-1.617m west; MAVLink dlon corresponds to
+  ~1.13m west) -- independently confirming the vessel's TRUE Gazebo
+  position moved as a direct result of inject_forged_rc_override, matching
+  the docstring's claim ("should move the vessel's TRUE Gazebo position,
+  not just its believed one"). CONFIRMED.
+
+Ground truth log: attack_logs/c2_replay_ground_truth.csv gained the
+matching row:
+  inject_rc_override,"throttle=1800, steering=1500, 10.0s"
+
+GPS/AIS/C2 not re-checked together in this pass (that's Checkpoint 1,
+which still waits on WO-11 through WO-13). This closes out the one
+specific gap WO-10 targeted.

@@ -118,11 +118,24 @@ can be built, not after.
   navigation through both waypoints (`MISSION_CURRENT` advanced 0->1),
   final position converged to within a few meters of the target waypoint
   and held steady. Full run log: `evidence/wo09_auto_mission_run.log`.
-- **WO-10: Finish C2 replay/inject verification.** Confirm
+- **WO-10: Finish C2 replay/inject verification. DONE.** Confirmed
   `inject_forged_rc_override` moves the vessel's *true* Gazebo position,
-  not just what MAVLink reports -- claimed in the docstring, never visually
-  confirmed the way GPS/AIS were this session. Capture the same kind of
-  before/after evidence.
+  not just what MAVLink reports. Booted the full stack (Gazebo/VRX, FDM
+  relay, SITL invoked directly bypassing MAVProxy's tty requirement, a
+  standalone MAVLink fan-out bridge to 14551/14552/14553 -- see
+  `evidence/wo10_c2_rc_override_run.log` for the exact bring-up, since
+  WO-14 hasn't formalized this yet), armed in MANUAL, and called the real
+  `inject_forged_rc_override` unmodified. Captured the vessel's TRUE
+  Gazebo position independently via the same `gz topic`-on-`dynamic_pose`
+  technique `ais_emulator.py` uses, before/after: true position moved
+  dist=1.628m, and MAVLink `GLOBAL_POSITION_INT` moved in matching
+  direction/rough magnitude on the dominant axis. A first pass falsely
+  showed zero MAVLink movement -- a test-script artifact (a single
+  `recv_match()` right after the override's 10s send-only loop pops the
+  *oldest* buffered message, not the latest), fixed by draining the
+  buffer before reading; documented in the evidence log so it doesn't
+  produce a false negative at Checkpoint 1. Full log:
+  `evidence/wo10_c2_rc_override_run.log`.
 
 ## Phase A (Track U -- Underwater) -- Stand up AUV from zero
 
@@ -242,3 +255,4 @@ before calling this milestone done.
 | (pre-checkpoint baseline, surface only) | 2026-07-28 | Manual full-stack boot + all 3 attacks visually verified working on the WAM-V, post-consolidation. See commits `5a5679d`, `9d80d66`, `31c896b`. Underwater track did not exist yet at this point. |
 | WO-08 (not a full checkpoint -- pure config-loader refactor, no protocol/port changes) | 2026-07-28 | `constants.py` rewritten as a profile loader; attribute-equivalence check confirmed every value identical to pre-refactor; all six consumer files import cleanly; validation path confirmed to fail loudly (missing key, missing profile) rather than silently. Full live-boot regression deferred to Checkpoint 1 once WO-09 through WO-13 land, per plan. |
 | WO-09 (not a full checkpoint -- Checkpoint 1 still waits on WO-10 through WO-13) | 2026-07-28 | Live boot: `RAW_IMU.zacc` corrected from ~+970..+990 mG to -1003 mG; vehicle armed successfully; `attacks/auto_mission.py` completed a full AUTO-mode waypoint mission for the first time in this project's history (mission accepted, autonomous nav through both waypoints, converged on target). GPS/AIS/C2 attacks not re-verified in this pass -- covered already at the pre-checkpoint baseline and unaffected by an IMU-only SDF change; full three-attack re-check still happens at Checkpoint 1. |
+| WO-10 (not a full checkpoint -- Checkpoint 1 still waits on WO-11 through WO-13) | 2026-07-29 | Live boot (direct-binary SITL + standalone MAVLink bridge, no MAVProxy tty needed). `inject_forged_rc_override` confirmed to move the vessel's TRUE Gazebo position (gz-topic ground truth, independent of MAVLink): dist=1.628m over a 10s override, MAVLink `GLOBAL_POSITION_INT` moved in matching direction/magnitude on the dominant axis. GPS/AIS not re-verified in this pass (unaffected by this change); full three-attack re-check still happens at Checkpoint 1. |
