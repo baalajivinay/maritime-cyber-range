@@ -13,3 +13,5 @@ mav.parm
 eeprom.bin
 packet.json
 protocol.log
+logs/
+LASTLOG.TXT

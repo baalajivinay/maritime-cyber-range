@@ -22,7 +22,18 @@ if base_link is None:
     exit(1)
 
 # Add IMU
+# WO-09: base_link has zero rotation (Z-up, standard Gazebo convention),
+# and this sensor's own pose defaults to identity relative to it -- but
+# ArduPilotPlugin's modelXYZToAirplaneXForwardZDown (180 0 0, a roll that
+# flips Y/Z) is applied to position/orientation read from the model root,
+# NOT to this sensor's own output (sourced separately via imuName). That
+# mismatch was why accel_body's Z came out positive (+g, Z-up convention)
+# instead of the -g ArduPilot expects in its Z-down body frame -- root
+# cause of the persistent "PreArm: Accels inconsistent" failure. Applying
+# the same 180 0 0 roll to this sensor's own pose brings it into the same
+# convention position/orientation already use.
 imu = ET.SubElement(base_link, 'sensor', {'name': 'imu_sensor', 'type': 'imu'})
+ET.SubElement(imu, 'pose', {'degrees': 'true'}).text = '0 0 0 180 0 0'
 ET.SubElement(imu, 'always_on').text = '1'
 ET.SubElement(imu, 'update_rate').text = '250'
 
