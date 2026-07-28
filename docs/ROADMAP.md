@@ -1,143 +1,222 @@
-# Roadmap: from attack demo to a general vehicle attack-testing simulator
+# Roadmap: from a surface-only demo to a dual-domain (AUV + MASS) simulator
 
 ## Where this picks up
 
-The project (per `docs/Maritime_Cyber_Range_Progress_Report.docx` and this
-session's own boot/visual verification) currently proves the *concept*
-end-to-end for exactly one vehicle (the stock WAM-V): real ArduPilot SITL
-+ real Gazebo/VRX physics, a live dashboard, and three working, visually
-confirmed attacks (GPS spoof, AIS spoof/ghost/impersonate, C2 replay/inject).
+The project's own stated goal (`docs/Maritime_Cyber_Range_Progress_Report.docx`)
+was always "a cyber range for **AUV/MASS** vessels" -- underwater and surface,
+both. In practice everything actually built so far is surface-only: VRX, the
+WAM-V hull, ArduRover firmware, AIS-as-radio-broadcast. This session's
+end-to-end verification proved that surface pipeline works and all three
+attacks (GPS spoof, AIS ghost/impersonate, C2 replay/inject) visibly work
+against it -- but that's one vehicle domain, not the whole brief.
 
-The stated goal now is different in kind: turn this into a simulator other
-vehicle *designers* can point their own vessel model at and run all three
-attacks against, repeatably, without hand-holding. That requires closing
-known gaps, replacing today's manual/hacky verification steps with real
-tooling, generalizing away from the one hardcoded WAM-V, and adding the
-detection/scoring layer the progress report already flags as next.
+**This is now corrected as a standing constraint, not a phase**: the
+simulator is dual-domain going forward. Surface (MASS/USV) and underwater
+(AUV) are both first-class, share the same attack/dashboard/scoring
+infrastructure, and every work order below is written with both in mind.
+
+Investigation this session found the underwater side isn't starting from
+nothing:
+- `~/ardupilot/build/sitl/bin/ardusub` **is already built** (ArduPilot's
+  underwater firmware) -- same day as the rest of this work, no git history
+  explaining who built it or why, but it's there and usable.
+- Gazebo (`gz-sim8`) ships native `buoyancy-system` and
+  `hydrodynamics-system` plugins -- the physics building blocks for
+  submersion/underwater drag exist in the installed simulator already.
+- **Nothing else underwater exists**: no vehicle model, no underwater
+  world, no SDF wiring ArduSub to Gazebo the way `wamv_ardupilot.sdf` wires
+  ArduRover to Gazebo today.
+
+**Attack semantics differ by domain, deliberately** (this was a real
+decision, not an oversight): GPS and AIS are physically surface/RF
+phenomena -- no signal penetrates water. A submerged AUV navigates via
+inertial/acoustic positioning and only gets real GPS/AIS during surfaced
+windows. So for the underwater track:
+- GPS spoofing applies during the AUV's surfaced GPS-fix windows, exactly
+  as built for the WAM-V.
+- A **new acoustic-positioning spoofing attack** is the submerged analog of
+  GPS spoofing -- same "sit in the sensor path and inject a false position"
+  shape, targeting whatever underwater positioning input ArduSub actually
+  consumes while submerged (this needs investigating -- see WO-16).
+- AIS spoofing only applies during surfaced windows (submerged AIS is N/A,
+  correctly, not a gap).
+- C2 replay/inject carries over unchanged -- it's MAVLink-level and
+  medium-agnostic regardless of domain.
+
+The reference AUV is a **BlueROV2-style model** -- the de facto standard
+ArduSub platform, chosen to de-risk getting ArduSub + Gazebo buoyancy
+working at all before worrying about a bespoke hull.
 
 Work orders continue this project's existing `WO-##` numbering (WO-01
-through WO-07 are already in the codebase's docstrings/history: physics
-bridge, sensors, dashboard, GPS/AIS/C2 attacks). New work starts at **WO-08**.
+through WO-07 are already in the codebase's docstrings/history). New work
+starts at **WO-08**. (The previous version of this roadmap used WO-08
+through WO-19 for a surface-only plan; nothing under that numbering was
+implemented, so it's superseded outright by the numbering below rather than
+patched around.)
 
 ## How checkpoints work
 
-A checkpoint is not a milestone marker -- it's a **mandatory full regression
-gate**. On hitting one:
+A checkpoint is a **mandatory full regression gate covering both domains**
+once the underwater track exists (Checkpoint 1 onward is surface-only by
+necessity, since underwater doesn't exist until Phase B). On hitting one:
 
-1. Tear down anything running.
-2. Boot the full stack from a clean slate (Gazebo/VRX -> relay -> SITL ->
-   bridge -> AIS emulator -> dashboard), exactly as validated in this
-   session, or via the automated runner once WO-10 exists.
-3. Exercise all three attacks (GPS spoof, AIS ghost + impersonate, C2
-   replay/inject) and confirm each still produces its expected, visible
-   effect.
-4. Diff against the last checkpoint's known-good behavior. Anything that
-   changed track -- a new error, a silent behavior change, a broken
-   connection -- gets root-caused and fixed **before** any work order past
-   the checkpoint starts.
-5. Record the result (pass/fail + what broke, if anything) at the bottom
-   of this file before continuing.
+1. Tear down anything running, both domains.
+2. Boot each domain's full stack from a clean slate. Surface: Gazebo/VRX ->
+   relay -> SITL -> bridge -> AIS emulator -> dashboard, as validated this
+   session. Underwater: Gazebo (underwater world) -> relay -> ArduSub SITL
+   -> bridge -> dashboard, once it exists.
+3. Exercise every attack valid for that domain (surface: GPS/AIS/C2;
+   underwater: GPS-at-surface/acoustic-spoof/C2, AIS N/A while submerged)
+   and confirm each still produces its expected, visible effect.
+4. Diff against the last checkpoint's known-good behavior for **both**
+   domains. Anything that changed track -- new error, silent behavior
+   change, broken connection, a regression in the *other* domain caused by
+   shared-infrastructure changes -- gets root-caused and fixed **before**
+   any work order past the checkpoint starts.
+5. Record the result at the bottom of this file before continuing.
 
-Until WO-10 lands, run the checkpoint manually (as done for this session's
-verification). After WO-10, `tools/run_sim.sh` + `tools/run_attack_suite.py`
-should make this a single command.
+Until WO-14 lands, run checkpoints manually. After WO-14, `tools/run_sim.sh`
++ `tools/run_attack_suite.py` (parameterized by domain) should make this a
+single command per domain.
 
 ---
 
-## Phase A -- Close out known gaps (small, low-risk, unblocks everything else)
+## Phase 0 -- Vehicle-domain abstraction (prerequisite for everything else)
 
-- **WO-08: Apply the accel-sign fix.** `PreArm: Accels inconsistent` has
+Pulled forward from what would otherwise be a late "generalize" phase,
+because the underwater track needs this scaffolding to exist *before* it
+can be built, not after.
+
+- **WO-08: Vehicle profile contract.** Define the config shape a "vehicle
+  profile" needs: domain (`surface` | `underwater`), ArduPilot vehicle type
+  (`Rover` | `Sub`), home coordinates, applicable attack set, MMSI (surface
+  only), FDM/MAVLink ports. Evolve `constants.py` from one global set of
+  values into this loadable structure. The existing WAM-V becomes the first
+  profile under this contract, proving it doesn't break what already works.
+
+## Phase A (Track S -- Surface) -- Close out known gaps
+
+- **WO-09: Apply the accel-sign fix.** `PreArm: Accels inconsistent` has
   been observed on every boot (root-caused: `accel_body` Z-axis sign vs.
-  ArduPilot's convention, per `accel_sign_test.py`'s now-deleted diagnostic
-  -- see git history). Apply the fix to `sim_config/wamv.sdf`'s IMU
-  `<pose>`, rebuild, confirm arming succeeds and `attacks/auto_mission.py`
-  actually completes an AUTO-mode waypoint mission (this has never been
-  demonstrated -- the progress report explicitly flags it as not yet shown).
-- **WO-09: Finish C2 replay/inject verification.** Confirm
-  `inject_forged_rc_override` moves the vessel's *true* Gazebo position
-  (not just what MAVLink reports) -- the docstring claims this is what
-  distinguishes C2 injection from GPS/AIS spoofing, but it's never been
-  visually confirmed the way GPS/AIS were this session. Capture the same
-  kind of before/after evidence.
+  ArduPilot's convention -- see the now-deleted `accel_sign_test.py`
+  diagnostic in git history). Fix `sim_config/wamv.sdf`'s IMU `<pose>`,
+  rebuild, confirm arming succeeds and `attacks/auto_mission.py` completes
+  an AUTO-mode waypoint mission (never yet demonstrated -- the progress
+  report explicitly flags this as outstanding).
+- **WO-10: Finish C2 replay/inject verification.** Confirm
+  `inject_forged_rc_override` moves the vessel's *true* Gazebo position,
+  not just what MAVLink reports -- claimed in the docstring, never visually
+  confirmed the way GPS/AIS were this session. Capture the same kind of
+  before/after evidence.
 
-**CHECKPOINT 1** -- full regression, including confirming AUTO-mode arming
-now succeeds and C2's true-position effect is visible.
+## Phase A (Track U -- Underwater) -- Stand up AUV from zero
 
-## Phase B -- Make the harness repeatable (stop relying on manual FIFO tricks)
+- **WO-11: BlueROV2-style vehicle model.** Build/source an SDF with the
+  sensors ArduSub actually expects (IMU, barometer/depth -- not navsat;
+  ArduSub doesn't assume GPS underwater), Gazebo's `buoyancy-system` +
+  `hydrodynamics-system` plugins tuned for a submersible, and an
+  ArduPilotPlugin wired to `ardusub` following the same FDM JSON pattern
+  already proven for the rover (reuse the port-relay architecture from
+  `attacks/gps_spoof.py`, don't reinvent it).
+- **WO-12: Underwater world.** A world with actual water volume/depth for
+  submersion (the surface track's `sydney_regatta` is a flat-surface world,
+  not suited to this) -- either author one or adapt an existing Gazebo
+  underwater example world.
+- **WO-13: Confirm ArduSub boots and dives.** The underwater equivalent of
+  this session's surface boot verification: arm, dive, hold depth, basic
+  thruster control -- visually confirmed (dashboard depth readout or 3D
+  view), not just log-inferred.
 
-- **WO-10: `tools/run_sim.sh`.** One command that launches Gazebo/VRX, the
-  GPS relay, ArduPilot SITL, the MAVLink->dashboard bridge, the AIS
-  emulator, and the dashboard, with real health checks at each step
-  (port-bound confirmation, heartbeat confirmation, topic-publishing
-  confirmation) instead of today's sleep-and-hope. This session's manual
-  bring-up (relay via FIFO, direct `ardurover` invocation bypassing
-  MAVProxy's tty requirement, a standalone MAVLink bridge) should become
-  first-class, documented, supported code here -- not throwaway `/tmp`
-  scripts.
-- **WO-11: `tools/run_attack_suite.py`.** Programmatically drives all three
-  attacks against a running sim (the same step/ramp/ghost/impersonate/
-  replay/inject sequence used for this session's visual verification),
-  captures evidence, and reports pass/fail per attack -- formalizing this
-  session's demo-capture script into supported tooling designers can run
-  unattended.
+**CHECKPOINT 1** -- full regression: surface (all 3 attacks still pass,
+AUTO-mode arming now succeeds, C2 true-position effect visible) +
+underwater (boots, dives, holds depth, arms).
 
-**CHECKPOINT 2** -- run the new automated harness; it must reproduce the
-same verified results as this session's manual run, with no regressions.
+## Phase B (shared) -- Make the harness repeatable, domain-aware from the start
 
-## Phase C -- Generalize beyond the one hardcoded WAM-V
+- **WO-14: `tools/run_sim.sh`.** One command, parameterized by vehicle
+  profile (WO-08's contract), that launches either domain's full stack with
+  real health checks (port-bound confirmation, heartbeat confirmation,
+  topic-publishing confirmation) instead of sleep-and-hope. This session's
+  manual bring-up (relay via FIFO, direct binary invocation bypassing
+  MAVProxy's tty requirement, a standalone MAVLink bridge) becomes
+  first-class supported code here, not throwaway `/tmp` scripts.
+- **WO-15: `tools/run_attack_suite.py`.** Domain-aware attack runner: GPS/
+  AIS/C2 for surface; GPS-at-surface/acoustic-spoof/C2 for underwater.
+  Captures evidence, reports pass/fail per attack.
 
-This is the actual "help designers test their vehicles" work -- everything
-before this point only proves the concept on one vessel.
+**CHECKPOINT 2** -- automated harness reproduces Checkpoint 1 results for
+both domains, no regressions.
 
-- **WO-12: Vehicle model contract.** Document (and enforce via a
-  validation script) exactly what a designer's SDF/URDF must expose for
-  the harness to work against it: IMU + navsat sensors, an ArduPilotPlugin
-  with correctly-mapped control channels, expected joint/link naming.
-  Parameterize `sim_config/modify_sdf.py` to inject this scaffolding into
-  *any* base vehicle model, not just `wamv.sdf`.
-- **WO-13: Per-vehicle config profiles.** Evolve `constants.py` (currently
-  one global set of home coords/MMSI/ports) into a loadable per-vehicle
-  profile, so multiple vehicles/worlds can coexist without hand-editing
-  shared constants.
-- **WO-14: Prove it with a second vehicle.** Bring in a genuinely
-  different vessel model (different hull/thruster layout) and run it
-  through Phase A-C's full pipeline. If this doesn't work first try,
-  WO-12's contract is incomplete -- fix the contract, not just this one
-  vehicle.
+## Phase C (Track U) -- Underwater-specific attack adaptation
 
-**CHECKPOINT 3** -- full regression on *both* the original WAM-V and the
-new second vehicle; both must pass all three attacks.
+- **WO-16: Acoustic-positioning spoofing.** The submerged analog of GPS
+  spoofing -- investigate what underwater positioning input ArduSub
+  actually consumes while submerged (likely still the FDM JSON position
+  field, possibly a dedicated DVL/USBL-style sensor bridge -- this needs
+  determining, not assuming), then sit in that path and inject false
+  position the same way `gps_spoof.py` does for surface GPS.
+- **WO-17: GPS spoofing during surfaced windows.** Confirm the existing
+  relay pattern applies when the AUV is at/near the surface taking real GPS
+  fixes -- may need a mission profile that dives then surfaces periodically
+  to create a real window to attack.
+- **WO-18: AIS spoofing, surfaced windows only.** Reuse `ais_spoof.py`
+  as-is; document (and enforce, e.g. in the attack runner) that it's a
+  no-op / not applicable while submerged, since that's physically correct,
+  not a gap.
+- **WO-19: C2 replay/inject against ArduSub.** Same pattern as the WAM-V's
+  C2 attack (arm/disarm, mode change, thruster override) -- confirm it
+  moves the true Gazebo position/depth, matching WO-10's surface
+  confirmation.
 
-## Phase D -- Detection + evaluation (the progress report's stated "next plan")
+**CHECKPOINT 3** -- full regression, both domains, every attack in each
+domain's applicable set.
 
-- **WO-15: Rule-based detectors.** GPS (implausible jump/velocity vs.
-  physics), AIS (duplicate MMSI with conflicting position, i.e. exactly
-  the impersonation signature confirmed this session), and C2 (unexpected
-  RC-override/mode-change without corresponding operator action) -- each
-  consuming only the same live feeds the dashboard already has, never the
-  private `attack_logs/*.csv` ground truth (see `docs/ARCHITECTURE.md`'s
-  isolation rule).
-- **WO-16: Alert layer on the dashboard.** Closes the attack -> alert loop
-  the progress report calls out as the next milestone.
-- **WO-17: Offline scoring harness.** This is literally anticipated
-  already -- `gps_spoof.py`'s ground-truth logging comment says it "exists
-  only for the offline evaluation harness (Phase 6) to score detector
-  performance." Build it: replay detector alerts against `attack_logs/*.csv`
-  and produce precision/recall per attack type.
+## Phase D -- Generalize beyond one vehicle per domain
 
-**CHECKPOINT 4** -- full regression, plus confirm the detector fires
-correctly on each attack and the scoring harness produces a sane report.
+- **WO-20: Vehicle model contract + validation script.** Formalize what a
+  designer's SDF/URDF must expose per domain (surface: IMU + navsat +
+  correctly-mapped ArduPilotPlugin control channels; underwater: IMU +
+  depth sensor + buoyancy/hydrodynamics config + control channels) so the
+  harness can validate a new vehicle before attempting to run it.
+- **WO-21: Prove it with a second surface vehicle.** Different hull/
+  thruster layout. If it doesn't work first try, WO-20's contract is
+  incomplete -- fix the contract, not just this one vehicle.
+- **WO-22 (optional): Prove it with a second underwater vehicle.** Same
+  idea, underwater side, if resources allow.
 
-## Phase E -- Designer-facing packaging
+**CHECKPOINT 4** -- full regression across the now-larger vehicle set, both
+domains.
 
-- **WO-18: `docs/DESIGNER_GUIDE.md`.** How to bring a vehicle, run the
-  harness, read results -- the actual onboarding doc for someone who isn't
-  this project's author.
-- **WO-19 (optional): one-command setup.** Container or equivalent so
-  designers don't hand-run `sim_config/install_*.sh` individually.
+## Phase E (shared) -- Detection + evaluation (progress report's stated "next plan")
 
-**CHECKPOINT 5 (final acceptance gate)** -- full regression before calling
-this milestone done.
+- **WO-23: Rule-based detectors per domain.** Surface: GPS implausible-jump/
+  velocity-vs-physics, AIS duplicate-MMSI-conflicting-position (exactly the
+  impersonation signature confirmed this session), C2 unexpected-command
+  detection. Underwater: acoustic-spoof detection, GPS detection during
+  surfaced windows, same C2 detection. All consuming only the live feeds
+  the dashboard already has -- never the private `attack_logs/*.csv` ground
+  truth (see `docs/ARCHITECTURE.md`'s isolation rule).
+- **WO-24: Alert layer on the dashboard.** Closes the attack -> alert loop,
+  both domains.
+- **WO-25: Offline scoring harness.** Anticipated already --
+  `gps_spoof.py`'s ground-truth logging comment calls this "the offline
+  evaluation harness (Phase 6)." Replay detector alerts against
+  `attack_logs/*.csv`, produce precision/recall per attack type per domain.
+
+**CHECKPOINT 5** -- full regression, plus confirm detectors fire correctly
+on every attack in both domains and the scoring harness produces a sane
+report for each.
+
+## Phase F -- Designer-facing packaging
+
+- **WO-26: `docs/DESIGNER_GUIDE.md`.** How to bring a vehicle (either
+  domain), run the harness, read results.
+- **WO-27 (optional): one-command setup.** Container or equivalent so
+  designers don't hand-run `sim_config/install_*.sh` individually for
+  either domain's toolchain.
+
+**CHECKPOINT 6 (final acceptance gate)** -- full regression, both domains,
+before calling this milestone done.
 
 ---
 
@@ -145,4 +224,4 @@ this milestone done.
 
 | Checkpoint | Date | Result |
 |---|---|---|
-| (pre-checkpoint baseline) | 2026-07-28 | Manual full-stack boot + all 3 attacks visually verified working, post-consolidation. See commits `5a5679d`, `9d80d66`, `31c896b`. |
+| (pre-checkpoint baseline, surface only) | 2026-07-28 | Manual full-stack boot + all 3 attacks visually verified working on the WAM-V, post-consolidation. See commits `5a5679d`, `9d80d66`, `31c896b`. Underwater track did not exist yet at this point. |
