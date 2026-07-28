@@ -101,13 +101,23 @@ can be built, not after.
 
 ## Phase A (Track S -- Surface) -- Close out known gaps
 
-- **WO-09: Apply the accel-sign fix.** `PreArm: Accels inconsistent` has
-  been observed on every boot (root-caused: `accel_body` Z-axis sign vs.
-  ArduPilot's convention -- see the now-deleted `accel_sign_test.py`
-  diagnostic in git history). Fix `sim_config/wamv.sdf`'s IMU `<pose>`,
-  rebuild, confirm arming succeeds and `attacks/auto_mission.py` completes
-  an AUTO-mode waypoint mission (never yet demonstrated -- the progress
-  report explicitly flags this as outstanding).
+- **WO-09: Apply the accel-sign fix. DONE.** Root cause confirmed
+  precisely: `base_link` has zero rotation (Z-up, standard Gazebo
+  convention) and the IMU sensor inherited that same unrotated frame, but
+  `ArduPilotPlugin`'s `modelXYZToAirplaneXForwardZDown` (180 0 0, a roll
+  that flips Y/Z into the Z-down aircraft convention) is applied to
+  position/orientation read from the model root, never to the IMU
+  sensor's own separately-sourced output. Fix: gave the IMU sensor the
+  same `<pose degrees="true">0 0 0 180 0 0</pose>` in both
+  `sim_config/modify_sdf.py` (generator) and the live
+  `sim_config/wamv_ardupilot.sdf`. Verified empirically: `RAW_IMU.zacc`
+  went from ~+970..+990 mG (wrong sign) to -1003 mG (correct); the vehicle
+  armed successfully (`ARMED STATE: True`); and `attacks/auto_mission.py`
+  completed a full AUTO-mode mission for the first time ever demonstrated
+  in this project -- mission accepted, AUTO mode set, armed, autonomous
+  navigation through both waypoints (`MISSION_CURRENT` advanced 0->1),
+  final position converged to within a few meters of the target waypoint
+  and held steady. Full run log: `evidence/wo09_auto_mission_run.log`.
 - **WO-10: Finish C2 replay/inject verification.** Confirm
   `inject_forged_rc_override` moves the vessel's *true* Gazebo position,
   not just what MAVLink reports -- claimed in the docstring, never visually
@@ -231,3 +241,4 @@ before calling this milestone done.
 |---|---|---|
 | (pre-checkpoint baseline, surface only) | 2026-07-28 | Manual full-stack boot + all 3 attacks visually verified working on the WAM-V, post-consolidation. See commits `5a5679d`, `9d80d66`, `31c896b`. Underwater track did not exist yet at this point. |
 | WO-08 (not a full checkpoint -- pure config-loader refactor, no protocol/port changes) | 2026-07-28 | `constants.py` rewritten as a profile loader; attribute-equivalence check confirmed every value identical to pre-refactor; all six consumer files import cleanly; validation path confirmed to fail loudly (missing key, missing profile) rather than silently. Full live-boot regression deferred to Checkpoint 1 once WO-09 through WO-13 land, per plan. |
+| WO-09 (not a full checkpoint -- Checkpoint 1 still waits on WO-10 through WO-13) | 2026-07-28 | Live boot: `RAW_IMU.zacc` corrected from ~+970..+990 mG to -1003 mG; vehicle armed successfully; `attacks/auto_mission.py` completed a full AUTO-mode waypoint mission for the first time in this project's history (mission accepted, autonomous nav through both waypoints, converged on target). GPS/AIS/C2 attacks not re-verified in this pass -- covered already at the pre-checkpoint baseline and unaffected by an IMU-only SDF change; full three-attack re-check still happens at Checkpoint 1. |
