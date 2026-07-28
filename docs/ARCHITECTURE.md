@@ -53,14 +53,35 @@ detector having had access to ground truth while running.
 ## Running order
 
 1. `sim_config/start_gz.sh` or `sim_config/start_vrx.sh` (Gazebo/VRX)
-2. `sim_config/start_sitl.sh` (ArduPilot SITL)
-3. In the MAVProxy console spawned by step 2, `output add` the ports any
-   attack scripts you intend to run need (see table above)
-4. `nodes/ais_emulator/ais_emulator.py` and
+2. **`attacks/gps_spoof.py` -- NOT optional.** ArduPilot's FDM output is
+   hardcoded to send to 127.0.0.1:9002 (confirmed live: SITL logs
+   `JSON control interface set to 127.0.0.1:9002` on every boot, with no
+   flag to change it). Since Gazebo's ArduPilotPlugin listens on 9100 (see
+   port map above), nothing connects at all unless this relay is running
+   to bridge 9002 <-> 9100 -- with spoofing left off, it's a transparent
+   passthrough. End-to-end boot was verified this way: relay bound, real
+   FDM JSON flowed both directions, ArduPilot reached "ArduPilot Ready",
+   EKF3 init, and tilt alignment complete.
+3. `sim_config/start_sitl.sh` (ArduPilot SITL) -- run in a real terminal;
+   its MAVProxy console needs an interactive tty and exits immediately
+   otherwise.
+4. In the MAVProxy console spawned by step 3, `output add` the ports any
+   *other* attack scripts you intend to run need (see table above --
+   `gps_spoof.py` itself doesn't need this, since it sits in the FDM path
+   directly, not on a MAVLink output port)
+5. `nodes/ais_emulator/ais_emulator.py` and
    `nodes/monitor/src/dashboard_server.py`
-5. Any of `attacks/gps_spoof.py`, `attacks/ais_spoof.py`,
-   `attacks/c2_replay.py`, `attacks/auto_mission.py`
+6. Any of `attacks/ais_spoof.py`, `attacks/c2_replay.py`,
+   `attacks/auto_mission.py`
 
 If you regenerate `sim_config/wamv_ardupilot.sdf` via `sim_config/modify_sdf.py`,
 re-check the FDM port (see table above) -- it's written by that script,
 not hand-maintained.
+
+### Known pre-existing issue (not part of this project's bug-fix pass)
+
+On every boot, ArduPilot logs `PreArm: Accels inconsistent` -- this is the
+accel_body Z-axis sign mismatch documented in the progress report
+(root-caused, fix not yet applied). It blocks arming/AUTO-mode but does
+not block the sim from booting or GPS/AIS/C2 attacks from running in
+MANUAL mode.
