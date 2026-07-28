@@ -24,11 +24,28 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active work order: WO-11** (BlueROV2-style vehicle model on ArduSub).
-- **Active sub-step:** building the ArduSub-wired BlueROV2 SDF (see WO-11
-  sub-steps below).
-- **Last completed:** WO-10 (C2 true-position effect confirmed; committed? see
-  git log — evidence at `evidence/wo10_c2_rc_override_run.log`).
+- **Active work order: WO-13** (confirm ArduSub boots & dives).
+- **Active sub-step:** integration boot — underwater world + gps_spoof relay
+  (passthrough) + ArduSub SITL (direct binary) + MAVLink bridge; then arm,
+  dive, hold depth, confirm thruster control.
+- **Last completed:** WO-11 (BlueROV2 model vendored + ArduSub-wired, profile
+  added, load-check clean) and WO-12 (self-contained underwater world boots
+  with graded buoyancy). Both committed.
+
+### How to boot the underwater stack (verified working through model-load)
+```
+cd ~/maritime-cyber-range
+export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ardupilot_gazebo/build:$GZ_SIM_SYSTEM_PLUGIN_PATH
+export GZ_SIM_RESOURCE_PATH=$PWD/sim_config/models:$HOME/ardupilot_gazebo/models:$HOME/SITL_Models/Gazebo/models
+gz sim -v4 -s -r sim_config/underwater_world.sdf        # headless; spawns bluerov2
+# relay (passthrough), reused as-is under the underwater profile:
+MCR_VEHICLE_PROFILE=bluerov2 python3 attacks/gps_spoof.py   # stdin via FIFO (see WO-10 method)
+# ArduSub SITL, direct binary (bypasses MAVProxy tty):
+~/ardupilot/build/sitl/bin/ardusub --model JSON --speedup 1 --slave 0 \
+    --sim-address=127.0.0.1 -I0 --home -33.724223,150.679736,0.0,0.0 \
+    --defaults ~/auv_ws/src/dave/models/dave_robot_models/config/bluerov2/ardusub.parm
+# MAVLink fan-out bridge: scratchpad/wo10/mav_bridge.py (mirrors tcp:5760 -> 14551/2/3)
+```
 
 ## Resume protocol (fresh session, start here)
 
@@ -86,24 +103,22 @@ if the surface stack ever runs concurrently (else reuse 14551-3). Selected via
 Legend: [x] done · [~] in progress · [ ] not started
 
 ### Phase A Track U — stand up AUV from zero
-- [~] **WO-11 — BlueROV2-style model on ArduSub.** Sub-steps:
-  - [ ] 11.1 Copy DAVE `bluerov2/model.sdf` + `bluerov2.dae` mesh into the repo
-        (`sim_config/models/bluerov2/` or similar); make paths self-contained.
-  - [ ] 11.2 Add an IMU sensor to `base_link` (ArduSub needs it; mirror the
-        WAM-V's imu_sensor incl. the `pose 0 0 0 180 0 0` fix from WO-09).
-  - [ ] 11.3 Add `libArduPilotPlugin.so` block: 6 control channels mapped to the
-        model's 6 thruster cmd_topics, `fdm_port_in` 9100, sub-appropriate frame
-        rotations, `<imuName>` pointing at 11.2's sensor. Confirm against ArduSub
-        SERVO output -> BlueROV2 vectored-thruster mapping.
-  - [ ] 11.4 Add a depth/pressure sensor path (ArduSub uses baro for depth; no
-        navsat while submerged) — confirm what ArduSub actually consumes for
-        depth in SITL/JSON (relevant to WO-16 later).
-  - [ ] 11.5 Write `profiles/bluerov2.json` per the plan above.
-  - [ ] 11.6 Load-check: model spawns in Gazebo without SDF errors (headless).
-- [ ] **WO-12 — Underwater world** (adapt a DAVE ocean world or author one with
-      real water volume/depth; wire buoyancy system + water plane).
-- [ ] **WO-13 — Confirm ArduSub boots & dives** (arm, dive, hold depth, thruster
-      control; visually/telemetry confirmed, not just log-inferred).
+- [x] **WO-11 — BlueROV2-style model on ArduSub.** Vendored from DAVE (which
+      already ships an ArduSub-wired ArduPilotPlugin — big de-risk) into
+      `sim_config/models/bluerov2/`, self-contained (mesh URIs model-relative),
+      `fdm_port_in` 9002->9100 for relay parity, IMU present with π frame
+      transform, 6 control channels -> 6 thrusters. Depth via FDM position[D] ->
+      ArduSub SIM baro (documented in the model header; drives WO-16). Profile
+      `profiles/bluerov2.json` (domain underwater, type Sub, ais null) loads +
+      validates; wamv profile unaffected. `gz sdf -k` valid; headless load-check
+      clean.
+- [x] **WO-12 — Underwater world** (`sim_config/underwater_world.sdf`).
+      Self-contained (no Fuel), graded buoyancy (water<z=0, air>z=0 so the AUV
+      can submerge AND surface for WO-17), seabed at -100 m, spherical coords =
+      profile home, includes bluerov2 at z=-2. Boots headless: buoyancy + all 6
+      thrusters + ArduPilotPlugin + IMU all load with zero errors.
+- [~] **WO-13 — Confirm ArduSub boots & dives** (arm, dive, hold depth, thruster
+      control; visually/telemetry confirmed, not just log-inferred). ACTIVE.
 - [ ] **CHECKPOINT 1** — full regression: surface (all 3 attacks pass, AUTO
       arming succeeds, C2 true-pos visible) + underwater (boots/dives/holds/arms).
 
@@ -144,6 +159,10 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-07-29: WO-11 + WO-12 done. DAVE BlueROV2 vendored & repointed to the
+  relay port; self-contained underwater world authored; both load clean
+  headless (buoyancy + 6 thrusters + ArduPilotPlugin + IMU, zero errors).
+  Committed. Next: WO-13 live dive test with ArduSub SITL.
 - 2026-07-29: WO-10 done and evidenced. Surface stack torn down to free RAM.
   Surveyed underwater assets; found DAVE BlueROV2 + ocean worlds + ardusub.parm
   already on disk — big de-risk for WO-11/12. Wrote this state file. Starting
