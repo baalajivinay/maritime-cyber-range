@@ -1,0 +1,45 @@
+WO-14: tools/run_sim.sh -- one-command, profile-parameterized full-stack boot
+with real health checks (not sleep-and-hope). Validated on BOTH domains.
+
+USAGE
+  tools/run_sim.sh <profile> up|down|status
+  <profile> under profiles/ (wamv | bluerov2); its "domain" selects the stack.
+
+Boots, gating on a health check after each stage:
+  1. Gazebo world   -> wait until /model/<vehicle>/ topics exist
+  2. FDM relay      -> wait until UDP :9002 is bound (attacks/gps_spoof.py)
+  3. ArduPilot SITL -> wait until tcp:5760 is listening
+  4. MAVLink bridge -> wait for a real heartbeat (sys != 0) on the dashboard port
+  5. AIS emulator   -> surface only (AIS is N/A submerged)
+
+UNDERWATER (bluerov2) -- boot + live exercise (same run):
+  [run_sim] world up, model 'bluerov2' present [OK]
+  [run_sim] relay bound :9002 [OK]
+  [run_sim] SITL tcp:5760 [OK]
+  [run_sim] heartbeat on :14551 [OK]
+  -> armed=True, MANUAL dive descended 6.58 m. RESULT: PASS.
+
+SURFACE (wamv) -- boot + 12 s survival + status:
+  world/relay/SITL/heartbeat all [OK], AIS emulator started.
+  status after 12 s: relay :9002 [OK], gz model wamv [OK], SITL tcp:5760 [OK],
+  MAVLink heartbeat :14551 [OK].
+
+KEY FIX BAKED INTO THE SCRIPT (root-caused here):
+  ArduPilot SITL reads stdin as a console and EXITS on stdin EOF. Detaching it
+  with a plain `< /dev/null` (the nohup/background default) killed it within
+  seconds -- this had caused several confusing "SITL died / heartbeat sys 0 /
+  Gazebo frozen (lockstep)" symptoms throughout WO-13/WO-14 bring-up. run_sim.sh
+  now feeds SITL stdin from a FIFO held open by a keepalive writer (never-EOF,
+  blocking), the same trick the FDM relay uses. SITL also runs from a dedicated
+  writable working dir (it writes eeprom.bin/storage to CWD). Long-running
+  children are started with setsid so they outlive the launcher; `down` reaps
+  them by pattern.
+
+  Note for automated/agent contexts: because these children are setsid-detached,
+  a supervisor that kills the launching call's process TREE (not just its group)
+  can still reap them -- verify by booting and exercising within one call, or
+  run the script from a normal login shell where detached children orphan to
+  init and persist.
+
+VERDICT: WO-14 PASS on both domains. Checkpoints and attack runs are now a single
+command per domain. Next: WO-15 tools/run_attack_suite.py.

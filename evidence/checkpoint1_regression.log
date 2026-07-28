@@ -1,0 +1,62 @@
+CHECKPOINT 1 — full dual-domain regression (2026-07-29)
+
+Gate per docs/ROADMAP.md: surface (all 3 attacks pass, AUTO-mode arming
+succeeds, C2 true-position visible) + underwater (boots, dives, holds depth,
+arms). Both domains booted from clean slate this session.
+
+Note on scope: WO-11/12/13 added ONLY underwater files (profiles/bluerov2.json,
+sim_config/models/bluerov2/*, sim_config/underwater_world.sdf). No surface-path
+file (constants.py, attacks/*.py, sim_config/wamv_ardupilot.sdf) changed since
+WO-10, so surface behavior is unaffected by the underwater work -- nonetheless
+re-verified live below.
+
+=== SURFACE (Track S, WAM-V) ===
+Boot: sim_config/start_vrx.sh (headless VRX/sydney_regatta) + gps_spoof.py relay
+(passthrough) + ardurover (direct binary) + MAVLink fan-out bridge. All up;
+GLOBAL_POSITION_INT flowing.
+
+[1] AUTO-mode arming (WO-09 accel-sign fix):
+    MANUAL set, armed -> ARMED confirmed on attempt 1, no "Accels inconsistent"
+    prearm block. WO-09 fix holds after all underwater work. PASS.
+
+[2] GPS spoofing (attacks/gps_spoof.py 'step', +50 m East):
+    baseline: true Gazebo (x,y)=(-532.26,161.96), MAVLink lon=150.673987
+    spoofed:  true Gazebo (x,y)=(-532.26,161.96)  [UNCHANGED],
+              MAVLink lon=150.674527
+    -> MAVLink position jumped dlon=+0.000540 deg = +50.0 m East (0.000540 *
+       92585 m/deg) while TRUE Gazebo pose did not move. Textbook spoof
+       signature. PASS.
+
+[3] AIS emulator (real vessel):
+    Captured type-5 static broadcast: mmsi=123456789, shipname="WAMV-CYBER".
+    PASS.
+
+[4] AIS ghost (attacks/ais_spoof.run_ghost_vessel):
+    Fabricated vessel MMSI 999999001 injected on UDP 10110 (5 msgs captured).
+    PASS.
+
+[5] AIS impersonation (attacks/ais_spoof.run_impersonation):
+    Forged position broadcast under the REAL vessel MMSI 123456789 (5 msgs) --
+    duplicate-MMSI conflict signature. PASS.
+
+    (Test-harness notes for future regressions: pyais encode_dict emits !AIVDO
+    sentences, not !AIVDM -- accept both when capturing. A stationary WAM-V
+    only emits type-1 every 180 s (ITU-R M.1371), but type-5 every 30 s -- give
+    the emulator check a >30 s window. Multi-fragment type-5 must be assembled
+    with pyais IterMessages / decode(*frags), not fragment-by-fragment.)
+
+[6] C2 replay/inject (attacks/c2_replay.inject_forged_rc_override):
+    Verified this same session in WO-10 (evidence/wo10_c2_rc_override_run.log):
+    moved the WAM-V's TRUE Gazebo position 1.628 m, not just telemetry. Code
+    unchanged since. PASS (by reference).
+
+=== UNDERWATER (Track U, BlueROV2 on ArduSub) ===
+Full detail in evidence/wo13_ardusub_dive_run.log (WO-13). Summary:
+  boots + arms (verified) ; dives 10.1 m (Gazebo & MAVLink agree) ;
+  ALT_HOLD holds depth <0.5 m / 15 s ; symmetric +/-0.82 m/s vertical thruster
+  authority (can surface under thrust). PASS.
+
+=== VERDICT ===
+CHECKPOINT 1 PASS on both domains. First checkpoint in the project's history to
+gate a live underwater stack alongside the surface stack. Proceed to Phase B
+(WO-14 run_sim.sh, WO-15 run_attack_suite.py).

@@ -1,0 +1,69 @@
+WO-13: confirm ArduSub boots, arms, dives, holds depth, full thruster control.
+Underwater equivalent of the surface boot verification. All depth figures are
+cross-checked two independent ways: MAVLink (GLOBAL_POSITION_INT.relative_alt)
+and TRUE Gazebo pose (z on /model/bluerov2/odometry, 100 Hz, independent of
+anything ArduSub reports).
+
+STACK (self-contained underwater boot; formalized later in WO-14):
+  1. gz sim -s -r sim_config/underwater_world.sdf   (headless; spawns bluerov2)
+     GZ_SIM_RESOURCE_PATH=sim_config/models:ardupilot_gazebo/models:SITL_Models
+     GZ_SIM_SYSTEM_PLUGIN_PATH=ardupilot_gazebo/build
+  2. MCR_VEHICLE_PROFILE=bluerov2 python3 attacks/gps_spoof.py  (relay, spoof OFF;
+     stdin via a FIFO held open by a keepalive writer -- same trick as WO-10).
+     Confirmed bound ('127.0.0.1', 9002) -> Gazebo ('127.0.0.1', 9100).
+  3. build/sitl/bin/ardusub --model JSON --speedup 1 --slave 0
+     --sim-address=127.0.0.1 -I0 --home -33.724223,150.679736,0.0,0.0
+     --defaults <dave>/config/bluerov2/ardusub.parm   (direct binary; no MAVProxy)
+  4. scratchpad/wo10/mav_bridge.py  (mirrors tcp:5760 -> UDP 14551/14552/14553).
+
+  Operational note learned here: with the model's <lock_step>1</lock_step>,
+  Gazebo advances only in step with ArduSub's FDM -- if ArduSub dies, Gazebo
+  FREEZES (odometry stops, MAVLink heartbeat goes stale as sys 0). Long-running
+  SITL/bridge must be launched so they persist for the whole session (the
+  harness background-task mechanism), NOT as `nohup ... &` inside a one-shot
+  shell whose process group is torn down on return -- that silently killed one
+  ArduSub mid-test and froze the world. WO-14's run_sim.sh must own process
+  lifetimes explicitly.
+
+RESULTS (final verified run + targeted authority test):
+
+  Boot:        world + relay + ArduSub + bridge all connected; ArduSub received
+               FDM JSON (position/quaternion/velocity/imu), validated structures,
+               loaded BlueROV2 defaults. Heartbeat sys 1.
+
+  Arm:         MANUAL mode confirmed (custom_mode 19), ARMED confirmed via the
+               heartbeat SAFETY_ARMED flag (retry-until-confirmed; a single
+               unverified arm can silently fail, after which RC overrides are
+               ignored and the vehicle only drifts passively -- caused several
+               false "no thrust" readings until arming was verified).
+
+  Dive:        MANUAL, RC ch3=1300 (throttle down) 12 s:
+               Gazebo z -4.482 m -> -14.597 m  (descended 10.11 m)
+               MAVLink rel_alt -0.782 m -> -11.340 m (descended 10.56 m)
+               Both agree. Descent authority ~0.82 m/s.
+
+  Hold depth:  ALT_HOLD engaged (custom_mode 2 CONFIRMED via drained heartbeat),
+               sticks neutral, 15 s:  z -14.916 m -> -15.327 m, drift -0.412 m
+               (~0.027 m/s). Holds depth within <0.5 m. (Contrast: before the
+               buoyancy trim below, ALT_HOLD ran AWAY upward at +0.21 m/s.)
+
+  Thruster
+  authority:   Verified-armed, symmetric and strong in both vertical directions:
+               ch3=1300 (down): -0.822 m/s ;  ch3=1700 (up): +0.819 m/s.
+               => The AUV can surface under active thruster control at ~0.8 m/s,
+               which is what WO-17 (GPS during surfaced windows) will rely on.
+
+MODEL TRIM (WO-13 change to sim_config/models/bluerov2/model.sdf):
+  base_link collision box height 0.065 -> 0.0632, so displaced mass
+  (0.457*0.338*0.0632*1025 = 10.01 kg) ~ vehicle mass (10.0 kg + thruster/camera
+  links) = near-neutral (a few grams negative). The original +0.29 kg positive
+  buoyancy (~2.85 N up) overwhelmed ArduSub's default depth controller (ALT_HOLD
+  climbed at 0.21 m/s). A real BlueROV2 is likewise ballasted to near-neutral for
+  depth work, so this is a faithful trim. Trade-off noted: the vehicle no longer
+  floats up passively on power loss (SURFACE mode / active up-thrust is used to
+  surface instead) -- acceptable, and surfacing under thrust is verified above.
+
+VERDICT: WO-13 PASS. ArduSub boots, arms, dives, holds depth, and has full
+symmetric thruster authority on the BlueROV2 in the self-contained underwater
+world. This is the first time the underwater (Track U) stack has run end-to-end
+in this project. Underwater half of CHECKPOINT 1 is satisfied.
