@@ -87,12 +87,17 @@ Pulled forward from what would otherwise be a late "generalize" phase,
 because the underwater track needs this scaffolding to exist *before* it
 can be built, not after.
 
-- **WO-08: Vehicle profile contract.** Define the config shape a "vehicle
-  profile" needs: domain (`surface` | `underwater`), ArduPilot vehicle type
-  (`Rover` | `Sub`), home coordinates, applicable attack set, MMSI (surface
-  only), FDM/MAVLink ports. Evolve `constants.py` from one global set of
-  values into this loadable structure. The existing WAM-V becomes the first
-  profile under this contract, proving it doesn't break what already works.
+- **WO-08: Vehicle profile contract. DONE.** Defined the config shape a
+  "vehicle profile" needs: domain (`surface` | `underwater`), ArduPilot
+  vehicle type (`Rover` | `Sub`), home coordinates, applicable attack set,
+  MMSI (surface only), FDM/MAVLink ports. `constants.py` evolved from one
+  hardcoded global set of values into a loader over `profiles/<name>.json`
+  (selected via `MCR_VEHICLE_PROFILE`, default `wamv`), with required-key
+  validation on load. `profiles/wamv.json` is the WAM-V's values migrated
+  as-is -- verified numerically identical to the pre-refactor constants,
+  and all six consumer files (`attacks/*.py`, `nodes/*/*.py`) import
+  unchanged. See `docs/ARCHITECTURE.md`'s "Vehicle profiles" section for
+  the schema.
 
 ## Phase A (Track S -- Surface) -- Close out known gaps
 
@@ -225,3 +230,4 @@ before calling this milestone done.
 | Checkpoint | Date | Result |
 |---|---|---|
 | (pre-checkpoint baseline, surface only) | 2026-07-28 | Manual full-stack boot + all 3 attacks visually verified working on the WAM-V, post-consolidation. See commits `5a5679d`, `9d80d66`, `31c896b`. Underwater track did not exist yet at this point. |
+| WO-08 (not a full checkpoint -- pure config-loader refactor, no protocol/port changes) | 2026-07-28 | `constants.py` rewritten as a profile loader; attribute-equivalence check confirmed every value identical to pre-refactor; all six consumer files import cleanly; validation path confirmed to fail loudly (missing key, missing profile) rather than silently. Full live-boot regression deferred to Checkpoint 1 once WO-09 through WO-13 land, per plan. |

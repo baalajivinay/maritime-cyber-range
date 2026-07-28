@@ -22,7 +22,39 @@ over UDP :10110. `attacks/ais_spoof.py` broadcasts forged sentences onto the
 same UDP channel -- no interception needed, since AIS has no message-level
 authentication in this project (or in reality).
 
-## Port map (single source of truth: `constants.py`)
+## Vehicle profiles (WO-08)
+
+`constants.py` is a loader, not a hardcoded value set. It reads
+`profiles/<name>.json` (selected via the `MCR_VEHICLE_PROFILE` env var,
+default `wamv`) and exposes the same flat attributes every script already
+imports (`constants.HOME_LAT`, `constants.FDM_RELAY_BIND`, etc.) -- so
+adding a new vehicle means adding a new JSON file, not editing Python or
+any of the scripts that consume it.
+
+Schema:
+```json
+{
+  "name": "wamv",
+  "domain": "surface",                  // "surface" | "underwater"
+  "ardupilot_vehicle_type": "Rover",    // "Rover" | "Sub"
+  "home": {"lat": -33.724223, "lon": 150.679736},
+  "attacks": ["gps_spoof", "ais_spoof", "c2_replay"],
+  "ais": {"mmsi": "123456789", "vessel_name": "WAMV-CYBER", "udp_addr": ["127.0.0.1", 10110]},
+  "ports": {
+    "fdm_relay_bind": ["127.0.0.1", 9002],
+    "fdm_gazebo_addr": ["127.0.0.1", 9100],
+    "mavlink": {"dashboard": 14551, "auto_mission": 14552, "c2_replay": 14553}
+  }
+}
+```
+`ais` is optional -- omit it (or set it to `null`) for a domain where AIS
+doesn't apply, e.g. an underwater profile while submerged (see
+`docs/ROADMAP.md`'s Track U attack-mapping decision). `constants.py`
+validates required keys on load and raises a `ValueError` naming the
+specific missing key, rather than failing downstream in some attack script
+with a confusing `KeyError`.
+
+## Port map (single source of truth: `profiles/wamv.json`, loaded via `constants.py`)
 
 | Component | Protocol | Port | Notes |
 |---|---|---|---|
@@ -35,8 +67,8 @@ authentication in this project (or in reality).
 
 These three MAVLink endpoints must stay distinct -- two components both
 declaring `udpin:127.0.0.1:<same port>` will fail to bind (or silently
-steal each other's packets) when run together. Add a new port to
-`constants.py` before adding a new MAVLink-consuming script.
+steal each other's packets) when run together. Add a new port to the
+active profile's JSON before adding a new MAVLink-consuming script.
 
 ## Ground-truth log isolation
 

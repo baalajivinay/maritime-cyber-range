@@ -1,7 +1,11 @@
 # Autonomous Maritime Cyber Range
 
-Real-physics USV simulation (ArduPilot SITL + Gazebo/VRX) with GPS/AIS/C2
-attack modules and a live monitoring dashboard. See
+Real-physics vehicle simulation (ArduPilot SITL + Gazebo) with GPS/AIS/C2
+attack modules and a live monitoring dashboard, for **both surface (MASS)
+and underwater (AUV) vehicles** -- dual-domain by design, not surface-only.
+The surface track (WAM-V/ArduRover) is verified end-to-end today; the
+underwater track (ArduSub) is in progress, see
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for current status. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the component map, port
 topology, and running order, and
 [`docs/Maritime_Cyber_Range_Progress_Report.docx`](docs/Maritime_Cyber_Range_Progress_Report.docx)
@@ -16,11 +20,16 @@ for project history/milestones.
   mission demo
 - `nodes/` -- AIS emulator, monitoring dashboard (Flask-SocketIO + Leaflet)
 - `sim_config/` -- SDF vehicle config, install/build/start shell scripts
+- `profiles/` -- one JSON file per vehicle (home coords, AIS identity,
+  ports, applicable attack set); select which one is active with the
+  `MCR_VEHICLE_PROFILE` env var (defaults to `wamv`) -- see
+  `docs/ARCHITECTURE.md`'s "Vehicle profiles" section for the schema
 - `attack_logs/` -- ground-truth CSVs written by each attack module
 - `evidence/` -- screenshots/video from demo runs
 - `tools/` -- `capture_demo.py`, a Playwright-based screenshot/video capture helper
-- `constants.py` -- single source of truth for home coordinates, AIS
-  MMSI, and every port used across the scripts above
+- `constants.py` -- loads the active vehicle profile and exposes it as the
+  single source of truth every script imports (home coordinates, AIS MMSI,
+  every port)
 
 ## First-time setup
 
