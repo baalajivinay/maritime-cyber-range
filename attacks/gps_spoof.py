@@ -1,7 +1,7 @@
 """
-GPS fault-injection module -- FINAL, based on verified findings:
+GPS fault-injection module, based on verified findings:
 - Relay binds 9002 (ArduPilot's fixed send target), forwards to Gazebo
-  at 9100 (see 00_inspect_fdm_protocol_v2.py, confirmed working)
+  at 9100 (confirmed working)
 - FDM packets are JSON (ArduPilot's JSON/SIM_JSON backend), position
   field is [N, E, D] meters -- confirmed via two independent checks:
   matches documented ArduPilot JSON protocol convention, AND matches
@@ -15,12 +15,12 @@ GPS fault-injection module -- FINAL, based on verified findings:
   and more robust than reconstructing absolute lat/lon.
 
 SETUP (one-time, already done if you followed prior work orders):
-  wamv_ardupilot.sdf's ArduPilotPlugin <fdm_port_in> must be 9100
-  (Gazebo's real listening port, moved off the default 9002 so this
+  sim_config/wamv_ardupilot.sdf's ArduPilotPlugin <fdm_port_in> must be
+  9100 (Gazebo's real listening port, moved off the default 9002 so this
   relay can occupy that address instead).
 
 USAGE:
-  python3 gps_spoof.py
+  python3 attacks/gps_spoof.py
 Then start VRX and SITL as usual. Use the interactive prompt (step/ramp/
 off/quit) to control spoofing during a live run.
 """
@@ -32,19 +32,25 @@ import threading
 import math
 import csv
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import constants
 
 # --- Fixed network config (verified working, do not change without re-testing) --
-RELAY_BIND = ("127.0.0.1", 9002)     # ArduPilot always sends here
-GAZEBO_ADDR = ("127.0.0.1", 9100)    # real Gazebo, moved off 9002 via SDF edit
+RELAY_BIND = constants.FDM_RELAY_BIND     # ArduPilot always sends here
+GAZEBO_ADDR = constants.FDM_GAZEBO_ADDR   # real Gazebo, moved off 9002 via SDF edit
 
-ATTACK_LOG_PATH = os.path.expanduser("~/Maritime-sim/attack_logs/gps_spoof_ground_truth.csv")
+ATTACK_LOG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "attack_logs", "gps_spoof_ground_truth.csv")
 
 # Approximate home, used ONLY for human-readable ground-truth logging
 # (converting the injected meters offset to an approximate lat/lon for
 # the log file) -- NOT used in the actual injection, which operates
 # directly on position[0]/position[1] in their native meters frame.
-HOME_LAT_APPROX = -33.724223
-HOME_LON_APPROX = 150.679736
+HOME_LAT_APPROX = constants.HOME_LAT
+HOME_LON_APPROX = constants.HOME_LON
 
 # --- Ground truth logging (private -- see docs/ARCHITECTURE.md) -------
 
@@ -63,10 +69,11 @@ def log_attack_event(wall_ts, attack_type, true_n, true_e, forged_n, forged_e):
                             "approx_true_lat", "approx_true_lon",
                             "approx_forged_lat", "approx_forged_lon"])
             # Rough lat/lon for human readability only -- see note above.
-            true_lat = HOME_LAT_APPROX + true_n / 111320.0
-            true_lon = HOME_LON_APPROX + true_e / (111320.0 * math.cos(math.radians(HOME_LAT_APPROX)))
-            forged_lat = HOME_LAT_APPROX + forged_n / 111320.0
-            forged_lon = HOME_LON_APPROX + forged_e / (111320.0 * math.cos(math.radians(HOME_LAT_APPROX)))
+            m_per_deg_lon = constants.m_per_deg_lon(HOME_LAT_APPROX)
+            true_lat = HOME_LAT_APPROX + true_n / constants.M_PER_DEG_LAT
+            true_lon = HOME_LON_APPROX + true_e / m_per_deg_lon
+            forged_lat = HOME_LAT_APPROX + forged_n / constants.M_PER_DEG_LAT
+            forged_lon = HOME_LON_APPROX + forged_e / m_per_deg_lon
             w.writerow([wall_ts, attack_type, true_n, true_e, forged_n, forged_e,
                         true_lat, true_lon, forged_lat, forged_lon])
 
@@ -84,18 +91,27 @@ class SpoofState:
 
 
 state = SpoofState()
+# Guards SpoofState mutation/reads across the control_cli() and run_relay()
+# threads -- without this, compute_offset_m() could observe active=True
+# with start_time still None (torn read mid-update), raising TypeError
+# and silently killing the relay thread.
+_state_lock = threading.Lock()
 
 
 def compute_offset_m():
     """Returns (north_offset_m, east_offset_m) to ADD to the real position."""
-    if not state.active:
-        return 0.0, 0.0
-    elapsed = time.time() - state.start_time
-    bearing_rad = math.radians(state.direction_deg)
-    if state.mode == "step":
-        magnitude = state.step_offset_m
-    elif state.mode == "ramp":
-        magnitude = state.ramp_rate_m_per_s * elapsed
+    with _state_lock:
+        if not state.active:
+            return 0.0, 0.0
+        mode, start_time = state.mode, state.start_time
+        step_offset_m, ramp_rate = state.step_offset_m, state.ramp_rate_m_per_s
+        bearing_deg = state.direction_deg
+    elapsed = time.time() - start_time
+    bearing_rad = math.radians(bearing_deg)
+    if mode == "step":
+        magnitude = step_offset_m
+    elif mode == "ramp":
+        magnitude = ramp_rate * elapsed
     else:
         return 0.0, 0.0
     north = magnitude * math.cos(bearing_rad)
@@ -137,20 +153,23 @@ def run_relay():
                 payload = json.loads(reply.decode("utf-8"))
                 true_n, true_e = payload["position"][0], payload["position"][1]
 
-                if state.active:
+                with _state_lock:
+                    is_active, mode = state.active, state.mode
+
+                if is_active:
                     off_n, off_e = compute_offset_m()
                     forged_n = true_n + off_n
                     forged_e = true_e + off_e
                     payload["position"][0] = forged_n
                     payload["position"][1] = forged_e
-                    log_attack_event(time.time(), state.mode, true_n, true_e, forged_n, forged_e)
+                    log_attack_event(time.time(), mode, true_n, true_e, forged_n, forged_e)
                     out_bytes = json.dumps(payload).encode("utf-8") + b"\n"
                 else:
                     out_bytes = reply  # pass through unmodified, byte-identical
 
                 packet_count += 1
                 if packet_count % 250 == 0:
-                    tag = f"[SPOOFING: {state.mode}]" if state.active else "[passthrough]"
+                    tag = f"[SPOOFING: {mode}]" if is_active else "[passthrough]"
                     print(f"{tag} packet {packet_count}, true_pos=({true_n:.2f},{true_e:.2f})")
 
             except (json.JSONDecodeError, KeyError):
@@ -167,17 +186,20 @@ def control_cli():
     while True:
         cmd = input("> ").strip().lower()
         if cmd == "step":
-            state.mode = "step"
-            state.active = True
-            state.start_time = time.time()
+            with _state_lock:
+                state.mode = "step"
+                state.start_time = time.time()
+                state.active = True  # set last: readers never see active=True with a stale start_time
             print(f"STEP spoof ON: +{state.step_offset_m}m at bearing {state.direction_deg} deg")
         elif cmd == "ramp":
-            state.mode = "ramp"
-            state.active = True
-            state.start_time = time.time()
+            with _state_lock:
+                state.mode = "ramp"
+                state.start_time = time.time()
+                state.active = True  # set last: readers never see active=True with a stale start_time
             print(f"RAMP spoof ON: {state.ramp_rate_m_per_s} m/s drift at bearing {state.direction_deg} deg")
         elif cmd == "off":
-            state.active = False
+            with _state_lock:
+                state.active = False
             print("Spoof OFF -- real position passed through unmodified")
         elif cmd == "quit":
             os._exit(0)

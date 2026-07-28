@@ -24,21 +24,27 @@ import threading
 import math
 import csv
 import os
+import sys
 from pyais.encode import encode_dict
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import constants
 
 # --- Config --------------------------------------------------------------
 
-AIS_BROADCAST_ADDR = ("127.0.0.1", 10110)  # same port WO-02's emulator uses
+AIS_BROADCAST_ADDR = constants.AIS_UDP_ADDR  # same port the AIS emulator uses
 
-REAL_VESSEL_MMSI = 123456789   # matches WO-02's configured MMSI -- confirm
-                                 # this is still correct before running
+REAL_VESSEL_MMSI = constants.VESSEL_MMSI  # single source of truth, shared
+                                            # with nodes/ais_emulator/ais_emulator.py
 
 # Approximate area to place the ghost vessel / impersonation drift around,
 # based on the sydney_regatta home coordinates used throughout this project.
-HOME_LAT = -33.724223
-HOME_LON = 150.679736
+HOME_LAT = constants.HOME_LAT
+HOME_LON = constants.HOME_LON
 
-ATTACK_LOG_PATH = os.path.expanduser("~/Maritime-sim/attack_logs/ais_spoof_ground_truth.csv")
+ATTACK_LOG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "attack_logs", "ais_spoof_ground_truth.csv")
 
 # --- Ground truth logging (private) ---------------------------------------
 
@@ -127,8 +133,8 @@ def run_impersonation(sock, stop_event, real_position_fn, offset_m=200.0,
             true_lat, true_lon = HOME_LAT, HOME_LON
 
         bearing_rad = math.radians(bearing_deg)
-        dlat = (offset_m * math.cos(bearing_rad)) / 111320.0
-        dlon = (offset_m * math.sin(bearing_rad)) / (111320.0 * math.cos(math.radians(true_lat)))
+        dlat = (offset_m * math.cos(bearing_rad)) / constants.M_PER_DEG_LAT
+        dlon = (offset_m * math.sin(bearing_rad)) / constants.m_per_deg_lon(true_lat)
         forged_lat = true_lat + dlat
         forged_lon = true_lon + dlon
 
