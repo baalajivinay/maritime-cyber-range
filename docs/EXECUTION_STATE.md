@@ -24,14 +24,25 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active work order: CHECKPOINT 1 — surface regression half.** Underwater half
-  is DONE (WO-13 passed). Remaining: re-verify the 3 surface attacks
-  (GPS/AIS/C2) + AUTO-mode arming in one clean surface boot, then log Checkpoint
-  1 and move to WO-14.
-- **Last completed:** WO-13 — ArduSub boots/arms/dives/holds-depth on the
-  BlueROV2 in the underwater world; symmetric ±0.82 m/s vertical thruster
-  authority; ALT_HOLD drift <0.5 m/15s. Evidence:
-  `evidence/wo13_ardusub_dive_run.log`. Committed.
+- **Active work order: WO-14** (`tools/run_sim.sh` — one-command, profile-
+  parameterized boot with real health checks; formalize this session's manual
+  bring-up primitives). Phase B start.
+- **Last completed: CHECKPOINT 1 — PASS on both domains.** Surface (AUTO arming,
+  GPS spoof +50 m, AIS emulator+ghost+impersonate, C2 per WO-10) + underwater
+  (WO-13). Evidence `evidence/checkpoint1_regression.log`. Committed.
+
+### Bring-up primitives proven this session (WO-14 should formalize these)
+- Surface boot: `sim_config/start_vrx.sh` (headless) + `gps_spoof.py` relay
+  (stdin via FIFO+keepalive) + `ardurover` direct binary + `mav_bridge.py`.
+- Underwater boot: `gz sim -s -r sim_config/underwater_world.sdf` +
+  `MCR_VEHICLE_PROFILE=bluerov2 gps_spoof.py` relay + `ardusub` direct binary
+  (`--defaults <dave>/config/bluerov2/ardusub.parm`) + `mav_bridge.py`.
+- `scratchpad/wo10/mav_bridge.py` = standalone MAVLink fan-out (tcp:5760 ->
+  UDP 14551/14552/14553), replaces MAVProxy's `output add` (no tty). COPY this
+  into the repo as part of WO-14 (e.g. `tools/mav_bridge.py`).
+- Launch long-running SITL/bridge/relay via a mechanism that OUTLIVES a single
+  shell call (harness background task, or `setsid`/systemd-run in run_sim.sh) —
+  `nohup ... &` inside a one-shot Bash call gets its process group torn down.
 
 ### Key operational gotcha (cost real time — do not relearn)
 - The BlueROV2 uses `<lock_step>1</lock_step>`: if ArduSub dies, Gazebo FREEZES
@@ -135,9 +146,9 @@ Legend: [x] done · [~] in progress · [ ] not started
       dives 10 m at 0.82 m/s, ALT_HOLD holds depth <0.5 m/15s, symmetric ±0.82
       m/s vertical authority (surfacing works). Buoyancy trimmed to near-neutral
       (collision box 0.065->0.0632). Evidence `evidence/wo13_ardusub_dive_run.log`.
-- [~] **CHECKPOINT 1** — underwater half DONE (WO-13). Surface half REMAINING:
-      one clean surface boot re-verifying GPS spoof + AIS ghost/impersonate + C2
-      true-pos + AUTO-mode arming, then record the checkpoint result.
+- [x] **CHECKPOINT 1 — PASS (both domains).** Surface: AUTO arming (WO-09),
+      GPS spoof +50 m (true pose unchanged), AIS emulator+ghost+impersonate, C2
+      (WO-10). Underwater: WO-13. Evidence `evidence/checkpoint1_regression.log`.
 
 ### Phase B (shared) — repeatable, domain-aware harness
 - [ ] **WO-14 — `tools/run_sim.sh`** (param by profile; real health checks;
@@ -176,6 +187,9 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-07-29: CHECKPOINT 1 PASS (both domains). Surface stack re-booted, all 3
+  attacks + AUTO arming re-verified live; underwater per WO-13. Evidence
+  `evidence/checkpoint1_regression.log`. Next: WO-14 run_sim.sh.
 - 2026-07-29: WO-13 PASS — first end-to-end underwater run in the project.
   ArduSub + BlueROV2 + underwater world: arm/dive/hold-depth/full thruster
   authority all verified vs Gazebo ground truth. Trimmed model to near-neutral
