@@ -24,12 +24,19 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active work order: WO-14** (`tools/run_sim.sh` — one-command, profile-
-  parameterized boot with real health checks; formalize this session's manual
-  bring-up primitives). Phase B start.
-- **Last completed: CHECKPOINT 1 — PASS on both domains.** Surface (AUTO arming,
-  GPS spoof +50 m, AIS emulator+ghost+impersonate, C2 per WO-10) + underwater
-  (WO-13). Evidence `evidence/checkpoint1_regression.log`. Committed.
+- **Active work order: WO-15** (`tools/run_attack_suite.py` — domain-aware
+  attack runner: GPS/AIS/C2 for surface; GPS-at-surface/acoustic-spoof/C2 for
+  underwater; captures evidence + pass/fail per attack). Then CHECKPOINT 2.
+- **Last completed: WO-14** (`tools/run_sim.sh` + `tools/mav_bridge.py`).
+  One-command boot with real health checks, validated on BOTH domains (surface:
+  boot+status green incl. AIS emulator; underwater: boot+arm+dive PASS).
+  Evidence `evidence/wo14_run_sim_harness.log`. Committed.
+
+### CRITICAL fix discovered in WO-14 (explains all earlier SITL deaths)
+ArduPilot SITL reads stdin as a console and EXITS on stdin EOF. Launch it with a
+never-closing stdin (FIFO + keepalive writer), never `< /dev/null`. This is why
+ArduSub kept dying in WO-13/WO-14 bring-up. `tools/run_sim.sh` bakes this in;
+reuse that pattern for any future direct SITL launch.
 
 ### Bring-up primitives proven this session (WO-14 should formalize these)
 - Surface boot: `sim_config/start_vrx.sh` (headless) + `gps_spoof.py` relay
@@ -151,9 +158,16 @@ Legend: [x] done · [~] in progress · [ ] not started
       (WO-10). Underwater: WO-13. Evidence `evidence/checkpoint1_regression.log`.
 
 ### Phase B (shared) — repeatable, domain-aware harness
-- [ ] **WO-14 — `tools/run_sim.sh`** (param by profile; real health checks;
-      formalize WO-10's manual bring-up primitives).
-- [ ] **WO-15 — `tools/run_attack_suite.py`** (domain-aware; evidence + pass/fail).
+- [x] **WO-14 — `tools/run_sim.sh`** (+ `tools/mav_bridge.py`). Profile-
+      parameterized; per-stage health checks (gz model / :9002 / tcp:5760 /
+      heartbeat); up|down|status. Validated both domains. Evidence
+      `evidence/wo14_run_sim_harness.log`.
+- [~] **WO-15 — `tools/run_attack_suite.py`** (domain-aware; evidence + pass/fail).
+      ACTIVE. Surface: gps_spoof/ais(ghost,impersonate)/c2. Underwater:
+      gps-at-surface / acoustic_spoof (needs WO-16!) / c2. NOTE: acoustic_spoof
+      doesn't exist until WO-16 — the suite should skip/mark N/A gracefully, or
+      WO-16 lands first. Reuse the verification logic already written this
+      session (see scratchpad: surf_regress.py, ais_check.py, wo13 dive tests).
 - [ ] **CHECKPOINT 2** — harness reproduces Checkpoint 1 for both domains.
 
 ### Phase C Track U — underwater attack adaptation
@@ -187,6 +201,9 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-07-29: WO-14 done — tools/run_sim.sh (+ tools/mav_bridge.py) boots either
+  domain in one command with real health checks; validated both. Root-caused the
+  recurring SITL-death: stdin EOF from `< /dev/null` (fixed via FIFO stdin).
 - 2026-07-29: CHECKPOINT 1 PASS (both domains). Surface stack re-booted, all 3
   attacks + AUTO arming re-verified live; underwater per WO-13. Evidence
   `evidence/checkpoint1_regression.log`. Next: WO-14 run_sim.sh.
