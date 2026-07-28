@@ -4,7 +4,9 @@ import time
 from playwright.async_api import async_playwright
 
 async def run_demo():
-    output_dir = os.path.expanduser("~/Maritime-sim/demo_captures")
+    output_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "evidence", "demo_captures")
     os.makedirs(output_dir, exist_ok=True)
     
     async with async_playwright() as p:
@@ -49,18 +51,16 @@ async def run_demo():
             os.remove(trigger_file)
             
         print("Closing browser...")
+        video = page.video  # must grab the handle before closing
         await context.close()
         await browser.close()
-        
-        # Context close saves the video. We can rename it.
-        # Find the .webm file in the output_dir and rename to demo_sequence.webm
-        for file in os.listdir(output_dir):
-            if file.endswith(".webm") and file != "demo_sequence.webm":
-                os.rename(
-                    os.path.join(output_dir, file),
-                    os.path.join(output_dir, "demo_sequence.webm")
-                )
-                break
+
+        # Ask Playwright for THIS page's exact recorded file, rather than
+        # globbing output_dir for "the first .webm" -- a stray file from a
+        # prior/failed run there would otherwise get renamed instead.
+        if video is not None:
+            recorded_path = await video.path()
+            os.rename(recorded_path, os.path.join(output_dir, "demo_sequence.webm"))
         print("Done.")
 
 if __name__ == "__main__":

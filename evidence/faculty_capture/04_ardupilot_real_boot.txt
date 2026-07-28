@@ -1,0 +1,50 @@
+SIM_VEHICLE: Start
+SIM_VEHICLE: Killing tasks
+SIM_VEHICLE: Starting up at [-33.724223, 150.679736, 0.0, 0.0]
+SIM_VEHICLE: Run Rover
+SIM_VEHICLE: "/home/vinay/ardupilot/Tools/autotest/run_in_terminal_window.sh" "Rover" "/home/vinay/ardupilot/build/sitl/bin/ardurover" "--model" "JSON" "--speedup" "1" "--slave" "0" "--sim-address=127.0.0.1" "-I0" "--home" "-33.724223,150.679736,0.0,0.0"
+SIM_VEHICLE: Run MavProxy
+SIM_VEHICLE: "mavproxy.py" "--retries" "5" "--out" "127.0.0.1:14550" "--master" "tcp:127.0.0.1:5760" "--sitl" "127.0.0.1:5501"
+RiTW: Starting Rover : /home/vinay/ardupilot/build/sitl/bin/ardurover --model JSON --speedup 1 --slave 0 --sim-address=127.0.0.1 -I0 --home -33.724223,150.679736,0.0,0.0
+RiTW: Window access not found, logging to /tmp/Rover.log
+Connect tcp:127.0.0.1:5760 source_system=255
+Log Directory: 
+Telemetry log: mav.tlog
+Waiting for heartbeat from tcp:127.0.0.1:5760
+MAV> Detected vehicle 1:1 on link 0
+online system 1
+INITIALISING> Mode INITIALISING
+AP: Initialising ArduPilot
+AP: Calibrating barometer
+AP: ArduRover V4.8.0-dev (1f6e646d)
+AP: 3df8d65611aa4d6b96f480b91545b6b1
+Received 1241 parameters (ftp)
+Saved 1241 parameters to mav.parm
+AP: Barometer 1 calibration complete
+AP: Barometer 2 calibration complete
+AP: Beginning INS calibration. Do not move vehicle
+MANUAL> AP: ArduPilot Ready
+AP: RCInput: decoding UDP (Pulses)
+AP: Set HOME to -33.72277 150.6740 at -0.18m
+AP: Field Elevation Set: 0m
+Mode MANUAL
+fence present
+Received 1251 parameters
+Saved 1241 parameters to mav.parm
+AP: EKF3 IMU0 initialised
+AP: EKF3 IMU1 initialised
+AP: EKF3 IMU0 tilt alignment complete
+AP: EKF3 IMU1 tilt alignment complete
+AP: EKF3 IMU0 MAG0 initial yaw alignment complete
+AP: EKF3 IMU1 MAG0 initial yaw alignment complete
+AP: GPS 1: probing for u-blox at 230400 baud
+AP: GPS 1: detected u-blox
+AP: EKF3 IMU0 origin set
+AP: EKF3 IMU1 origin set
+AP: EKF3 IMU0 is using GPS
+AP: EKF3 IMU1 is using GPS
+no link
+link 1 down
+no link
+no link
+no link

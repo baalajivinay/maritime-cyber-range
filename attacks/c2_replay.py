@@ -9,23 +9,30 @@ Because MAVLink in default SITL config has no signing/authentication,
 ArduPilot cannot distinguish a legitimate GCS from this script.
 
 PREREQUISITE (run once per SITL session, in the MAVProxy console):
-    output add 127.0.0.1:14551
-This gives this script its own MAVLink endpoint, separate from whatever
-port the dashboard (WO-06) is already using on 14550 -- avoids a port
-conflict, no need to touch start_sitl.sh.
+    output add 127.0.0.1:14553
+This gives this script its own MAVLink endpoint, separate from the
+dashboard (which listens on 14551) and auto_mission.py (14552) -- avoids
+a port conflict, no need to touch start_sitl.sh. See constants.py for
+the full port map.
 
 Requires: pymavlink (already used elsewhere in this project)
 """
 
+import sys
 import time
 import threading
 import csv
 import os
 from pymavlink import mavutil
 
-MAVLINK_ENDPOINT = "udpin:127.0.0.1:14551"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import constants
 
-ATTACK_LOG_PATH = os.path.expanduser("~/Maritime-sim/attack_logs/c2_replay_ground_truth.csv")
+MAVLINK_ENDPOINT = f"udpin:127.0.0.1:{constants.MAVLINK_C2_REPLAY_PORT}"
+
+ATTACK_LOG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "attack_logs", "c2_replay_ground_truth.csv")
 
 os.makedirs(os.path.dirname(ATTACK_LOG_PATH), exist_ok=True)
 _log_lock = threading.Lock()
@@ -48,7 +55,12 @@ def connect():
     conn = mavutil.mavlink_connection(MAVLINK_ENDPOINT)
     print("Waiting for heartbeat (confirms this endpoint is live and "
           "ArduPilot/MAVProxy is forwarding to it) ...")
-    conn.wait_heartbeat(timeout=15)
+    msg = conn.wait_heartbeat(timeout=15)
+    if msg is None:
+        print(f"ERROR: no heartbeat received on {MAVLINK_ENDPOINT} within 15s. "
+              f"Did you run 'output add 127.0.0.1:{constants.MAVLINK_C2_REPLAY_PORT}' "
+              f"in the MAVProxy console for this SITL session?")
+        sys.exit(1)
     print(f"Heartbeat received from system {conn.target_system}, "
           f"component {conn.target_component}. Connection confirmed live.")
     return conn

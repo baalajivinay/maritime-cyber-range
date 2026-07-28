@@ -10,35 +10,45 @@ own -- no human input after this script finishes. This is the actual
 been demonstrated yet.
 
 PREREQUISITE (once per SITL session, in the MAVProxy console, same
-pattern as WO-07's c2_replay.py -- gives this script its own MAVLink
-endpoint so it doesn't conflict with the dashboard or c2_replay.py):
+pattern as c2_replay.py -- gives this script its own MAVLink endpoint so
+it doesn't conflict with the dashboard (14551) or c2_replay.py (14553)):
     output add 127.0.0.1:14552
 
 Requires: pymavlink
 """
 
+import os
+import sys
 import time
+import math
 from pymavlink import mavutil
 
-MAVLINK_ENDPOINT = "udpin:127.0.0.1:14552"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import constants
+
+MAVLINK_ENDPOINT = f"udpin:127.0.0.1:{constants.MAVLINK_AUTO_MISSION_PORT}"
 
 # Home position used throughout this project (sydney_regatta / SITL -l flag)
-HOME_LAT = -33.724223
-HOME_LON = 150.679736
+HOME_LAT = constants.HOME_LAT
+HOME_LON = constants.HOME_LON
 
 # A simple L-shaped path: north 50m, then east 50m -- enough to show
 # both straight-line travel AND a real autonomous turn/waypoint switch.
-import math
 
 def offset_latlon(lat, lon, north_m, east_m):
-    dlat = north_m / 111320.0
-    dlon = east_m / (111320.0 * math.cos(math.radians(lat)))
+    dlat = north_m / constants.M_PER_DEG_LAT
+    dlon = east_m / constants.m_per_deg_lon(lat)
     return lat + dlat, lon + dlon
 
 def connect():
     print(f"Connecting to {MAVLINK_ENDPOINT} ...")
     conn = mavutil.mavlink_connection(MAVLINK_ENDPOINT)
-    conn.wait_heartbeat(timeout=15)
+    msg = conn.wait_heartbeat(timeout=15)
+    if msg is None:
+        print(f"ERROR: no heartbeat received on {MAVLINK_ENDPOINT} within 15s. "
+              f"Did you run 'output add 127.0.0.1:{constants.MAVLINK_AUTO_MISSION_PORT}' "
+              f"in the MAVProxy console for this SITL session?")
+        sys.exit(1)
     print(f"Heartbeat received from system {conn.target_system}. Connected.")
     return conn
 
