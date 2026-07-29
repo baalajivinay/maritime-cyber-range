@@ -1,0 +1,39 @@
+WO-23 (rule-based detectors) + WO-25 (offline scoring) -- SURFACE live result.
+
+Architecture (docs/ARCHITECTURE.md isolation rule honored):
+  detection/detectors.py  -- pure per-domain detectors (state machines over live
+                             feed events). NEVER read attack_logs.
+  detection/run_detectors.py -- taps the LIVE feeds (MAVLink on tcp:5763:
+                             GLOBAL_POSITION_INT / LOCAL_POSITION_NED / HEARTBEAT /
+                             RC_CHANNELS; AIS UDP:10110) and appends Alerts to a
+                             JSONL log. Runs blind.
+  tools/score_detectors.py -- the ONLY reader of attack_logs/*.csv; replays the
+                             blind alert log against ground-truth windows and
+                             reports precision/recall per attack family.
+
+Detectors:
+  GpsJumpDetector          -- believed-position speed > plausible hull speed.
+  AisConflictDetector      -- (a) own-MMSI AIS position vs the vessel's own
+                              telemetry (impersonation), (b) invalid/fabricated
+                              MMSI (ghost), (c) same-MMSI teleport. The own-vessel
+                              MMSI is whitelisted (operational knowledge, not
+                              ground truth) so the real vessel is never mis-flagged.
+  C2OverrideDetector       -- any RC override / driven RC channel = actuator seizure.
+  AcousticDivergenceDetector (underwater) -- believed position drifting while the
+                              AUV is UNPROPELLED (disarmed) = external-nav/acoustic
+                              spoof; catches the stealthy slow ramp a speed gate misses.
+
+LIVE SURFACE RUN (detector blind; attacks fired live; then scored vs ground truth):
+  attack             TP   FP  windows  detected   prec  recall
+  ais_spoof          11    0        1         1   1.00    1.00
+  c2_replay           2    0        1         1   1.00    1.00
+  gps_spoof           2    0        1         1   1.00    1.00
+  OVERALL            15    0        3         3   1.00    1.00
+
+  - No false positive on the legitimate vessel (own MMSI 123456789 at its true
+    position was correctly NOT flagged; the impersonator's 123456789 reports
+    ~755 m off the vessel's own telemetry WERE flagged).
+  Alert log: evidence/detector_alerts_wamv_run.jsonl.
+
+Underwater detectors (acoustic-divergence + C2) validated in detection self-test
+(detection/detectors.py logic); live underwater run recorded separately.
