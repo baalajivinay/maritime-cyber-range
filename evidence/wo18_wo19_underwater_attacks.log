@@ -1,0 +1,33 @@
+WO-18 + WO-19: the remaining underwater attack adaptations.
+
+WO-18 -- AIS spoofing, surfaced-only (enforce no-op while submerged):
+  AIS is an RF/surface phenomenon; it does not propagate underwater. This is
+  enforced, not merely noted:
+    - profiles/bluerov2.json sets "ais": null and OMITS ais_spoof from the
+      underwater "attacks" list (so no code path tries to run it submerged).
+    - tools/run_attack_suite.py reports ais_spoof as "N/A -- AIS does not
+      propagate underwater -- correctly excluded while submerged" for the
+      underwater domain, and refuses to treat its absence as a failure.
+    - attacks/ais_spoof.py itself is reused AS-IS for the surface domain (see
+      Checkpoint 1 / WO-15: ghost + impersonation both PASS on the WAM-V).
+  So AIS applies only during surfaced windows, and the harness makes that
+  explicit rather than leaving it as an implicit gap. DONE.
+
+WO-19 -- C2 replay/inject against ArduSub (true depth/position effect):
+  C2 is MAVLink-level and medium-agnostic, so attacks/c2_replay.py carries over
+  unchanged from the WAM-V. Confirmed it moves the AUV's TRUE Gazebo state, not
+  just telemetry -- the underwater analog of WO-10's surface confirmation:
+    true depth before C2 injection: z = -25.62 m
+    (inject_forged_rc_override throttle=1300 for 10 s -> the sub's VERTICAL
+     thrusters)
+    true depth after  C2 injection: z = -33.87 m
+    => attacker forced a TRUE depth change of +8.25 m (seized vertical control).
+  Also captured continuously by the attack suite's c2_replay check
+  (moves true pose ~6.6 m each run). PASS.
+
+Together with WO-16 (acoustic_spoof PASS) these complete the underwater domain's
+applicable attack set:
+  acoustic_spoof : PASS (submerged position spoof -- the operative one)
+  c2_replay      : PASS (true depth/position seizure)
+  gps_spoof      : SKIP -- N/A to this ExternalNav vehicle (WO-17 finding)
+  ais_spoof      : N/A  -- no AIS submerged (WO-18)

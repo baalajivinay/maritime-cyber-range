@@ -1,0 +1,32 @@
+CHECKPOINT 3 -- full regression, both domains, every applicable attack (2026-07-29)
+
+Gate per docs/ROADMAP.md: full regression across both domains with every attack
+in each domain's applicable set. First checkpoint after Phase C completed the
+underwater-specific attack adaptations (WO-16..WO-19). Run via the automated
+harness from a clean slate.
+
+SURFACE (wamv) -- run_sim.sh wamv up + run_attack_suite.py --profile wamv:
+  PASS  gps_spoof  -- MAVLink position jumped +50 m, true pose unmoved
+  PASS  ais_spoof  -- ghost 999999001 + impersonation of real MMSI 123456789
+  PASS  c2_replay  -- forged RC override moved true pose ~8 m
+  0 failures.
+
+UNDERWATER (bluerov2) -- run_sim.sh bluerov2 up + run_attack_suite.py --profile bluerov2:
+  PASS  acoustic_spoof -- believed position walked 9.2 m off true while spoofing,
+                          0.0 m off when transparent (WO-16, the submerged position
+                          spoof)
+  PASS  c2_replay      -- forged RC override moved true pose 6.61 m (true depth
+                          seizure confirmed separately: +8.25 m, WO-19)
+  SKIP  gps_spoof      -- GPS N/A to this ExternalNav AUV (WO-17 finding)
+  N/A   ais_spoof      -- no AIS submerged (WO-18)
+  0 failures.
+
+Every attack in each domain's APPLICABLE set passes:
+  surface  applicable = {gps_spoof, ais_spoof, c2_replay}          -> all PASS
+  underwater applicable = {acoustic_spoof, c2_replay}              -> all PASS
+  (underwater gps_spoof / ais_spoof are correctly out-of-scope: SKIP / N/A, per
+   the deliberate per-domain attack semantics, not gaps.)
+
+VERDICT: CHECKPOINT 3 PASS. The dual-domain attack surface is complete and
+regression-clean. Proceed to Phase D (generalize beyond one vehicle per domain)
+or Phase E (detection + evaluation).

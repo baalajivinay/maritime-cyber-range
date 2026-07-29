@@ -24,20 +24,18 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active work order: WO-17** (GPS spoofing during the AUV's surfaced windows).
-  KEY FACT from WO-16: ArduSub uses `EK3_SRC1_POSXY=6` (ExternalNav), NOT GPS,
-  for XY — so GPS spoofing has no effect even at the surface *unless* a GPS EKF
-  source is active for the surfaced regime. WO-17 must either configure a GPS
-  source set for surfaced windows (EK3_SRC2=GPS + source switching) or document
-  that with such a source the already-proven surface gps_spoof relay applies
-  unchanged. Then WO-18 (AIS surfaced-only — largely already enforced by the
-  suite's N/A handling) and WO-19 (C2 vs ArduSub — largely already shown by the
-  suite's c2 check moving true pose 6.61 m). Then CHECKPOINT 3.
-- **Last completed: WO-16** (`attacks/acoustic_spoof.py`) — the submerged analog
-  of GPS spoofing. Investigated + found ArduSub's submerged positioning is
-  ExternalNav (VISION_POSITION_ESTIMATE), not GPS. Built a spoof of that channel;
-  live result: AUV's believed position walked 11 m off true while true pose
-  stayed put; suite acoustic check PASS. Evidence `evidence/wo16_acoustic_spoof.log`.
+- **Active: PHASE D or PHASE E (decision point).** Phase A/B/C complete + three
+  checkpoints passed. Remaining big chunks: Phase D (WO-20 vehicle-model contract
+  + validation script, WO-21 second surface vehicle, WO-22 optional second AUV,
+  CHECKPOINT 4) and Phase E (WO-23 detectors, WO-24 dashboard alerts, WO-25
+  offline scoring, CHECKPOINT 5), then Phase F (WO-26 designer guide, WO-27
+  optional container, CHECKPOINT 6). Phase E is the progress report's stated
+  "next plan" (detection/eval) and is the higher-value half.
+- **Last completed: CHECKPOINT 3 — PASS both domains, 0 failures.** Full attack
+  set: surface gps/ais/c2 PASS; underwater acoustic/c2 PASS (gps SKIP, ais N/A).
+  Phase C done (WO-16 acoustic_spoof; WO-17 GPS-surfaced investigation/finding;
+  WO-18 AIS surfaced-only enforced; WO-19 C2 true-depth seizure +8.25 m).
+  Evidence `evidence/checkpoint3_full_attack_set.log`.
 
 ### Two operational facts proven in WO-14/15 (don't relearn)
 - ArduPilot SITL reads stdin as a console and EXITS on stdin EOF — launch with a
@@ -189,13 +187,21 @@ Legend: [x] done · [~] in progress · [ ] not started
       Submerged positioning = ExternalNav/VISION_POSITION_ESTIMATE (investigated,
       not GPS). Feed-true-when-off / feed-false-when-on; believed walked 11 m off
       true. Suite check PASS. Evidence `evidence/wo16_acoustic_spoof.log`.
-- [~] **WO-17 — GPS spoofing during surfaced windows.** ACTIVE. See CURRENT
-      POSITION note: needs a GPS EKF source active in the surfaced regime.
-- [ ] **WO-18 — AIS spoofing, surfaced-only** (mostly done: suite marks ais N/A
-      submerged; profile omits ais from the AUV attack set — just document).
-- [ ] **WO-19 — C2 replay/inject vs ArduSub** (mostly shown: suite c2 check moves
-      true pose 6.61 m; WO-13 dove via RC override — capture depth-effect evidence).
-- [ ] **CHECKPOINT 3** — full regression both domains, every applicable attack.
+- [x] **WO-17 — GPS spoofing during surfaced windows.** Investigation +
+      finding: this BlueROV2/ArduSub is ExternalNav in all regimes; SIM GPS
+      doesn't track the FDM relay, so GPS spoofing has no effect on it (acoustic
+      spoof covers position). Surfacing mechanism demonstrated (ascent 0.88 m/s,
+      GPS fix available at surface); config path for a GPS-source vehicle
+      documented. Evidence `evidence/wo17_gps_surfaced_windows.log`.
+- [x] **WO-18 — AIS spoofing, surfaced-only.** Enforced: profile ais:null +
+      omitted from AUV attacks; suite reports N/A submerged; ais_spoof.py reused
+      as-is on the surface. Evidence `evidence/wo18_wo19_underwater_attacks.log`.
+- [x] **WO-19 — C2 replay/inject vs ArduSub.** Forged RC override moved the AUV's
+      TRUE depth +8.25 m (attacker seized vertical control) + suite c2 PASS.
+      Evidence `evidence/wo18_wo19_underwater_attacks.log`.
+- [x] **CHECKPOINT 3 — PASS (both domains, 0 failures).** Every applicable attack:
+      surface gps/ais/c2; underwater acoustic/c2. Evidence
+      `evidence/checkpoint3_full_attack_set.log`.
 
 ### Phase D — generalize beyond one vehicle per domain
 - [ ] **WO-20 — Vehicle model contract + validation script.**
@@ -220,6 +226,10 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-07-29: PHASE C COMPLETE + CHECKPOINT 3 PASS. WO-16 acoustic_spoof (the
+  submerged position spoof, belief walk-off), WO-17 GPS-surfaced finding
+  (vehicle is ExternalNav), WO-18 AIS N/A-submerged enforced, WO-19 C2 true-depth
+  seizure (+8.25 m). Both-domain full attack set green. Next: Phase D or E.
 - 2026-07-29: CHECKPOINT 2 PASS (both domains, 0 failures) via the automated
   harness. WO-15 (run_attack_suite.py) done + committed. Next: WO-16 acoustic
   spoofing.
