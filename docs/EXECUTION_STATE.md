@@ -35,11 +35,11 @@ for underwater.
       container; CHECKPOINT 6 (final acceptance).
   Suggested next: WO-26 (designer guide — doc-only, high value, ties the whole
   system together for a designer) then Phase D.
-- **Last completed: PHASE E COMPLETE + CHECKPOINT 5 PASS.** WO-23 detectors
-  (blind, both domains), WO-24 dashboard alert layer, WO-25 offline scorer.
-  Live: surface precision/recall 1.00/1.00; underwater recall 1.00, precision
-  0.82. Evidence `evidence/wo23_wo25_detection_scoring.log`,
-  `evidence/wo24_checkpoint5_detection.log`.
+- **Last completed: WO-20 (vehicle contract + validator) and WO-26 (designer
+  guide).** Before that, PHASE E COMPLETE + CHECKPOINT 5 PASS (WO-23 detectors,
+  WO-24 dashboard alerts, WO-25 scorer; surface 1.00/1.00, underwater recall
+  1.00 / precision 0.82). Only WO-21 (second surface vehicle, + CP4), optional
+  WO-22/WO-27, and CP6 remain.
 
 ### Two operational facts proven in WO-14/15 (don't relearn)
 - ArduPilot SITL reads stdin as a console and EXITS on stdin EOF — launch with a
@@ -208,10 +208,13 @@ Legend: [x] done · [~] in progress · [ ] not started
       `evidence/checkpoint3_full_attack_set.log`.
 
 ### Phase D — generalize beyond one vehicle per domain
-- [ ] **WO-20 — Vehicle model contract + validation script.**
-- [ ] **WO-21 — Second surface vehicle** (prove the contract).
+- [x] **WO-20 — Vehicle model contract + validation script**
+      (`tools/validate_vehicle.py`; profiles self-describe via `model_sdf`).
+      wamv+bluerov2 ALL PASS; broken profile → 4 faults caught.
+- [ ] **WO-21 — Second surface vehicle** (prove the contract). REMAINING — real
+      asset work; candidate `~/SITL_Models/Gazebo/models/blueboat`.
 - [ ] **WO-22 (optional) — Second underwater vehicle.**
-- [ ] **CHECKPOINT 4** — full regression across larger vehicle set.
+- [ ] **CHECKPOINT 4** — full regression across larger vehicle set (after WO-21).
 
 ### Phase E (shared) — detection + evaluation  [DONE]
 - [x] **WO-23 — Rule-based detectors per domain.** `detection/detectors.py` +
@@ -225,9 +228,11 @@ Legend: [x] done · [~] in progress · [ ] not started
       underwater 0.82. Evidence `evidence/wo24_checkpoint5_detection.log`.
 
 ### Phase F — designer-facing packaging
-- [ ] **WO-26 — `docs/DESIGNER_GUIDE.md`.**
-- [ ] **WO-27 (optional) — one-command setup.**
-- [ ] **CHECKPOINT 6 (final acceptance gate).**
+- [x] **WO-26 — `docs/DESIGNER_GUIDE.md`.** Front-door guide: quick start,
+      reading results, detection+scoring, adding a vehicle (via the WO-20
+      contract), ports.
+- [ ] **WO-27 (optional) — one-command setup** (container). REMAINING.
+- [ ] **CHECKPOINT 6 (final acceptance gate)** — after WO-21 (+ optional WO-27).
 
 ---
 
