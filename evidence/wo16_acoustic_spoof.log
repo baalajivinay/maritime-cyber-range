@@ -1,0 +1,51 @@
+WO-16: acoustic-positioning spoofing -- the submerged analog of GPS spoofing.
+
+INVESTIGATION (roadmap said "determine, not assume" what a submerged AUV uses):
+  Probed the running ArduSub's EKF source params:
+    EK3_SRC1_POSXY = 6   -> ExternalNav (NOT GPS)
+    GPS1_TYPE      = 1   -> a GPS exists (fix_type 6) but is NOT the XY source
+    AHRS_EKF_TYPE  = 3   -> EKF3
+  Confirmed empirically: spoofing the FDM position field (attacks/gps_spoof.py
+  ramp) for the submerged AUV did NOT move GPS_RAW_INT or the estimate -- GPS is
+  simply not the positioning input underwater, exactly as physics demands (RF
+  doesn't penetrate water). With NO external-nav feed, GLOBAL_POSITION_INT is 0,0
+  (the AUV has no horizontal fix at all).
+
+  => The submerged positioning input ArduSub consumes is the acoustic/ExternalNav
+     channel, fed as VISION_POSITION_ESTIMATE (MAVLink #102). Verified by feeding
+     a test VISION_POSITION_ESTIMATE (N=30,E=0,D=5): the EKF returned
+     LOCAL_POSITION_NED (29.94, 0.06, 7.32) and GLOBAL_POSITION_INT shifted
+     exactly 30 m North. That is the attack surface.
+
+IMPLEMENTATION (attacks/acoustic_spoof.py):
+  Plays both the legitimate acoustic-positioning provider AND the attacker on
+  that channel -- mirroring how attacks/gps_spoof.py is a relay that is
+  transparent when off and injects an offset when on:
+    spoof OFF -> feeds the AUV's TRUE position (read from Gazebo odometry,
+                 ENU->NED) via VISION_POSITION_ESTIMATE == a working USBL/DVL
+                 (this is also what gives the submerged AUV a horizontal fix).
+    spoof ON  -> feeds TRUE + a forged offset (step or ramp), so the AUV's
+                 BELIEVED position diverges from its true Gazebo position.
+  Talks straight to ArduSub's spare MAVLink port (tcp:5762). Logs ground truth to
+  attack_logs/acoustic_spoof_ground_truth.csv. Same step|ramp|off verbs as
+  gps_spoof.
+
+LIVE RESULT (feed established, then RAMP 0.5 m/s East):
+  OFF:   believed N,E = (0.0, -0.01) m   vs true N,E = (0.00, 0.00) m   -> match
+  SPOOF: believed N,E = (0.0, 11.21) m   vs true N,E = (0.00, 0.00) m
+  => the AUV believes it is ~11 m East of where it physically is; its true Gazebo
+     position never moved. The acoustic analog of walking a surface vessel's GPS
+     off with gps_spoof. PASS.
+
+SUITE INTEGRATION:
+  tools/run_attack_suite.py check_acoustic_spoof now runs this for real. Latest
+  underwater suite run:
+    SKIP  gps_spoof      (surface-window only, WO-17)
+    PASS  acoustic_spoof (believed-vs-true East divergence 0.0 m off, 9.2 m spoofing)
+    PASS  c2_replay      (true pose moved 6.61 m)
+    N/A   ais_spoof
+  0 failures.
+
+VERDICT: WO-16 PASS. The submerged AUV now has a modeled acoustic positioning
+system and a working spoof of it -- the first underwater-specific attack, and the
+correct physical analog of the surface GPS spoof.
