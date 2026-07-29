@@ -1,5 +1,5 @@
 WO-15 attack suite -- profile=bluerov2 domain=underwater
-run: 2026-07-29 03:49:35
+run: 2026-07-29 19:51:37
 
 [SKIP] gps_spoof: GPS does not reach a submerged AUV; applies only during surfaced windows -- live verification is WO-17 (submerged analog is acoustic spoofing, WO-16)
 [SKIP] acoustic_spoof: acoustic_spoof not implemented yet (WO-16); listed in the profile's applicable set

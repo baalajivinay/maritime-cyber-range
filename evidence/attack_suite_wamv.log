@@ -1,6 +1,6 @@
 WO-15 attack suite -- profile=wamv domain=surface
-run: 2026-07-29 03:48:04
+run: 2026-07-29 19:50:42
 
-[PASS] gps_spoof: MAVLink position jumped 50.0 m; TRUE pose moved 0.02 m
+[PASS] gps_spoof: MAVLink position jumped 50.0 m; TRUE pose moved 0.01 m
 [PASS] ais_spoof: ghost 999999001: 6 msgs; impersonation of real MMSI 123456789: 6 msgs
-[PASS] c2_replay: forged RC override moved TRUE pose 8.07 m
+[PASS] c2_replay: forged RC override moved TRUE pose 7.98 m

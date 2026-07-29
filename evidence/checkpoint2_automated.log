@@ -1,0 +1,40 @@
+CHECKPOINT 2 -- automated harness reproduces Checkpoint 1, both domains (2026-07-29)
+
+Gate per docs/ROADMAP.md: the automated harness (tools/run_sim.sh +
+tools/run_attack_suite.py) reproduces Checkpoint 1's results for both domains
+with no regressions. Run back-to-back from a clean slate this session.
+
+Command per domain:
+  tools/run_sim.sh <profile> up
+  python3 tools/run_attack_suite.py --profile <profile>
+  tools/run_sim.sh <profile> down
+(equivalently a single `run_attack_suite.py --profile <profile> --boot`.)
+
+SURFACE (wamv) -- run_sim.sh boot: world/relay/SITL/heartbeat/AIS all [OK].
+  Attack suite:
+    PASS  gps_spoof  -- MAVLink position jumped 50.0 m; TRUE pose moved 0.01 m
+    PASS  ais_spoof  -- ghost 999999001 (6 msgs) + impersonation of real MMSI
+                        123456789 (6 msgs)
+    PASS  c2_replay  -- forged RC override moved TRUE pose 7.98 m
+  0 failures. Matches Checkpoint 1 surface results (GPS/AIS/C2 all effective;
+  arming exercised by the C2 check). exit 0.
+
+UNDERWATER (bluerov2) -- run_sim.sh boot: world/relay/SITL/heartbeat all [OK].
+  Attack suite:
+    SKIP  gps_spoof      -- GPS N/A to a submerged AUV (surface-window only, WO-17)
+    SKIP  acoustic_spoof -- not implemented until WO-16
+    PASS  c2_replay      -- forged RC override moved TRUE pose 6.61 m (arm + true
+                            thruster movement -> reproduces WO-13's boot/arm/thruster
+                            control automatically)
+    N/A   ais_spoof      -- no AIS submerged
+  0 failures. exit 0.
+
+VERDICT: CHECKPOINT 2 PASS. What used to be a multi-terminal manual bring-up +
+hand-run attacks is now one command per domain, with real health gates and
+per-attack pass/fail. No regressions vs Checkpoint 1. Proceed to Phase C (WO-16:
+acoustic-positioning spoofing, the submerged analog of GPS spoofing).
+
+Harness note (agent-context only): a Bash tool call that both boots the stack and
+does other work can lose its own stdout/exit code because run_sim.sh's setsid
+children transiently hold the harness pipe -- redirect to a file and read it. The
+work itself succeeds; real terminals are unaffected.
