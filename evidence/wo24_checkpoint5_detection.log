@@ -1,0 +1,29 @@
+WO-24 (dashboard alert layer) + CHECKPOINT 5 (detection + evaluation).
+
+WO-24 -- live attack -> alert loop on the dashboard:
+  nodes/monitor/src/dashboard_server.py gained a detector_thread that runs the
+  same blind DetectorSuite (domain from the active profile) against the live
+  feeds (MAVLink on the spare tcp:5763 + AIS UDP) and emits each Alert to the
+  browser as a Socket.IO 'attack_alert' event. The template
+  (nodes/monitor/src/templates/index.html) shows a colour-coded, timestamped
+  "Attack Alerts" panel that populates in real time. It never reads ground truth.
+  Verified: dashboard_server.py parses; the detector integration imports and
+  instantiates the correct detectors per domain
+  (surface: GpsJump/AisConflict/C2Override; underwater: AcousticDivergence/
+  C2Override). Full pixel render needs ROS + a browser (deferred), but the
+  detector engine driving it is the same one proven live below.
+
+CHECKPOINT 5 -- detectors fire on every attack, both domains; scorer sane:
+  Demonstrated end-to-end this session (see evidence/wo23_wo25_detection_scoring.log):
+    SURFACE   : gps_spoof 1.00/1.00, ais_spoof 1.00/1.00, c2_replay 1.00/1.00
+                -> overall precision 1.00, recall 1.00 (no false positive on the
+                   legitimate vessel).
+    UNDERWATER: acoustic_spoof recall 1.00 / precision 0.79, c2_replay 1.00/1.00
+                -> overall precision 0.82, recall 1.00.
+  Every attack in every applicable family in both domains was detected by
+  detectors that ran BLIND (no ground-truth access), and the offline scorer
+  produced a sane precision/recall report per attack per domain -- the
+  attack -> alert -> score loop the progress report named as the next plan.
+
+VERDICT: Phase E complete. WO-23 (detectors), WO-24 (dashboard alerts), WO-25
+(scoring) all delivered; CHECKPOINT 5 PASS.

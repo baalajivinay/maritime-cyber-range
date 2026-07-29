@@ -38,6 +38,13 @@
                 <label for="layer_ais">AIS Contacts</label>
             </div>
         </div>
+
+        <div class="controls">
+            <h4>Attack Alerts <span id="alert_count" style="color:#c0392b">(0)</span></h4>
+            <div id="alerts" style="max-height:220px; overflow-y:auto; font-size:12px;">
+                <p style="color:#888">No attacks detected.</p>
+            </div>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -109,6 +116,23 @@
         socket.on('gps_believed_update', function(data) {
             var newLatLng = new L.LatLng(data.lat, data.lon);
             believedMarker.setLatLng(newLatLng);
+        });
+
+        // WO-24: live attack alerts from the blind detectors
+        var alertCount = 0;
+        var alertColors = {gps_spoof:'#e67e22', ais_spoof:'#8e44ad', c2_replay:'#c0392b', acoustic_spoof:'#2980b9'};
+        socket.on('attack_alert', function(a) {
+            if (alertCount === 0) { document.getElementById('alerts').innerHTML = ''; }
+            alertCount++;
+            document.getElementById('alert_count').textContent = '(' + alertCount + ')';
+            var d = new Date(a.t * 1000).toLocaleTimeString();
+            var row = document.createElement('div');
+            row.style.cssText = 'border-left:4px solid ' + (alertColors[a.attack_type] || '#333') +
+                                '; padding:3px 6px; margin:3px 0; background:#f7f7f7;';
+            row.innerHTML = '<strong>' + a.attack_type.toUpperCase() + '</strong> <span style="color:#888">' +
+                            d + '</span><br>' + a.detail;
+            var box = document.getElementById('alerts');
+            box.insertBefore(row, box.firstChild);
         });
 
         socket.on('ais_update', function(data) {

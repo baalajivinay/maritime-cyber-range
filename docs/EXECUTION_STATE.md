@@ -24,18 +24,22 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active: PHASE D or PHASE E (decision point).** Phase A/B/C complete + three
-  checkpoints passed. Remaining big chunks: Phase D (WO-20 vehicle-model contract
-  + validation script, WO-21 second surface vehicle, WO-22 optional second AUV,
-  CHECKPOINT 4) and Phase E (WO-23 detectors, WO-24 dashboard alerts, WO-25
-  offline scoring, CHECKPOINT 5), then Phase F (WO-26 designer guide, WO-27
-  optional container, CHECKPOINT 6). Phase E is the progress report's stated
-  "next plan" (detection/eval) and is the higher-value half.
-- **Last completed: CHECKPOINT 3 — PASS both domains, 0 failures.** Full attack
-  set: surface gps/ais/c2 PASS; underwater acoustic/c2 PASS (gps SKIP, ais N/A).
-  Phase C done (WO-16 acoustic_spoof; WO-17 GPS-surfaced investigation/finding;
-  WO-18 AIS surfaced-only enforced; WO-19 C2 true-depth seizure +8.25 m).
-  Evidence `evidence/checkpoint3_full_attack_set.log`.
+- **Active: PHASE D (generalization) + PHASE F (packaging) remain.** Phases
+  A/B/C/E are COMPLETE (Checkpoints 1,2,3,5 passed). Deliberately did Phase E
+  before Phase D (E is the progress report's stated next plan + higher value).
+  Remaining:
+    - Phase D: WO-20 vehicle-model contract + validation script; WO-21 second
+      surface vehicle (proves generalization); WO-22 optional second AUV;
+      CHECKPOINT 4.
+    - Phase F: WO-26 `docs/DESIGNER_GUIDE.md`; WO-27 optional one-command
+      container; CHECKPOINT 6 (final acceptance).
+  Suggested next: WO-26 (designer guide — doc-only, high value, ties the whole
+  system together for a designer) then Phase D.
+- **Last completed: PHASE E COMPLETE + CHECKPOINT 5 PASS.** WO-23 detectors
+  (blind, both domains), WO-24 dashboard alert layer, WO-25 offline scorer.
+  Live: surface precision/recall 1.00/1.00; underwater recall 1.00, precision
+  0.82. Evidence `evidence/wo23_wo25_detection_scoring.log`,
+  `evidence/wo24_checkpoint5_detection.log`.
 
 ### Two operational facts proven in WO-14/15 (don't relearn)
 - ArduPilot SITL reads stdin as a console and EXITS on stdin EOF — launch with a
@@ -209,13 +213,16 @@ Legend: [x] done · [~] in progress · [ ] not started
 - [ ] **WO-22 (optional) — Second underwater vehicle.**
 - [ ] **CHECKPOINT 4** — full regression across larger vehicle set.
 
-### Phase E (shared) — detection + evaluation
-- [ ] **WO-23 — Rule-based detectors per domain** (live feeds only, never the
-      private `attack_logs/*.csv` ground truth).
-- [ ] **WO-24 — Alert layer on the dashboard.**
-- [ ] **WO-25 — Offline scoring harness** (replay detector alerts vs ground
-      truth; precision/recall per attack per domain).
-- [ ] **CHECKPOINT 5** — detectors fire on every attack; scoring sane.
+### Phase E (shared) — detection + evaluation  [DONE]
+- [x] **WO-23 — Rule-based detectors per domain.** `detection/detectors.py` +
+      `detection/run_detectors.py` (blind live tap). Surface GpsJump/AisConflict/
+      C2Override; underwater AcousticDivergence/C2Override. Live-validated.
+- [x] **WO-24 — Alert layer on the dashboard.** `dashboard_server.py`
+      detector_thread emits `attack_alert`; template shows a live alerts panel.
+- [x] **WO-25 — Offline scoring harness** (`tools/score_detectors.py`). Only
+      reader of ground truth; precision/recall per attack per domain.
+- [x] **CHECKPOINT 5 — PASS.** Both domains, recall 1.00; surface precision 1.00,
+      underwater 0.82. Evidence `evidence/wo24_checkpoint5_detection.log`.
 
 ### Phase F — designer-facing packaging
 - [ ] **WO-26 — `docs/DESIGNER_GUIDE.md`.**
@@ -226,6 +233,11 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-07-29: PHASE E COMPLETE + CHECKPOINT 5 PASS. Detection subsystem
+  (detectors blind on live feeds + offline scorer + dashboard alert layer). Live
+  both domains: surface 1.00/1.00, underwater recall 1.00 / precision 0.82. Did
+  Phase E before Phase D by design. Remaining: Phase D (WO-20/21/22, CP4) +
+  Phase F (WO-26/27, CP6).
 - 2026-07-29: PHASE C COMPLETE + CHECKPOINT 3 PASS. WO-16 acoustic_spoof (the
   submerged position spoof, belief walk-off), WO-17 GPS-surfaced finding
   (vehicle is ExternalNav), WO-18 AIS N/A-submerged enforced, WO-19 C2 true-depth
