@@ -24,19 +24,31 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active work order: WO-15** (`tools/run_attack_suite.py` — domain-aware
-  attack runner: GPS/AIS/C2 for surface; GPS-at-surface/acoustic-spoof/C2 for
-  underwater; captures evidence + pass/fail per attack). Then CHECKPOINT 2.
-- **Last completed: WO-14** (`tools/run_sim.sh` + `tools/mav_bridge.py`).
-  One-command boot with real health checks, validated on BOTH domains (surface:
-  boot+status green incl. AIS emulator; underwater: boot+arm+dive PASS).
-  Evidence `evidence/wo14_run_sim_harness.log`. Committed.
+- **Active work order: CHECKPOINT 2** (automated harness reproduces Checkpoint 1
+  for both domains, no regressions). run_sim.sh + run_attack_suite.py already
+  demonstrate this per-domain (see below) — remaining is to run both cleanly
+  back-to-back and record the checkpoint. Then WO-16 (Phase C).
+- **Last completed: WO-15** (`tools/run_attack_suite.py`). Domain-aware attack
+  runner; validated BOTH domains: surface gps/ais/c2 all PASS; underwater c2
+  PASS, gps SKIP (WO-17, GPS N/A submerged), acoustic SKIP (WO-16), ais N/A.
+  Self-contained `--boot` mode works (boot+run+teardown). Evidence
+  `evidence/wo15_attack_suite.log` + per-profile `evidence/attack_suite_*.log`.
+  Also fixed a run_sim.sh teardown bug (VRX launch grandchildren —
+  parameter_bridge/pose_tf_broadcaster/robot_state_publisher — were surviving
+  and poisoning the next surface boot). Committed.
 
-### CRITICAL fix discovered in WO-14 (explains all earlier SITL deaths)
-ArduPilot SITL reads stdin as a console and EXITS on stdin EOF. Launch it with a
-never-closing stdin (FIFO + keepalive writer), never `< /dev/null`. This is why
-ArduSub kept dying in WO-13/WO-14 bring-up. `tools/run_sim.sh` bakes this in;
-reuse that pattern for any future direct SITL launch.
+### Two operational facts proven in WO-14/15 (don't relearn)
+- ArduPilot SITL reads stdin as a console and EXITS on stdin EOF — launch with a
+  never-closing stdin (FIFO + keepalive), never `< /dev/null`. run_sim.sh does
+  this. (With it fixed, the whole stack now survives ACROSS tool calls.)
+- In THIS agent harness only: a Bash call that boots the stack loses its own
+  stdout/exit code (detached children transiently hold the harness pipe) — so
+  REDIRECT run_sim.sh / --boot output to a file and `cat` it. The work still
+  succeeds; only the tool's direct capture is cosmetically broken. Real
+  terminals are fine.
+- Surface re-boot needs a clean slate: always `run_sim.sh <p> down` (now kills
+  VRX grandchildren) before re-`up`, or a stale relay on :9002 / stale gz server
+  breaks the boot.
 
 ### Bring-up primitives proven this session (WO-14 should formalize these)
 - Surface boot: `sim_config/start_vrx.sh` (headless) + `gps_spoof.py` relay
@@ -162,13 +174,14 @@ Legend: [x] done · [~] in progress · [ ] not started
       parameterized; per-stage health checks (gz model / :9002 / tcp:5760 /
       heartbeat); up|down|status. Validated both domains. Evidence
       `evidence/wo14_run_sim_harness.log`.
-- [~] **WO-15 — `tools/run_attack_suite.py`** (domain-aware; evidence + pass/fail).
-      ACTIVE. Surface: gps_spoof/ais(ghost,impersonate)/c2. Underwater:
-      gps-at-surface / acoustic_spoof (needs WO-16!) / c2. NOTE: acoustic_spoof
-      doesn't exist until WO-16 — the suite should skip/mark N/A gracefully, or
-      WO-16 lands first. Reuse the verification logic already written this
-      session (see scratchpad: surf_regress.py, ais_check.py, wo13 dive tests).
-- [ ] **CHECKPOINT 2** — harness reproduces Checkpoint 1 for both domains.
+- [x] **WO-15 — `tools/run_attack_suite.py`.** Domain-aware; drives off the
+      profile's ATTACKS set; verifies via MAVLink-vs-true-Gazebo-pose; PASS/FAIL/
+      SKIP/N-A per attack + evidence log; `--boot` self-contained mode. Surface:
+      gps/ais/c2 PASS. Underwater: c2 PASS; gps SKIP (surface-window only, WO-17);
+      acoustic SKIP (WO-16); ais N/A. Evidence `evidence/wo15_attack_suite.log`.
+- [~] **CHECKPOINT 2** — ACTIVE. run_sim.sh + run_attack_suite.py reproduce the
+      Checkpoint 1 attack results per domain. Do a clean back-to-back both-domain
+      automated run and record it.
 
 ### Phase C Track U — underwater attack adaptation
 - [ ] **WO-16 — Acoustic-positioning spoofing** (submerged analog of GPS spoof;
