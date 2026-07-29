@@ -175,10 +175,12 @@ class AcousticDivergenceDetector:
     while it is NOT under propulsion (disarmed, or thrusters idle) -- position
     changing with no way to have caused it. Catches both the step and the
     stealthy slow ramp, which a pure speed gate would miss."""
-    def __init__(self, drift_speed_mps=0.15):
+    def __init__(self, drift_speed_mps=0.15, refractory_s=3.0):
         self.drift_speed = drift_speed_mps
+        self.refractory = refractory_s
         self.armed = False
-        self.last = None  # (t, n, e)
+        self.last = None        # (t, n, e)
+        self.last_alert = None
 
     def update(self, ev):
         et = ev.get("type")
@@ -194,7 +196,9 @@ class AcousticDivergenceDetector:
             dt = t - lt
             if dt > 0:
                 speed = math.hypot(n - ln, e - le) / dt
-                if speed > self.drift_speed:
+                if speed > self.drift_speed and (
+                        self.last_alert is None or t - self.last_alert >= self.refractory):
+                    self.last_alert = t
                     alert = Alert(t, "AcousticDivergenceDetector", "acoustic_spoof", "underwater",
                                   f"believed position drifting {speed:.2f} m/s while UNPROPELLED (disarmed) -- external-nav/acoustic spoof")
         self.last = (t, n, e)
