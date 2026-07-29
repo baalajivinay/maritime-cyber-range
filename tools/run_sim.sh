@@ -33,7 +33,7 @@ FIFO="$RUN_DIR/relay.fifo"
 # --- read profile fields via constants.py (single source of truth) -----------
 read_profile() {
   python3 - "$REPO" <<'PY'
-import sys, os
+import sys, os, json
 sys.path.insert(0, sys.argv[1])
 import constants
 print(constants.DOMAIN)
@@ -42,25 +42,30 @@ print(constants.HOME_LAT)
 print(constants.HOME_LON)
 print(constants.FDM_RELAY_BIND[1])
 print(constants.MAVLINK_DASHBOARD_PORT)
+# world config makes each profile self-describing about HOW it boots
+prof = json.load(open(os.path.join(sys.argv[1], "profiles", constants.PROFILE_NAME + ".json")))
+w = prof.get("world", {})
+print(w.get("method", "vrx" if constants.DOMAIN == "surface" else "gz"))
+print(w.get("model_name", constants.PROFILE_NAME))
+print(w.get("sdf", ""))
+print(w.get("world", ""))
+print(w.get("urdf", ""))
 PY
 }
 mapfile -t PF < <(read_profile) || { echo "FATAL: cannot load profile '$PROFILE'"; exit 1; }
 DOMAIN="${PF[0]}"; VTYPE="${PF[1]}"; HOME_LAT="${PF[2]}"; HOME_LON="${PF[3]}"
 RELAY_PORT="${PF[4]}"; HB_PORT="${PF[5]}"
+WORLD_METHOD="${PF[6]}"; MODEL_NAME="${PF[7]}"; WORLD_SDF="${PF[8]}"; WORLD_NAME="${PF[9]}"; WORLD_URDF="${PF[10]}"
 
 # --- Gazebo environment ------------------------------------------------------
 export GZ_SIM_SYSTEM_PLUGIN_PATH="$HOME/ardupilot_gazebo/build:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
 export GZ_SIM_RESOURCE_PATH="$REPO/sim_config/models:$HOME/ardupilot_gazebo/models:$HOME/SITL_Models/Gazebo/models:$HOME/SITL_Models/Gazebo/worlds:${GZ_SIM_RESOURCE_PATH:-}"
 
 ARDU_PARAMS=""
-if [[ "$DOMAIN" == "underwater" ]]; then
-  MODEL_NAME="bluerov2"
-  WORLD_TOPIC="/world/underwater_harbor/dynamic_pose/info"
+if [[ "$VTYPE" == "Sub" ]]; then
   SITL_BIN="$HOME/ardupilot/build/sitl/bin/ardusub"
   ARDU_PARAMS="$HOME/auv_ws/src/dave/models/dave_robot_models/config/bluerov2/ardusub.parm"
 else
-  MODEL_NAME="wamv"
-  WORLD_TOPIC="/world/sydney_regatta/dynamic_pose/info"
   SITL_BIN="$HOME/ardupilot/build/sitl/bin/ardurover"
 fi
 
@@ -116,9 +121,7 @@ do_down() {
   for pat in "mav_bridge.py" "gps_spoof.py" "$SITL_BIN" "ais_emulator.py"; do
     pkill -9 -f "$pat" 2>/dev/null
   done
-  if [[ "$DOMAIN" == "underwater" ]]; then
-    pkill -9 -f "underwater_world.sdf" 2>/dev/null
-  else
+  if [[ "$WORLD_METHOD" == "vrx" ]]; then
     # VRX's competition.launch.py spawns grandchildren that DON'T die with the
     # launch process -- leaving them (and a stale gz server serving /wamv
     # topics) behind poisons the next boot. Kill them explicitly.
@@ -127,6 +130,8 @@ do_down() {
     pkill -9 -f "parameter_bridge" 2>/dev/null
     pkill -9 -f "pose_tf_broadcaster" 2>/dev/null
     pkill -9 -f "robot_state_publisher" 2>/dev/null
+  elif [[ -n "$WORLD_SDF" ]]; then
+    pkill -9 -f "$(basename "$WORLD_SDF")" 2>/dev/null
   fi
   pkill -9 -f "gz sim" 2>/dev/null
   pkill -9 -f "$FIFO" 2>/dev/null
@@ -149,13 +154,14 @@ do_status() {
 do_up() {
   log "domain=$DOMAIN vehicle=$VTYPE home=$HOME_LAT,$HOME_LON  run_dir=$RUN_DIR"
 
-  # 1) Gazebo world
-  if [[ "$DOMAIN" == "underwater" ]]; then
-    log "starting underwater world..."
-    spawn "$LOG_DIR/world.log" "gz sim -v4 -s -r '$REPO/sim_config/underwater_world.sdf'" > "$RUN_DIR/world.pid"
+  # 1) Gazebo world -- boot method comes from the profile's "world" config, so a
+  #    new vehicle just declares how it boots (VRX launch, or a plain gz world).
+  if [[ "$WORLD_METHOD" == "vrx" ]]; then
+    log "starting VRX world '$WORLD_NAME'..."
+    spawn "$LOG_DIR/world.log" "source /opt/ros/jazzy/setup.bash; source '$REPO/ros2_ws/install/setup.bash'; ros2 launch vrx_gz competition.launch.py world:=$WORLD_NAME headless:=True urdf:='$REPO/$WORLD_URDF'" > "$RUN_DIR/world.pid"
   else
-    log "starting VRX surface world..."
-    spawn "$LOG_DIR/world.log" "source /opt/ros/jazzy/setup.bash; source '$REPO/ros2_ws/install/setup.bash'; ros2 launch vrx_gz competition.launch.py world:=sydney_regatta headless:=True urdf:='$REPO/sim_config/wamv_ardupilot.sdf'" > "$RUN_DIR/world.pid"
+    log "starting gz world '$WORLD_SDF'..."
+    spawn "$LOG_DIR/world.log" "gz sim -v4 -s -r '$REPO/$WORLD_SDF'" > "$RUN_DIR/world.pid"
   fi
   wait_gz_model "$MODEL_NAME" 60 || fail "Gazebo model '$MODEL_NAME' never appeared (world didn't boot)"
   log "  world up, model '$MODEL_NAME' present [OK]"

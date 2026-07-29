@@ -1,0 +1,26 @@
+CHECKPOINT 4 -- full regression across the larger vehicle set (2026-07-30)
+
+Gate: full regression across the now-larger vehicle set, both domains. Three
+vehicles (two surface, one underwater), each booted + attacked through the SAME
+generalized harness (run_sim.sh reads each profile's "world" config;
+run_attack_suite.py derives its pose topic per profile). Critically also a
+regression check that the WO-21 harness generalization did NOT break the original
+two vehicles.
+
+wamv (surface, VRX sydney_regatta, ArduRover):
+  PASS gps_spoof, PASS ais_spoof, PASS c2_replay  -- 0 failures. (VRX boot path
+  still works through the generalized run_sim.sh -- no regression.)
+
+blueboat (surface, gz surface_harbor, ArduRover) -- the WO-21 new vehicle:
+  PASS gps_spoof, PASS ais_spoof (impersonation of MMSI 503999888), PASS
+  c2_replay -- 0 failures.
+
+bluerov2 (underwater, gz underwater_harbor, ArduSub):
+  PASS acoustic_spoof, PASS c2_replay; SKIP gps_spoof (N/A submerged), N/A
+  ais_spoof -- 0 failures. (gz boot path unaffected -- no regression.)
+
+Every vehicle passed every attack in its domain's applicable set. The harness is
+now genuinely multi-vehicle: adding a vehicle is a profile + model + (if new) a
+world SDF, validated by tools/validate_vehicle.py, with no harness edits.
+
+VERDICT: CHECKPOINT 4 PASS.

@@ -34,5 +34,12 @@
       "c2_replay": 14553
     }
   },
-  "model_sdf": "sim_config/wamv_ardupilot.sdf"
+  "model_sdf": "sim_config/wamv_ardupilot.sdf",
+  "world": {
+    "method": "vrx",
+    "world": "sydney_regatta",
+    "urdf": "sim_config/wamv_ardupilot.sdf",
+    "model_name": "wamv",
+    "world_name": "sydney_regatta"
+  }
 }

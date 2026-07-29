@@ -27,5 +27,11 @@
       "c2_replay": 14553
     }
   },
-  "model_sdf": "sim_config/models/bluerov2/model.sdf"
+  "model_sdf": "sim_config/models/bluerov2/model.sdf",
+  "world": {
+    "method": "gz",
+    "sdf": "sim_config/underwater_world.sdf",
+    "model_name": "bluerov2",
+    "world_name": "underwater_harbor"
+  }
 }
