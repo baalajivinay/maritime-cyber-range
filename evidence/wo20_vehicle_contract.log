@@ -1,0 +1,28 @@
+WO-20: vehicle-model contract + validation script (tools/validate_vehicle.py).
+
+Formalizes what a designer must expose to add a vehicle, and checks a profile +
+its model SDF against that contract BEFORE boot. Profiles are now self-describing
+(each declares "model_sdf").
+
+Contract checks (per domain): profile loads + passes constants validation; domain
+in {surface,underwater} matching vehicle type {Rover,Sub}; AIS present for surface
+/ null for underwater; fdm ports correct (relay 9002, gazebo port distinct and ==
+the model's ArduPilotPlugin <fdm_port_in>); model SDF exists with an
+ArduPilotPlugin, an IMU sensor, >=1 control channel; surface exposes navsat/GPS;
+underwater declares buoyancy+hydrodynamics (model or world); every listed attack
+is implemented or a known domain-N/A entry.
+
+Results:
+  wamv      -> ALL PASS (17 checks)
+  bluerov2  -> ALL PASS (17 checks)
+  _broken_test (deliberately malformed) -> 4 FAILURES correctly caught:
+     domain/vehicle-type mismatch, ais-set-while-underwater, missing model SDF,
+     unknown attack name. exit code 1.
+
+So the validator is a real gate, not a rubber stamp -- a designer runs
+`python3 tools/validate_vehicle.py <profile>` and fixes every FAIL before wiring
+the vehicle into run_sim.sh / run_attack_suite.py.
+
+WO-21 (prove the contract with a fully-built second surface vehicle) and WO-22
+(optional second AUV) remain: the contract + validator (WO-20) are the reusable
+scaffolding they plug into.
