@@ -37,3 +37,19 @@ LIVE SURFACE RUN (detector blind; attacks fired live; then scored vs ground trut
 
 Underwater detectors (acoustic-divergence + C2) validated in detection self-test
 (detection/detectors.py logic); live underwater run recorded separately.
+
+LIVE UNDERWATER RUN (detector blind; acoustic_spoof + c2 fired; scored):
+  attack             TP   FP  windows  detected   prec  recall
+  acoustic_spoof     15    4        1         1   0.79    1.00
+  c2_replay           3    0        1         1   1.00    1.00
+  OVERALL            18    4        2         2   0.82    1.00
+
+  - acoustic_spoof recall 1.00 (every spoof caught: the AUV's believed position
+    drifting while UNPROPELLED). Precision 0.79 -- the simple drift-while-disarmed
+    rule also fires on the brief settling transient just after an armed override,
+    an honest limitation; an INS-vs-acoustic residual detector would tighten it.
+  - The scoring harness quantifying imperfect precision is exactly its purpose.
+  Alert log: evidence/detector_alerts_bluerov2_run.jsonl.
+
+BOTH DOMAINS: recall 1.00 (every attack in every applicable family detected);
+surface precision 1.00, underwater precision 0.82.
