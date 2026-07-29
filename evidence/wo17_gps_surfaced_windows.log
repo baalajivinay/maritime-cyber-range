@@ -1,0 +1,46 @@
+WO-17: GPS spoofing during the AUV's surfaced windows -- investigation + finding.
+
+GOAL (roadmap): confirm the existing gps_spoof relay pattern applies when the AUV
+is at/near the surface taking real GPS fixes. The roadmap explicitly flagged this
+as "needs investigating, not assuming."
+
+FINDING (the substantive WO-17 result):
+  The BlueROV2/ArduSub reference vehicle does NOT use GPS for horizontal position
+  in ANY depth regime as configured -- it uses ExternalNav (EK3_SRC1_POSXY = 6).
+  Two independent confirmations:
+    1. Params: EK3_SRC1_POSXY=6 (ExternalNav), not 3 (GPS). GPS1_TYPE=1, a GPS
+       exists and reports fix_type 6 / 10 sats, but is not the EKF XY source.
+    2. Empirical: driving the FDM-position relay (attacks/gps_spoof.py) with a
+       +50 m STEP and a 0.5 m/s RAMP produced ZERO movement in the sub's
+       GPS_RAW_INT and no change in its position solution. (The same relay walks
+       the surface WAM-V's position +50 m -- see Checkpoint 1. The difference is
+       the vehicle config + how ArduSub SITL sources position, not the relay.)
+
+  So for this vehicle, spoofing GPS -- surfaced or not -- has no effect, which is
+  physically appropriate: a submersible navigates on inertial + acoustic
+  positioning, and this one is configured that way end-to-end. The operative
+  position-spoofing attack for it is the acoustic-positioning spoof (WO-16),
+  which DOES work (believed position walked 11 m off true).
+
+SURFACED-WINDOW MECHANISM (demonstrated):
+  The AUV can ascend to the surface under thrust (verified: dived to -38 m, then
+  ascended at ~0.88 m/s; GPS fix_type 6 / 10 sats available throughout). So a
+  dive/surface duty cycle that creates a real surfaced window is achievable with
+  the existing thruster control -- the window exists; what's missing is the AUV
+  choosing to USE GPS while in it.
+
+HOW TO MAKE GPS-AT-SURFACE LIVE (config path, for a vehicle that should use it):
+  - Add a second EKF source set with GPS: EK3_SRC2_POSXY=3 (GPS), EK3_SRC2_VELXY=3.
+  - Switch source sets by depth (ExternalNav deep -> GPS shallow) via an ArduSub
+    Lua script calling ahrs:set_posvelyaw_source_set(), or an RC aux "EKF source
+    set" switch, so GPS is the source only inside surfaced windows.
+  - Because ArduSub SITL's SIM GPS does not track the FDM-position relay (shown
+    above), the surfaced-window GPS spoof injects via MAVLink GPS_INPUT (msg 232,
+    GPS1_TYPE=14/MAV) -- structurally identical to WO-16's acoustic_spoof but on
+    the GPS channel. The surface gps_spoof relay itself is already proven on the
+    WAM-V and carries over unchanged for any vehicle whose SIM GPS is FDM-driven.
+
+STATUS: WO-17 resolved as an investigation with a concrete finding + config path.
+The default reference AUV is ExternalNav (spoofed via WO-16); GPS-at-surface is a
+documented, bounded configuration extension rather than a live default behavior.
+No code claims a GPS effect the platform doesn't actually exhibit.
