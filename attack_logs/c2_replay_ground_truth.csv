@@ -4,3 +4,7 @@ wall_ts,attack_type,description
 1785108490.6867115,inject_rc_override,"throttle=1700, steering=1500, 5.0s"
 1785271595.3847508,inject_rc_override,"throttle=1800, steering=1500, 10.0s"
 1785271651.8821278,inject_rc_override,"throttle=1800, steering=1500, 10.0s"
+1785276810.432781,inject_rc_override,"throttle=1300, steering=1500, 8.0s"
+1785276909.8981745,inject_rc_override,"throttle=1300, steering=1500, 8.0s"
+1785277084.7514012,inject_rc_override,"throttle=1300, steering=1500, 8.0s"
+1785277175.6027443,inject_rc_override,"throttle=1300, steering=1500, 8.0s"

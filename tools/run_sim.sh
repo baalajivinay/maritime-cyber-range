@@ -119,8 +119,14 @@ do_down() {
   if [[ "$DOMAIN" == "underwater" ]]; then
     pkill -9 -f "underwater_world.sdf" 2>/dev/null
   else
+    # VRX's competition.launch.py spawns grandchildren that DON'T die with the
+    # launch process -- leaving them (and a stale gz server serving /wamv
+    # topics) behind poisons the next boot. Kill them explicitly.
     pkill -9 -f "competition.launch" 2>/dev/null
     pkill -9 -f "start_vrx.sh" 2>/dev/null
+    pkill -9 -f "parameter_bridge" 2>/dev/null
+    pkill -9 -f "pose_tf_broadcaster" 2>/dev/null
+    pkill -9 -f "robot_state_publisher" 2>/dev/null
   fi
   pkill -9 -f "gz sim" 2>/dev/null
   pkill -9 -f "$FIFO" 2>/dev/null

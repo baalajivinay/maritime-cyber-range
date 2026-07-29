@@ -1,0 +1,44 @@
+WO-15: tools/run_attack_suite.py -- domain-aware attack suite. Validated on both
+domains this session (2026-07-29).
+
+DESIGN
+  Reads the ACTIVE PROFILE's applicable-attack set (constants.ATTACKS) and runs a
+  check per attack, verifying the effect only from LIVE feeds (MAVLink telemetry
+  + TRUE Gazebo pose via `gz topic`) -- never the private attack_logs/*.csv
+  ground truth. Reports PASS / FAIL / SKIP / N-A per attack and writes
+  evidence/attack_suite_<profile>.log. Exit code = number of FAILs.
+  Modes: against an already-running stack (default), or self-contained --boot
+  (run_sim.sh up -> run -> run_sim.sh down in one process).
+
+SURFACE (wamv)  --  python3 tools/run_attack_suite.py --profile wamv
+  [PASS] gps_spoof : MAVLink position jumped 50.0 m; TRUE pose moved 0.02 m
+  [PASS] ais_spoof : ghost 999999001 (6 msgs) + impersonation of real MMSI
+                     123456789 (6 msgs)
+  [PASS] c2_replay : forged RC override moved TRUE pose 8.07 m
+  => 0 failures.
+
+UNDERWATER (bluerov2)  --  python3 tools/run_attack_suite.py --profile bluerov2
+  [SKIP] gps_spoof      : GPS does not reach a SUBMERGED AUV; applicable only in
+                          surfaced GPS-fix windows -- live verification is WO-17.
+                          (Skipping physically-correct no-effect, not failing it.)
+  [SKIP] acoustic_spoof : not implemented until WO-16 (the submerged analog of
+                          GPS spoofing); listed in the profile's applicable set.
+  [PASS] c2_replay      : forged RC override moved TRUE pose 6.61 m (C2 is
+                          MAVLink-level, medium-agnostic -- works submerged).
+  [N/A ] ais_spoof      : AIS does not propagate underwater -- correctly excluded
+                          while submerged (not a gap).
+  => 0 failures. Self-contained --boot run verified: boot -> suite -> teardown,
+     all children cleaned up afterward.
+
+DOMAIN-CORRECTNESS is the point: the suite encodes the roadmap's deliberate
+attack-by-domain semantics. Underwater gps_spoof/acoustic/ais are handled as
+SKIP/SKIP/N-A (pending WO-16/WO-17), not mis-reported as failures.
+
+FIX shipped alongside: run_sim.sh `down` now also kills the VRX launch
+grandchildren (parameter_bridge / pose_tf_broadcaster / robot_state_publisher).
+They previously survived teardown and, with a stale gz server serving /wamv
+topics + a stale relay on :9002, silently broke the next surface boot.
+
+VERDICT: WO-15 PASS on both domains. With WO-14, a checkpoint is now one command
+per domain: `run_sim.sh <p> up && run_attack_suite.py --profile <p> && run_sim.sh
+<p> down` (or a single `--boot`). Next: CHECKPOINT 2, then WO-16.
