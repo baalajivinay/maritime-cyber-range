@@ -24,15 +24,20 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active work order: WO-16** (acoustic-positioning spoofing — the submerged
-  analog of GPS spoofing; Phase C, Track U). Investigate what submerged
-  positioning input ArduSub consumes (likely the FDM JSON position field, same
-  channel gps_spoof.py already sits on), then inject a false position there.
-  Build `attacks/acoustic_spoof.py`; then wire the suite's acoustic check.
-- **Last completed: CHECKPOINT 2 — PASS, both domains, 0 failures.** Automated
-  harness (run_sim.sh + run_attack_suite.py) reproduces Checkpoint 1: surface
-  gps/ais/c2 PASS; underwater c2 PASS + gps/acoustic SKIP + ais N/A. Evidence
-  `evidence/checkpoint2_automated.log`. Committed.
+- **Active work order: WO-17** (GPS spoofing during the AUV's surfaced windows).
+  KEY FACT from WO-16: ArduSub uses `EK3_SRC1_POSXY=6` (ExternalNav), NOT GPS,
+  for XY — so GPS spoofing has no effect even at the surface *unless* a GPS EKF
+  source is active for the surfaced regime. WO-17 must either configure a GPS
+  source set for surfaced windows (EK3_SRC2=GPS + source switching) or document
+  that with such a source the already-proven surface gps_spoof relay applies
+  unchanged. Then WO-18 (AIS surfaced-only — largely already enforced by the
+  suite's N/A handling) and WO-19 (C2 vs ArduSub — largely already shown by the
+  suite's c2 check moving true pose 6.61 m). Then CHECKPOINT 3.
+- **Last completed: WO-16** (`attacks/acoustic_spoof.py`) — the submerged analog
+  of GPS spoofing. Investigated + found ArduSub's submerged positioning is
+  ExternalNav (VISION_POSITION_ESTIMATE), not GPS. Built a spoof of that channel;
+  live result: AUV's believed position walked 11 m off true while true pose
+  stayed put; suite acoustic check PASS. Evidence `evidence/wo16_acoustic_spoof.log`.
 
 ### Two operational facts proven in WO-14/15 (don't relearn)
 - ArduPilot SITL reads stdin as a console and EXITS on stdin EOF — launch with a
@@ -180,11 +185,16 @@ Legend: [x] done · [~] in progress · [ ] not started
       reproduces Checkpoint 1. Evidence `evidence/checkpoint2_automated.log`.
 
 ### Phase C Track U — underwater attack adaptation
-- [ ] **WO-16 — Acoustic-positioning spoofing** (submerged analog of GPS spoof;
-      determine ArduSub's submerged positioning input, inject in that path).
-- [ ] **WO-17 — GPS spoofing during surfaced windows.**
-- [ ] **WO-18 — AIS spoofing, surfaced-only** (enforce no-op while submerged).
-- [ ] **WO-19 — C2 replay/inject vs ArduSub** (true depth/pos effect, like WO-10).
+- [x] **WO-16 — Acoustic-positioning spoofing.** `attacks/acoustic_spoof.py`.
+      Submerged positioning = ExternalNav/VISION_POSITION_ESTIMATE (investigated,
+      not GPS). Feed-true-when-off / feed-false-when-on; believed walked 11 m off
+      true. Suite check PASS. Evidence `evidence/wo16_acoustic_spoof.log`.
+- [~] **WO-17 — GPS spoofing during surfaced windows.** ACTIVE. See CURRENT
+      POSITION note: needs a GPS EKF source active in the surfaced regime.
+- [ ] **WO-18 — AIS spoofing, surfaced-only** (mostly done: suite marks ais N/A
+      submerged; profile omits ais from the AUV attack set — just document).
+- [ ] **WO-19 — C2 replay/inject vs ArduSub** (mostly shown: suite c2 check moves
+      true pose 6.61 m; WO-13 dove via RC override — capture depth-effect evidence).
 - [ ] **CHECKPOINT 3** — full regression both domains, every applicable attack.
 
 ### Phase D — generalize beyond one vehicle per domain

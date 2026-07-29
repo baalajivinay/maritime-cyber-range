@@ -239,10 +239,50 @@ def check_c2_replay(conn):
 
 
 def check_acoustic_spoof(conn):
-    """Submerged analog of GPS spoofing -- not built until WO-16."""
-    if os.path.exists(os.path.join(REPO, "attacks", "acoustic_spoof.py")):
-        return "FAIL", "attacks/acoustic_spoof.py exists but no check is wired here -- update the suite (WO-16)"
-    return "SKIP", "acoustic_spoof not implemented yet (WO-16); listed in the profile's applicable set"
+    """Submerged analog of GPS spoofing (WO-16): the AUV's absolute position
+    comes from the acoustic/ExternalNav channel (VISION_POSITION_ESTIMATE), not
+    GPS. acoustic_spoof feeds that channel; PASS if the AUV's BELIEVED position
+    walks away from its TRUE Gazebo position while spoofing, and tracks it when
+    off."""
+    if not os.path.exists(os.path.join(REPO, "attacks", "acoustic_spoof.py")):
+        return "SKIP", "acoustic_spoof not implemented yet (WO-16)"
+    import threading
+    import acoustic_spoof as A
+
+    feed = A.connect()
+    threading.Thread(target=A.run_feed, args=(feed,), daemon=True).start()
+
+    def believed_ne(d=2.5):
+        last, end = None, time.time() + d
+        while time.time() < end:
+            m = conn.recv_match(type="LOCAL_POSITION_NED", blocking=False)
+            if m is not None:
+                last = m
+            time.sleep(0.02)
+        return (last.x, last.y) if last else None  # (N, E)
+
+    def true_ne():
+        p = true_pose()          # gazebo (x=E, y=N, z=U)
+        return (p[1], p[0]) if p else None  # (N, E)
+
+    time.sleep(8)  # let ExternalNav establish
+    b0, t0 = believed_ne(), true_ne()
+    if b0 is None or t0 is None:
+        return "FAIL", "no position solution (ExternalNav feed not fusing?)"
+    with A._lock:
+        A.state.mode = "ramp"; A.state.start_time = time.time(); A.state.active = True
+    time.sleep(16)
+    b1, t1 = believed_ne(), true_ne()
+    with A._lock:
+        A.state.active = False
+    if b1 is None or t1 is None:
+        return "FAIL", "lost position solution under spoof"
+    off_div = abs(b0[1] - t0[1])          # believed-vs-true East, no spoof
+    spoof_div = abs(b1[1] - t1[1])        # believed-vs-true East, spoofing
+    ok = off_div < 3.0 and spoof_div > 5.0
+    return ("PASS" if ok else "FAIL"), \
+        (f"believed-vs-true East divergence: {off_div:.1f} m when off, "
+         f"{spoof_div:.1f} m while spoofing (belief walked off, true pose unmoved)")
 
 
 CHECKS = {
