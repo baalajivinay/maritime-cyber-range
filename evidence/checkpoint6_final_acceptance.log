@@ -1,0 +1,42 @@
+CHECKPOINT 6 -- FINAL ACCEPTANCE GATE (2026-07-30)
+
+The roadmap's terminal gate: "full regression, both domains, before calling this
+milestone done." All mandatory work orders (Phases A-F) and Checkpoints 1-5 are
+complete; this records the final full-system acceptance.
+
+VEHICLE / ATTACK REGRESSION (Checkpoint 4, run fresh this session):
+  wamv     (surface, VRX)  : gps_spoof PASS, ais_spoof PASS, c2_replay PASS
+  blueboat (surface, gz)   : gps_spoof PASS, ais_spoof PASS, c2_replay PASS
+  bluerov2 (underwater, gz): acoustic_spoof PASS, c2_replay PASS,
+                             gps_spoof SKIP (N/A submerged), ais_spoof N/A
+  -> every applicable attack in every domain, across all three vehicles, PASS.
+
+DETECTION + SCORING (Checkpoint 5, run fresh this session):
+  Detectors ran BLIND on live feeds (never the ground truth); scored after the
+  fact:
+    surface   : precision 1.00 / recall 1.00 (no false positive on the legit vessel)
+    underwater: recall 1.00 / precision 0.82 (acoustic 0.79, c2 1.00)
+  -> the full attack -> alert -> score loop works, both domains.
+
+VEHICLE CONTRACT (final sweep, this gate):
+  tools/validate_vehicle.py wamv | blueboat | bluerov2 -> ALL PASS.
+  -> a designer can validate any vehicle against the contract before booting it.
+
+PACKAGING:
+  tools/run_sim.sh (one-command, health-checked, any vehicle) +
+  tools/run_attack_suite.py + detection/ + tools/score_detectors.py +
+  tools/validate_vehicle.py + docs/DESIGNER_GUIDE.md.
+
+STATE AT ACCEPTANCE:
+  - git tree clean; no stranded sim processes.
+  - Both vehicle domains (surface MASS/USV + underwater AUV) are first-class.
+  - Two surface vehicles (WAM-V, BlueBoat) + one AUV (BlueROV2) prove the harness
+    is genuinely multi-vehicle, not hardcoded to one hull per domain.
+
+VERDICT: CHECKPOINT 6 PASS. The maritime cyber range is complete against its
+stated scope: a dual-domain simulator where every applicable cyber-attack works,
+blind detectors catch them, and an offline scorer grades detection performance --
+generalizable to new vehicles via a validated contract.
+
+Optional, not done (explicitly optional in the roadmap): WO-22 (a second AUV) and
+WO-27 (a one-command container). Neither is required to call this milestone done.
