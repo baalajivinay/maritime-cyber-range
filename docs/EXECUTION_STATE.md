@@ -24,16 +24,14 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active: CHECKPOINT 6 (final acceptance gate).** Every MANDATORY work order
-  and checkpoint is DONE — Phases A/B/C/D/E/F complete; Checkpoints 1,2,3,4,5
-  PASS. Only optional items remain (WO-22 second AUV, WO-27 one-command
-  container) plus CHECKPOINT 6, the final full-system acceptance regression.
-  Next: run the three-vehicle attack regression + detection/scoring once more and
-  record CHECKPOINT 6.
-- **Last completed: WO-21 (second surface vehicle, BlueBoat) + CHECKPOINT 4
-  PASS.** Harness generalized (per-profile `world` config); all three vehicles
-  regression-clean. Before that: WO-20 (contract + validator), WO-26 (designer
-  guide), Phase E (WO-23/24/25, CP5).
+- **PROJECT COMPLETE (against stated scope).** CHECKPOINT 6 (final acceptance
+  gate) PASS. Every mandatory work order and all six checkpoints are done. Only
+  the two explicitly-OPTIONAL items remain if ever wanted: WO-22 (a second AUV,
+  e.g. dave's bluerov2_heavy — mirror WO-21 underwater) and WO-27 (a one-command
+  container). Neither is required.
+- **Last completed: CHECKPOINT 6 — final acceptance.** Consolidates fresh CP4
+  (all 3 vehicles, all attacks) + CP5 (detection/scoring both domains) + a
+  contract sweep. Evidence `evidence/checkpoint6_final_acceptance.log`.
 
 ### Two operational facts proven in WO-14/15 (don't relearn)
 - ArduPilot SITL reads stdin as a console and EXITS on stdin EOF — launch with a
@@ -239,6 +237,9 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-07-30: CHECKPOINT 6 (final acceptance) PASS -> PROJECT COMPLETE against
+  stated scope. All mandatory WOs + all 6 checkpoints done. Only optional
+  WO-22/WO-27 remain if ever wanted.
 - 2026-07-30: WO-21 + CHECKPOINT 4 PASS. Second surface vehicle (BlueBoat) boots
   + passes all surface attacks; harness generalized to a per-profile world
   config; all three vehicles regression-clean. Phases A–F now all complete;
