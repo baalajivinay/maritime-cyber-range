@@ -24,22 +24,16 @@ for underwater.
 
 ## CURRENT POSITION
 
-- **Active: PHASE D (generalization) + PHASE F (packaging) remain.** Phases
-  A/B/C/E are COMPLETE (Checkpoints 1,2,3,5 passed). Deliberately did Phase E
-  before Phase D (E is the progress report's stated next plan + higher value).
-  Remaining:
-    - Phase D: WO-20 vehicle-model contract + validation script; WO-21 second
-      surface vehicle (proves generalization); WO-22 optional second AUV;
-      CHECKPOINT 4.
-    - Phase F: WO-26 `docs/DESIGNER_GUIDE.md`; WO-27 optional one-command
-      container; CHECKPOINT 6 (final acceptance).
-  Suggested next: WO-26 (designer guide — doc-only, high value, ties the whole
-  system together for a designer) then Phase D.
-- **Last completed: WO-20 (vehicle contract + validator) and WO-26 (designer
-  guide).** Before that, PHASE E COMPLETE + CHECKPOINT 5 PASS (WO-23 detectors,
-  WO-24 dashboard alerts, WO-25 scorer; surface 1.00/1.00, underwater recall
-  1.00 / precision 0.82). Only WO-21 (second surface vehicle, + CP4), optional
-  WO-22/WO-27, and CP6 remain.
+- **Active: CHECKPOINT 6 (final acceptance gate).** Every MANDATORY work order
+  and checkpoint is DONE — Phases A/B/C/D/E/F complete; Checkpoints 1,2,3,4,5
+  PASS. Only optional items remain (WO-22 second AUV, WO-27 one-command
+  container) plus CHECKPOINT 6, the final full-system acceptance regression.
+  Next: run the three-vehicle attack regression + detection/scoring once more and
+  record CHECKPOINT 6.
+- **Last completed: WO-21 (second surface vehicle, BlueBoat) + CHECKPOINT 4
+  PASS.** Harness generalized (per-profile `world` config); all three vehicles
+  regression-clean. Before that: WO-20 (contract + validator), WO-26 (designer
+  guide), Phase E (WO-23/24/25, CP5).
 
 ### Two operational facts proven in WO-14/15 (don't relearn)
 - ArduPilot SITL reads stdin as a console and EXITS on stdin EOF — launch with a
@@ -211,10 +205,17 @@ Legend: [x] done · [~] in progress · [ ] not started
 - [x] **WO-20 — Vehicle model contract + validation script**
       (`tools/validate_vehicle.py`; profiles self-describe via `model_sdf`).
       wamv+bluerov2 ALL PASS; broken profile → 4 faults caught.
-- [ ] **WO-21 — Second surface vehicle** (prove the contract). REMAINING — real
-      asset work; candidate `~/SITL_Models/Gazebo/models/blueboat`.
-- [ ] **WO-22 (optional) — Second underwater vehicle.**
-- [ ] **CHECKPOINT 4** — full regression across larger vehicle set (after WO-21).
+- [x] **WO-21 — Second surface vehicle (BlueBoat).** Different hull/thrusters,
+      gz-direct `surface_harbor` world, distinct AIS identity. Vendored + swapped
+      hydro to gz-sim standard + box buoyancy (floats at waterline) + navsat.
+      Generalized the harness: run_sim.sh reads each profile's `world` config,
+      run_attack_suite.py derives pose topic per profile. validate_vehicle.py:
+      ALL PASS. Suite: gps/ais/c2 all PASS. Evidence
+      `evidence/wo21_second_surface_vehicle.log`.
+- [ ] **WO-22 (optional) — Second underwater vehicle.** Optional; not done.
+- [x] **CHECKPOINT 4 — PASS.** All three vehicles (wamv VRX, blueboat gz,
+      bluerov2 gz) regression-clean through the generalized harness; original two
+      not broken. Evidence `evidence/checkpoint4_vehicle_set.log`.
 
 ### Phase E (shared) — detection + evaluation  [DONE]
 - [x] **WO-23 — Rule-based detectors per domain.** `detection/detectors.py` +
@@ -238,6 +239,10 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-07-30: WO-21 + CHECKPOINT 4 PASS. Second surface vehicle (BlueBoat) boots
+  + passes all surface attacks; harness generalized to a per-profile world
+  config; all three vehicles regression-clean. Phases A–F now all complete;
+  only optional WO-22/WO-27 + final CHECKPOINT 6 remain.
 - 2026-07-29: PHASE E COMPLETE + CHECKPOINT 5 PASS. Detection subsystem
   (detectors blind on live feeds + offline scorer + dashboard alert layer). Live
   both domains: surface 1.00/1.00, underwater recall 1.00 / precision 0.82. Did

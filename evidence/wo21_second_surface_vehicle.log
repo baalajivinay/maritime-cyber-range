@@ -1,0 +1,45 @@
+WO-21: prove the vehicle contract with a SECOND surface vehicle (BlueBoat).
+
+Goal: a genuinely different surface vehicle boots + is attacked through the same
+harness, proving WO-20's contract generalizes. Where it didn't work first try,
+the HARNESS/contract was extended -- not one-off patched for this vehicle.
+
+The second vehicle (BlueBoat, from SITL_Models) differs from the WAM-V in:
+  - hull + thruster layout: a small USV with two aft thrusters (motor_port /
+    motor_stbd on control channels 0/2), vs the WAM-V's twin engines.
+  - world + boot method: a plain `gz sim` world (surface_harbor) rather than the
+    VRX ros2 launch (sydney_regatta) the WAM-V uses.
+  - AIS identity: MMSI 503999888 "BLUEBOAT-CYBER" (valid Australia MID), distinct
+    from the WAM-V's 123456789.
+
+What it took (self-contained, committed):
+  - Vendored the model into sim_config/models/blueboat/ (meshes, model.config),
+    URIs model://, <fdm_port_in> 9002 -> 9100 for the relay pattern.
+  - gz-waves not installed here -> swapped gz-waves1-hydrodynamics-system for the
+    standard gz-sim-hydrodynamics-system; added a box buoyancy collision tuned so
+    the 30 kg hull floats at the waterline (settles at z ~= +0.04 m); added a
+    navsat sensor (contract requires a surface GPS source).
+  - Authored sim_config/surface_world.sdf (graded buoyancy + navsat system +
+    spherical coords at home), the surface analog of underwater_world.sdf.
+  - profiles/blueboat.json, with a "world" config making it self-describing.
+  - GENERALIZED THE HARNESS (the real WO-21 payoff): tools/run_sim.sh now reads
+    each profile's "world" config (method vrx|gz, sdf/urdf/world_name/model_name)
+    instead of hardcoding VRX-for-surface / gz-for-underwater; teardown too.
+    tools/run_attack_suite.py derives its true-pose topic from the profile's
+    world_name/model_name. Both are now vehicle-agnostic.
+
+Contract check (unchanged WO-20 validator): `validate_vehicle.py blueboat` ->
+ALL PASS (17 checks).
+
+Live boot (tools/run_sim.sh blueboat up): gz world 'surface_harbor' + relay +
+ArduRover SITL + MAVLink bridge + AIS emulator all [OK].
+
+Attack suite (tools/run_attack_suite.py --profile blueboat) -- 0 failures:
+  PASS  gps_spoof  -- MAVLink position jumped 50.0 m; TRUE pose unmoved
+  PASS  ais_spoof  -- ghost 999999001 + impersonation of real MMSI 503999888
+  PASS  c2_replay  -- forged RC override moved TRUE pose 2.18 m
+
+VERDICT: WO-21 PASS. The harness generalizes to a second surface vehicle with a
+different hull, world, and boot method. The WO-20 contract needed no per-vehicle
+patching; the harness gained a per-profile world config that any future vehicle
+reuses.

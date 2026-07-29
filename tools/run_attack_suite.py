@@ -21,6 +21,7 @@ Usage:
   python3 tools/run_attack_suite.py --profile <profile> --boot
 """
 import argparse
+import json
 import math
 import os
 import re
@@ -52,12 +53,18 @@ ATTACKS = constants.ATTACKS
 RUN_DIR = os.environ.get("MCR_RUN_DIR", f"/tmp/mcr_run/{PROFILE}")
 RELAY_FIFO = os.path.join(RUN_DIR, "relay.fifo")
 
-if DOMAIN == "underwater":
-    MODEL = "bluerov2"
-    POSE_TOPIC = "/world/underwater_harbor/pose/info"
-else:
-    MODEL = "wamv"
-    POSE_TOPIC = "/world/sydney_regatta/pose/info"
+# Model + true-pose topic come from the profile's "world" config, so a new
+# vehicle in a new world is handled without editing this file.
+_world = {}
+try:
+    with open(os.path.join(REPO, "profiles", PROFILE + ".json")) as _f:
+        _world = json.load(_f).get("world", {})
+except Exception:
+    pass
+MODEL = _world.get("model_name", "bluerov2" if DOMAIN == "underwater" else "wamv")
+_world_name = _world.get("world_name",
+                         "underwater_harbor" if DOMAIN == "underwater" else "sydney_regatta")
+POSE_TOPIC = f"/world/{_world_name}/pose/info"
 
 MAV_ENDPOINT = f"udpin:127.0.0.1:{constants.MAVLINK_AUTO_MISSION_PORT}"
 

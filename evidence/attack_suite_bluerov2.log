@@ -1,7 +1,7 @@
 WO-15 attack suite -- profile=bluerov2 domain=underwater
-run: 2026-07-29 20:11:52
+run: 2026-07-30 00:47:50
 
 [SKIP] gps_spoof: GPS does not reach a submerged AUV; applies only during surfaced windows -- live verification is WO-17 (submerged analog is acoustic spoofing, WO-16)
 [PASS] acoustic_spoof: believed-vs-true East divergence: 0.0 m when off, 9.2 m while spoofing (belief walked off, true pose unmoved)
-[PASS] c2_replay: forged RC override moved TRUE pose 6.61 m
+[PASS] c2_replay: forged RC override moved TRUE pose 6.62 m
 [N/A ] ais_spoof: AIS does not propagate underwater -- correctly excluded while submerged
