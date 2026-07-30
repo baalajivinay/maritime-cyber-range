@@ -19,7 +19,10 @@ tools/view_3d.sh                   # optional: attach the Gazebo 3D GUI (needs a
 tools/run_demo.sh wamv down        # tear everything down
 ```
 
-`run_demo.sh <profile> status` health-checks the whole demo. Profiles:
+`run_demo.sh <profile> status` health-checks the whole demo.
+**Switching vehicle** is one command (it auto-clears whatever is running):
+`tools/run_demo.sh bluerov2 up` (or `wamv` / `blueboat`), then reload the page.
+ Profiles:
 `wamv` (surface, richest), `blueboat` (2nd surface vehicle), `bluerov2` (AUV).
 
 **GPU note:** the dashboard is GPU-free and works anywhere. The Gazebo 3D GUI
