@@ -26,6 +26,19 @@ tools/run_demo.sh wamv down        # tear everything down
 needs working OpenGL/GPU acceleration — run it on your real laptop desktop
 (NVIDIA/Intel driver active), not a headless/remote display.
 
+## Pre-flight (do this right before you present)
+
+- **Boot fresh.** A long-running session lets the vehicle drift and its
+  navigation state degrade, so click-to-navigate starts wandering instead of
+  converging. Always start clean:
+  `tools/run_demo.sh wamv down && tools/run_demo.sh wamv up` — then open the
+  dashboard. On a fresh boot the boat converges cleanly (e.g. 59 m → ARRIVED).
+- **Confirm health:** `tools/run_demo.sh wamv status` should show 4 sim checks
+  [OK] + dashboard http 200.
+- **Sanity-click** a destination once and watch "metres to go" tick down to
+  ARRIVED before the audience is watching.
+- Have the backup screencast open in another tab in case of a live hiccup.
+
 ## Suggested flow (~7 min)
 
 1. **Open (Gazebo 3D, if GPU available)** — "This is a full-physics maritime
