@@ -233,12 +233,20 @@ def stop_attacks():
 
 
 def goto(lat, lon):
-    """Navigate to a point via a real AUTO mission (the WO-09-proven path;
-    GUIDED position-target didn't reliably drive the rover)."""
-    import auto_mission
-    c = cmd_conn()
-    # read current position as waypoint 0 (ArduPilot treats item 0 as home);
-    # the target is waypoint 1 so the vehicle actually travels a leg.
+    """Sail to a point via the proven AUTO-mission recipe -- verified to
+    physically move the vehicle across the Gazebo water. Uses a fresh connection
+    on the auto_mission port (the shared cmd conn / GUIDED target did not
+    reliably drive it), uploads a 2-waypoint mission (current -> target),
+    switches to AUTO, and arms with confirmation."""
+    c = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_AUTO_MISSION_PORT}')
+    if c.wait_heartbeat(timeout=10) is None:
+        return "no autopilot heartbeat"
+    # reset to a clean fresh state -- arming from MANUAL/disarmed is what reliably
+    # (re)starts AUTO navigation; re-arming an already-armed AUTO vehicle does not.
+    c.set_mode(c.mode_mapping().get('MANUAL', 0)); time.sleep(0.5)
+    c.mav.command_long_send(c.target_system, c.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 0, 0, 0, 0, 0, 0, 0)
+    time.sleep(1.5)
     cur = None
     end = time.time() + 3
     while time.time() < end:
@@ -246,14 +254,39 @@ def goto(lat, lon):
         if m and m.lat:
             cur = (m.lat / 1e7, m.lon / 1e7)
         time.sleep(0.02)
-    wps = [cur, (lat, lon)] if cur else [(lat, lon)]
-    auto_mission.upload_mission(c, wps)
-    c.set_mode(c.mode_mapping().get("AUTO", 10)); time.sleep(1)
-    for _ in range(3):
+    if cur is None:
+        c.close(); return "no position fix yet"
+    wps = [cur, (lat, lon)]
+    c.mav.mission_count_send(c.target_system, c.target_component, len(wps))
+    for _ in range(len(wps) + 2):
+        req = c.recv_match(type=['MISSION_REQUEST', 'MISSION_REQUEST_INT'], blocking=True, timeout=5)
+        if not req:
+            break
+        s = req.seq
+        la, lo = wps[s]
+        c.mav.mission_item_int_send(
+            c.target_system, c.target_component, s,
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+            0, 1, 0, 0, 0, 0, int(la * 1e7), int(lo * 1e7), 0)
+        if s == len(wps) - 1:
+            break
+    c.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
+    c.set_mode(c.mode_mapping().get('AUTO', 10)); time.sleep(1)
+    armed = False
+    for _ in range(6):
         c.mav.command_long_send(c.target_system, c.target_component,
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
-        time.sleep(0.8)
-    return f"navigating to {lat:.5f}, {lon:.5f} (AUTO mission)"
+        time.sleep(1)
+        hb = c.recv_match(type='HEARTBEAT', blocking=True, timeout=2)
+        if hb and (hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED):
+            armed = True; break
+    # force the mission to (re)start at the target waypoint -- uploading a new
+    # mission while already in AUTO does NOT auto-jump to it, so the boat would
+    # otherwise keep holding at the previous waypoint.
+    c.mav.mission_set_current_send(c.target_system, c.target_component, 1)
+    print(f"[goto] AUTO to {lat:.5f},{lon:.5f} armed={armed}", flush=True)
+    c.close()
+    return f"sailing to {lat:.5f}, {lon:.5f} (AUTO){'' if armed else ' — arm not confirmed'}"
 
 
 # --- routes ------------------------------------------------------------------
