@@ -15,3 +15,4 @@ packet.json
 protocol.log
 logs/
 LASTLOG.TXT
+evidence/live_session_alerts.jsonl

@@ -300,16 +300,17 @@ def cmd_report():
 
 @app.route('/cmd/vehicle', methods=['POST'])
 def cmd_vehicle():
-    """Switch the whole demo to another vehicle. Heavy: reboots the sim + this
-    dashboard via run_demo.sh (~40 s). The browser should show 'switching' and
-    reconnect."""
+    """Switching vehicle means rebooting the whole stack + this dashboard for a
+    different profile. Doing that live from here proved fragile (it can leave
+    overlapping worlds mid-presentation), so this now just GUIDES the operator to
+    relaunch cleanly instead of tearing down the running demo."""
     prof = request.json.get('profile')
     if prof not in ("wamv", "blueboat", "bluerov2"):
         return jsonify(ok=False, msg="unknown profile"), 400
-    script = f"{_REPO}/tools/run_demo.sh {prof} down >/dev/null 2>&1; {_REPO}/tools/run_demo.sh {prof} up >/dev/null 2>&1"
-    subprocess.Popen(["setsid", "bash", "-c", script],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return jsonify(ok=True, msg=f"switching to {prof} (~40 s) -- the page will reconnect")
+    return jsonify(ok=True, safe=True,
+                   msg=f"To switch to {prof}, relaunch in a terminal:  "
+                       f"tools/run_demo.sh {PROFILE} down  &&  tools/run_demo.sh {prof} up  "
+                       f"(then reload this page). Not switched live -- protects the running demo.")
 
 
 if __name__ == '__main__':
