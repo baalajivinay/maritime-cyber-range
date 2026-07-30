@@ -61,6 +61,17 @@ def mavlink_thread():
     except Exception as e:
         print(f"MAVLink thread error: {e}")
 
+# WO-24: one shared detector suite for the whole dashboard. The single AIS
+# listener (ais_thread) feeds it, and so does the MAVLink detector loop -- so
+# nothing double-binds the AIS UDP port.
+_det_suite = DetectorSuite(constants.DOMAIN, cfg={"known_mmsi": constants.VESSEL_MMSI})
+
+
+def _push_alerts(alerts):
+    for a in alerts:
+        socketio.emit('attack_alert', a.as_dict())
+
+
 def ais_thread():
     try:
         ais_ip, ais_port = constants.AIS_UDP_ADDR
@@ -77,6 +88,10 @@ def ais_thread():
                             'lat': float(lat),
                             'lon': float(lon)
                         })
+                        # same feed -> AIS detectors (ghost / impersonation)
+                        _push_alerts(_det_suite.update({
+                            "type": "ais", "t": time.time(),
+                            "mmsi": decoded.mmsi, "lat": float(lat), "lon": float(lon)}))
             except Exception as e:
                 # ignore decode errors
                 pass
@@ -84,50 +99,23 @@ def ais_thread():
         print(f"AIS thread error: {e}")
 
 def detector_thread():
-    """WO-24: run the domain's blind detectors on the live feeds and push each
-    Alert to the browser as an 'attack_alert' event -- closing the attack->alert
-    loop. Taps a spare ArduPilot MAVLink port (SERIAL2 tcp:5763) so it does not
-    contend with the dashboard's own MAVLink feed. Never reads ground truth."""
-    suite = DetectorSuite(constants.DOMAIN, cfg={"known_mmsi": constants.VESSEL_MMSI})
+    """WO-24: run the domain's blind detectors on the live MAVLink feed and push
+    each Alert to the browser as an 'attack_alert' event -- closing the
+    attack->alert loop. Taps a spare ArduPilot MAVLink port (SERIAL2 tcp:5763) so
+    it does not contend with the dashboard's own MAVLink feed. AIS events are fed
+    to the same shared suite from ais_thread. Never reads ground truth."""
+    suite = _det_suite
+    push = _push_alerts
 
-    def push(alerts):
-        for a in alerts:
-            socketio.emit('attack_alert', a.as_dict())
-
-    # AIS feed (surface) -> detectors
-    def ais_detect():
-        if constants.DOMAIN != 'surface' or not constants.AIS_UDP_ADDR:
-            return
-        import socket as _socket
-        from pyais import decode
-        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
-        s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-        try:
-            s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
-        except OSError:
-            pass
-        s.bind(("127.0.0.1", constants.AIS_UDP_ADDR[1]))
-        while True:
-            try:
-                data, _ = s.recvfrom(2048)
-                for ln in data.decode("ascii", "ignore").splitlines():
-                    ln = ln.strip()
-                    if ln.startswith("!AIVD"):
-                        d = decode(ln).asdict()
-                        if d.get("lat") and d.get("lon") and d.get("mmsi"):
-                            push(suite.update({"type": "ais", "t": time.time(),
-                                               "mmsi": d["mmsi"], "lat": float(d["lat"]), "lon": float(d["lon"])}))
-            except Exception:
-                pass
-
-    threading.Thread(target=ais_detect, daemon=True).start()
-
+    label = f"{constants.DOMAIN.title()} — {constants.PROFILE_NAME} ({constants.ARDUPILOT_VEHICLE_TYPE})"
     while True:
         try:
             m = mavutil.mavlink_connection("tcp:127.0.0.1:5763")
             m.wait_heartbeat(timeout=15)
             m.mav.request_data_stream_send(m.target_system, m.target_component,
                                            mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
+            mode_map = {v: k for k, v in m.mode_mapping().items()} if m.mode_mapping() else {}
+            socketio.emit('status_update', {'vehicle': label})
             while True:
                 msg = m.recv_match(blocking=True, timeout=1)
                 if msg is None:
@@ -136,10 +124,15 @@ def detector_thread():
                 mt = msg.get_type()
                 if mt == "GLOBAL_POSITION_INT":
                     push(suite.update({"type": "believed_pos", "t": t, "lat": msg.lat / 1e7, "lon": msg.lon / 1e7}))
+                    socketio.emit('status_update', {'depth': msg.relative_alt / 1000.0})
                 elif mt == "LOCAL_POSITION_NED":
                     push(suite.update({"type": "local_pos", "t": t, "n": msg.x, "e": msg.y, "d": msg.z, "vx": msg.vx, "vy": msg.vy}))
+                elif mt == "VFR_HUD":
+                    socketio.emit('status_update', {'speed': msg.groundspeed})
                 elif mt == "HEARTBEAT" and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
-                    push(suite.update({"type": "armed", "t": t, "armed": bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)}))
+                    armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+                    push(suite.update({"type": "armed", "t": t, "armed": armed}))
+                    socketio.emit('status_update', {'armed': armed, 'mode': mode_map.get(msg.custom_mode, str(msg.custom_mode))})
                 elif mt == "RC_CHANNELS":
                     driven = [getattr(msg, f"chan{i}_raw", 0) for i in (1, 3)]
                     if any(900 < v < 2100 and abs(v - 1500) > 100 for v in driven):

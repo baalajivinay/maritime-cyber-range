@@ -1,48 +1,70 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WAM-V GPS Monitor</title>
+    <title>Maritime Cyber Range — Live Monitor</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 20px; font-family: sans-serif; display: flex; gap: 20px; }
-        #map { height: 600px; width: 800px; }
-        #info { padding: 20px; background: #f0f0f0; border-radius: 5px; min-width: 250px; }
-        .controls { margin-top: 20px; padding-top: 10px; border-top: 1px solid #ccc; }
-        .control-item { margin-bottom: 5px; }
+        :root { --blue:#2563eb; --red:#dc2626; --orange:#ea580c; --ok:#16a34a; --bg:#0f172a; --panel:#1e293b; --ink:#e2e8f0; --muted:#94a3b8; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, sans-serif; background: #0b1220; color: var(--ink); }
+        header { background: var(--bg); padding: 12px 20px; display:flex; align-items:center; gap:14px; border-bottom:2px solid #1e293b; }
+        header h1 { font-size: 18px; margin:0; letter-spacing:.3px; }
+        header .sub { color: var(--muted); font-size: 13px; }
+        .dot { width:10px; height:10px; border-radius:50%; background:var(--ok); box-shadow:0 0 8px var(--ok); }
+        .wrap { display:flex; gap:14px; padding:14px; height: calc(100vh - 52px); }
+        #map { flex: 1; border-radius: 10px; overflow:hidden; min-width:0; }
+        .side { width: 340px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
+        .card { background: var(--panel); border-radius:10px; padding:14px; }
+        .card h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); font-weight:700; }
+        .bignum { font-size:44px; font-weight:800; line-height:1; }
+        .bignum small { font-size:16px; color:var(--muted); font-weight:600; }
+        .tag { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; }
+        .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; font-size:13px; }
+        .grid2 .k { color:var(--muted); }
+        .legend div { display:flex; align-items:center; gap:8px; font-size:13px; margin:4px 0; }
+        .sw { width:14px; height:14px; border-radius:3px; }
+        #alerts { max-height: 260px; overflow-y:auto; }
+        .alert { border-left:4px solid #334155; padding:5px 8px; margin:5px 0; background:#0b1220; border-radius:4px; font-size:12px; animation: flash .8s; }
+        @keyframes flash { from { background:#3b2020; } to { background:#0b1220; } }
+        .muted { color: var(--muted); }
     </style>
 </head>
 <body>
-    <div>
-        <h2>WAM-V Live Position</h2>
-        <div id="map"></div>
-    </div>
-    <div id="info">
-        <h3>Current Data</h3>
-        <p><strong>Lat:</strong> <span id="lat">Waiting...</span></p>
-        <p><strong>Lon:</strong> <span id="lon">Waiting...</span></p>
-        <p><strong>Time:</strong> <span id="time">Waiting...</span></p>
-        <p><strong>Lag (ms):</strong> <span id="lag">Waiting...</span></p>
-        
-        <div class="controls">
-            <h4>Layers</h4>
-            <div class="control-item">
-                <input type="checkbox" id="layer_true" checked>
-                <label for="layer_true">True Position (Gazebo)</label>
-            </div>
-            <div class="control-item">
-                <input type="checkbox" id="layer_believed" checked>
-                <label for="layer_believed">ArduPilot Believes</label>
-            </div>
-            <div class="control-item">
-                <input type="checkbox" id="layer_ais" checked>
-                <label for="layer_ais">AIS Contacts</label>
-            </div>
-        </div>
+    <header>
+        <span class="dot" id="conn"></span>
+        <h1>🛰️ Maritime Cyber Range</h1>
+        <span class="sub" id="vehicle">Live Monitor</span>
+    </header>
 
-        <div class="controls">
-            <h4>Attack Alerts <span id="alert_count" style="color:#c0392b">(0)</span></h4>
-            <div id="alerts" style="max-height:220px; overflow-y:auto; font-size:12px;">
-                <p style="color:#888">No attacks detected.</p>
+    <div class="wrap">
+        <div id="map"></div>
+        <div class="side">
+            <div class="card">
+                <h3>GPS / Position spoof error</h3>
+                <div class="bignum"><span id="err">0.0</span><small> m</small></div>
+                <div class="muted" id="errnote" style="margin-top:6px;">true vs. believed position</div>
+            </div>
+
+            <div class="card">
+                <h3>Vehicle telemetry</h3>
+                <div class="grid2">
+                    <div class="k">Mode</div><div id="mode">—</div>
+                    <div class="k">Armed</div><div id="armed">—</div>
+                    <div class="k">Speed</div><div id="speed">—</div>
+                    <div class="k">Depth/Alt</div><div id="depth">—</div>
+                </div>
+            </div>
+
+            <div class="card legend">
+                <h3>Legend</h3>
+                <div><span class="sw" style="background:var(--blue)"></span> True position (Gazebo ground truth)</div>
+                <div><span class="sw" style="background:var(--red)"></span> Believed position (ArduPilot)</div>
+                <div><span class="sw" style="background:var(--orange)"></span> AIS contacts</div>
+            </div>
+
+            <div class="card">
+                <h3>Attack alerts <span id="alert_count" style="color:var(--red)">(0)</span></h3>
+                <div id="alerts"><p class="muted">No attacks detected.</p></div>
             </div>
         </div>
     </div>
@@ -50,98 +72,86 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
-        var map = L.map('map').setView([-33.724223, 150.679736], 18);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 22,
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
+        var HOME = [-33.724223, 150.679736];
+        var map = L.map('map', {zoomControl:true}).setView(HOME, 16);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    {maxZoom: 20, attribution: '© OpenStreetMap'}).addTo(map);
 
-        // Icon definitions
-        var blueIcon = new L.Icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-        });
+        function dot(color){ return L.divIcon({className:'', iconSize:[16,16], iconAnchor:[8,8],
+            html:'<div style="width:16px;height:16px;border-radius:50%;background:'+color+
+                 ';border:2px solid #fff;box-shadow:0 0 6px '+color+'"></div>'}); }
 
-        var redIcon = new L.Icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-        });
-
-        var aisIcon = new L.Icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-        });
-
-        // Layer Groups
-        var trueLayer = L.layerGroup().addTo(map);
-        var believedLayer = L.layerGroup().addTo(map);
-        var aisLayer = L.layerGroup().addTo(map);
-
-        // Checkbox events
-        document.getElementById('layer_true').addEventListener('change', function(e) {
-            if (e.target.checked) { map.addLayer(trueLayer); } else { map.removeLayer(trueLayer); }
-        });
-        document.getElementById('layer_believed').addEventListener('change', function(e) {
-            if (e.target.checked) { map.addLayer(believedLayer); } else { map.removeLayer(believedLayer); }
-        });
-        document.getElementById('layer_ais').addEventListener('change', function(e) {
-            if (e.target.checked) { map.addLayer(aisLayer); } else { map.removeLayer(aisLayer); }
-        });
-
-        // Markers
-        var trueMarker = L.marker([-33.724223, 150.679736], {icon: blueIcon}).bindPopup("True Position (Gazebo)").addTo(trueLayer);
-        var believedMarker = L.marker([-33.724223, 150.679736], {icon: redIcon}).bindPopup("ArduPilot Believes").addTo(believedLayer);
+        var trueMarker = L.marker(HOME, {icon: dot('#2563eb'), zIndexOffset:1000}).bindTooltip('TRUE',{permanent:false}).addTo(map);
+        var believedMarker = L.marker(HOME, {icon: dot('#dc2626'), zIndexOffset:1000}).bindTooltip('BELIEVED',{permanent:false}).addTo(map);
+        var trueTrail = L.polyline([], {color:'#2563eb', weight:3, opacity:.7}).addTo(map);
+        var believedTrail = L.polyline([], {color:'#dc2626', weight:3, opacity:.7, dashArray:'1,0'}).addTo(map);
+        var connector = L.polyline([], {color:'#f59e0b', weight:2, dashArray:'6,6', opacity:.9}).addTo(map);
         var aisMarkers = {};
 
+        var truePos = null, believedPos = null, centered = false;
+        var TRAIL_MAX = 80;
+
+        function metersBetween(a, b){
+            if(!a||!b) return 0;
+            var R=6371000, dLat=(b[0]-a[0])*Math.PI/180, dLon=(b[1]-a[1])*Math.PI/180;
+            var lat=(a[0]+b[0])/2*Math.PI/180;
+            var x=dLon*Math.cos(lat), y=dLat; return Math.sqrt(x*x+y*y)*R;
+        }
+        function pushTrail(line, latlng){
+            var pts = line.getLatLngs(); pts.push(latlng);
+            if(pts.length>TRAIL_MAX) pts.shift(); line.setLatLngs(pts);
+        }
+        function refreshError(){
+            if(!truePos||!believedPos) return;
+            var d = metersBetween(truePos, believedPos);
+            var el = document.getElementById('err');
+            el.textContent = d.toFixed(1);
+            var spoofed = d > 5;
+            el.style.color = spoofed ? '#dc2626' : '#16a34a';
+            document.getElementById('errnote').textContent = spoofed ?
+                '⚠ believed position DIVERGED from true' : 'true ≈ believed (nominal)';
+            connector.setLatLngs([truePos, believedPos]);
+        }
+
         var socket = io();
-        
-        socket.on('gps_true_update', function(data) {
-            var absolute_now = Date.now();
-            var server_ts_ms = data.server_recv_time * 1000;
-            var lag_ms = absolute_now - server_ts_ms;
-            
-            document.getElementById('lat').innerText = data.lat.toFixed(6);
-            document.getElementById('lon').innerText = data.lon.toFixed(6);
-            document.getElementById('time').innerText = data.timestamp;
-            document.getElementById('lag').innerText = lag_ms.toFixed(2);
-            
-            var newLatLng = new L.LatLng(data.lat, data.lon);
-            trueMarker.setLatLng(newLatLng);
-            map.setView(newLatLng, map.getZoom(), { animate: false });
+        socket.on('connect', function(){ document.getElementById('conn').style.background='#16a34a'; });
+        socket.on('disconnect', function(){ document.getElementById('conn').style.background='#dc2626'; });
+
+        socket.on('gps_true_update', function(d){
+            truePos=[d.lat,d.lon]; trueMarker.setLatLng(truePos); pushTrail(trueTrail, truePos);
+            if(!centered){ map.setView(truePos, 16); centered=true; }
+            refreshError();
+        });
+        socket.on('gps_believed_update', function(d){
+            if(d.lat===0 && d.lon===0) return;
+            believedPos=[d.lat,d.lon]; believedMarker.setLatLng(believedPos); pushTrail(believedTrail, believedPos);
+            refreshError();
+        });
+        socket.on('ais_update', function(d){
+            var ll=[d.lat,d.lon];
+            if(!aisMarkers[d.mmsi]) aisMarkers[d.mmsi]=L.marker(ll,{icon:dot('#ea580c')}).bindTooltip('AIS '+d.mmsi).addTo(map);
+            else aisMarkers[d.mmsi].setLatLng(ll);
+        });
+        socket.on('status_update', function(s){
+            if(s.vehicle) document.getElementById('vehicle').textContent = s.vehicle;
+            if(s.mode!==undefined) document.getElementById('mode').textContent = s.mode;
+            if(s.armed!==undefined){ var a=document.getElementById('armed');
+                a.innerHTML = '<span class="tag" style="background:'+(s.armed?'#7f1d1d':'#14532d')+';color:#fff">'+(s.armed?'ARMED':'disarmed')+'</span>'; }
+            if(s.speed!==undefined) document.getElementById('speed').textContent = s.speed.toFixed(2)+' m/s';
+            if(s.depth!==undefined) document.getElementById('depth').textContent = s.depth.toFixed(2)+' m';
         });
 
-        socket.on('gps_believed_update', function(data) {
-            var newLatLng = new L.LatLng(data.lat, data.lon);
-            believedMarker.setLatLng(newLatLng);
-        });
-
-        // WO-24: live attack alerts from the blind detectors
-        var alertCount = 0;
-        var alertColors = {gps_spoof:'#e67e22', ais_spoof:'#8e44ad', c2_replay:'#c0392b', acoustic_spoof:'#2980b9'};
-        socket.on('attack_alert', function(a) {
-            if (alertCount === 0) { document.getElementById('alerts').innerHTML = ''; }
-            alertCount++;
-            document.getElementById('alert_count').textContent = '(' + alertCount + ')';
-            var d = new Date(a.t * 1000).toLocaleTimeString();
-            var row = document.createElement('div');
-            row.style.cssText = 'border-left:4px solid ' + (alertColors[a.attack_type] || '#333') +
-                                '; padding:3px 6px; margin:3px 0; background:#f7f7f7;';
-            row.innerHTML = '<strong>' + a.attack_type.toUpperCase() + '</strong> <span style="color:#888">' +
-                            d + '</span><br>' + a.detail;
-            var box = document.getElementById('alerts');
-            box.insertBefore(row, box.firstChild);
-        });
-
-        socket.on('ais_update', function(data) {
-            var newLatLng = new L.LatLng(data.lat, data.lon);
-            if (!aisMarkers[data.mmsi]) {
-                aisMarkers[data.mmsi] = L.marker(newLatLng, {icon: aisIcon}).bindPopup("AIS: " + data.mmsi).addTo(aisLayer);
-            } else {
-                aisMarkers[data.mmsi].setLatLng(newLatLng);
-            }
+        var alertCount=0;
+        var alertColors={gps_spoof:'#ea580c', ais_spoof:'#8b5cf6', c2_replay:'#dc2626', acoustic_spoof:'#2563eb'};
+        socket.on('attack_alert', function(a){
+            if(alertCount===0) document.getElementById('alerts').innerHTML='';
+            alertCount++; document.getElementById('alert_count').textContent='('+alertCount+')';
+            var t=new Date(a.t*1000).toLocaleTimeString();
+            var row=document.createElement('div'); row.className='alert';
+            row.style.borderLeftColor = alertColors[a.attack_type]||'#334155';
+            row.innerHTML='<strong style="color:'+(alertColors[a.attack_type]||'#fff')+'">'+a.attack_type.toUpperCase()+
+                          '</strong> <span class="muted">'+t+'</span><br>'+a.detail;
+            var box=document.getElementById('alerts'); box.insertBefore(row, box.firstChild);
         });
     </script>
 </body>
