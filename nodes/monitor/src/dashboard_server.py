@@ -407,9 +407,9 @@ def cmd_vehicle():
     if prof not in ("wamv", "blueboat", "bluerov2"):
         return jsonify(ok=False, msg="unknown profile"), 400
     return jsonify(ok=True, safe=True,
-                   msg=f"To switch to {prof}, relaunch in a terminal:  "
-                       f"tools/run_demo.sh {PROFILE} down  &&  tools/run_demo.sh {prof} up  "
-                       f"(then reload this page). Not switched live -- protects the running demo.")
+                   msg=f"To switch to {prof}, run ONE command in a terminal:  "
+                       f"tools/run_demo.sh {prof} up   (it auto-clears the current demo), "
+                       f"then reload this page.")
 
 
 if __name__ == '__main__':
