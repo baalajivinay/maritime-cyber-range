@@ -178,6 +178,8 @@
         });
         socket.on('status_update', function(s){
             if(s.vehicle) document.getElementById('vehicle').textContent = s.vehicle;
+            if(s.attacks){ document.querySelectorAll('.atk').forEach(function(b){
+                b.style.display = s.attacks.indexOf(b.dataset.atk) >= 0 ? '' : 'none'; }); }
             if(s.mode!==undefined) document.getElementById('mode').textContent = s.mode;
             if(s.armed!==undefined){ var a=document.getElementById('armed');
                 a.innerHTML = '<span class="tag" style="background:'+(s.armed?'#7f1d1d':'#14532d')+';color:#fff">'+(s.armed?'ARMED':'disarmed')+'</span>'; }
