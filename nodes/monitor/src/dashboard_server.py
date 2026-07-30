@@ -174,6 +174,24 @@ def detector_thread():
             print(f"detector thread error: {e}; retry 3s"); time.sleep(3)
 
 
+def _gz_xy():
+    """Synchronous read of the vehicle's TRUE Gazebo pose (x=East, y=North)."""
+    import re
+    try:
+        p = subprocess.run(["gz", "topic", "-e", "-t", f"/world/{WORLD_NAME}/pose/info", "-n", "2"],
+                           stdout=subprocess.PIPE, text=True, timeout=8)
+    except Exception:
+        return None
+    out = None
+    for b in p.stdout.split("pose {"):
+        if f'name: "{MODEL_NAME}"' in b:
+            mx = re.search(r"position\s*\{\s*x:\s*([-\d.e]+)", b)
+            my = re.search(r"position\s*\{[^}]*y:\s*([-\d.e]+)", b, re.S)
+            if mx and my:
+                out = (float(mx.group(1)), float(my.group(1)))
+    return out
+
+
 # --- attack + command execution ---------------------------------------------
 _attacks = {}   # type -> stop_event
 
@@ -256,7 +274,23 @@ def goto(lat, lon):
         time.sleep(0.02)
     if cur is None:
         c.close(); return "no position fix yet"
-    wps = [cur, (lat, lon)]
+    # --- frame alignment ---------------------------------------------------
+    # The clicked point is in the map/true-marker frame (Gazebo pose + HOME).
+    # ArduPilot navigates in ITS OWN lat/lon frame, which is offset from the
+    # Gazebo frame. So convert: find the boat's current Gazebo pose and its
+    # current believed lat/lon, then command a target whose Gazebo offset from
+    # NOW equals the clicked point's Gazebo offset from NOW -- i.e. drive the
+    # boat's TRUE (Gazebo) position onto the pin, not the raw lat/lon.
+    gz = _gz_xy()
+    if gz is not None:
+        gx, gy = gz
+        gxt = (lon - constants.HOME_LON) * M_PER_DEG_LON   # clicked point in Gazebo x (East)
+        gyt = (lat - constants.HOME_LAT) * M_PER_DEG_LAT   # clicked point in Gazebo y (North)
+        tgt_lat = cur[0] + (gyt - gy) / M_PER_DEG_LAT
+        tgt_lon = cur[1] + (gxt - gx) / M_PER_DEG_LON
+    else:
+        tgt_lat, tgt_lon = lat, lon
+    wps = [cur, (tgt_lat, tgt_lon)]
     c.mav.mission_count_send(c.target_system, c.target_component, len(wps))
     for _ in range(len(wps) + 2):
         req = c.recv_match(type=['MISSION_REQUEST', 'MISSION_REQUEST_INT'], blocking=True, timeout=5)
