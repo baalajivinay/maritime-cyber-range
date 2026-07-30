@@ -149,7 +149,7 @@ def detector_thread():
             m.mav.request_data_stream_send(m.target_system, m.target_component,
                                            mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
             mode_map = {v: k for k, v in m.mode_mapping().items()} if m.mode_mapping() else {}
-            socketio.emit('status_update', {'vehicle': label})
+            socketio.emit('status_update', {'vehicle': label, 'attacks': list(constants.ATTACKS)})
             while True:
                 msg = m.recv_match(blocking=True, timeout=1)
                 if msg is None:
