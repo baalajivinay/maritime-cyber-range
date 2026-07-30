@@ -25,17 +25,26 @@ checkpoints in `docs/ROADMAP.md`; the live work cursor in
 
 Pick a profile: `wamv` (surface) or `bluerov2` (underwater).
 
+**For a live/interactive demo**, use the one-command launcher (sim + the
+operator-console dashboard together) and open the URL:
+
 ```bash
-# 1. boot the stack (health-checked; leaves it running)
-tools/run_sim.sh wamv up          # or: bluerov2
+tools/run_demo.sh wamv up          # boots sim + dashboard -> http://localhost:8080
+tools/view_3d.sh                   # optional: Gazebo 3D view (needs a GPU desktop)
+tools/run_demo.sh wamv down
+```
 
-# 2. run the attacks for that domain and see pass/fail
-python3 tools/run_attack_suite.py --profile wamv
+The dashboard is an **operator console**: set a destination (click the map, the
+boat navigates there), launch attacks (GPS / AIS / C2 with a selectable injected
+command / acoustic), watch true-vs-believed diverge, and hit **Report** for
+precision/recall. See `docs/DEMO_GUIDE.md` for the full presentation runbook
+(including the boot-fresh pre-flight step).
 
-# 3. (optional) watch attacks become live alerts on the dashboard
-#    ros2 run ... dashboard_server.py  -> http://localhost:8080
+**For automated verification** (no dashboard), use the harness directly:
 
-# 4. tear down
+```bash
+tools/run_sim.sh wamv up                       # health-checked stack
+python3 tools/run_attack_suite.py --profile wamv   # attacks, pass/fail
 tools/run_sim.sh wamv down
 ```
 
