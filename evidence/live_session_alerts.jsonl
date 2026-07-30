@@ -1,0 +1,2 @@
+{"t": 1785429653.2190633, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "own MMSI 123456789 broadcast 189 m from the vessel's own telemetry position -- impersonation"}
+{"t": 1785429659.2203615, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "own MMSI 123456789 broadcast 198 m from the vessel's own telemetry position -- impersonation"}

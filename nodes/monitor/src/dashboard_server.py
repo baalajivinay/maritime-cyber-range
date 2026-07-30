@@ -1,113 +1,147 @@
+"""
+Maritime Cyber Range -- interactive operator console (dashboard + control).
+
+Passive viz (true vs believed position, AIS, blind detector alerts, telemetry)
+PLUS operator controls driven from the browser:
+  - set a DESTINATION (click the map) -> the vehicle navigates there (GUIDED),
+  - LAUNCH an attack (GPS spoof / AIS spoof / C2 inject / acoustic spoof),
+  - STOP attacks,
+  - GENERATE a REPORT on command (scores the blind detectors vs ground truth).
+
+Feeds: true position from the CLEAN Gazebo ground-truth pose (not the noisy GPS
+sensor -- that was the "jittery marker"); believed from MAVLink; AIS from UDP;
+detectors from a spare MAVLink port. Commands go out on another spare port.
+No ROS dependency (portable / containerizable).
+"""
 import os
 import sys
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import NavSatFix
-from flask import Flask, render_template
-from flask_socketio import SocketIO
-import threading
+import json
 import time
+import math
+import socket
+import threading
+import subprocess
+from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO
 from pymavlink import mavutil
 from pyais.stream import UDPReceiver
-from pyais.messages import MessageType1, MessageType2, MessageType3
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _REPO)
 sys.path.insert(0, os.path.join(_REPO, "detection"))
+sys.path.insert(0, os.path.join(_REPO, "attacks"))
 import constants
-from detectors import DetectorSuite  # WO-24: live attack -> alert loop
+from detectors import DetectorSuite
 
 app = Flask(__name__)
-# Force threading mode so rclpy and standard threads work correctly
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-class GPSMonitorNode(Node):
-    def __init__(self):
-        super().__init__('gps_monitor_dashboard')
-        self.subscription = self.create_subscription(
-            NavSatFix,
-            '/wamv/sensors/gps/gps/fix',
-            self.listener_callback,
-            10)
+PROFILE = constants.PROFILE_NAME
+DOMAIN = constants.DOMAIN
+RUN_DIR = os.environ.get("MCR_RUN_DIR", f"/tmp/mcr_run/{PROFILE}")
+RELAY_FIFO = os.path.join(RUN_DIR, "relay.fifo")
+SESSION_START = time.time()
+ALERT_LOG = os.path.join(_REPO, "evidence", "live_session_alerts.jsonl")
+open(ALERT_LOG, "w").close()  # fresh per session
 
-    def listener_callback(self, msg):
-        server_recv_time = time.time()
-        
-        # Log side-by-side on server
-        timestamp_str = f"{msg.header.stamp.sec}.{msg.header.stamp.nanosec:09d}"
-        
-        # Forward to Flask-SocketIO clients
-        socketio.emit('gps_true_update', {
-            'lat': msg.latitude,
-            'lon': msg.longitude,
-            'timestamp': timestamp_str,
-            'server_recv_time': server_recv_time
-        })
+# world name (for the ground-truth pose topic) from the profile
+try:
+    _w = json.load(open(os.path.join(_REPO, "profiles", PROFILE + ".json"))).get("world", {})
+    WORLD_NAME = _w.get("world_name", "sydney_regatta" if DOMAIN == "surface" else "underwater_harbor")
+    MODEL_NAME = _w.get("model_name", PROFILE)
+except Exception:
+    WORLD_NAME, MODEL_NAME = ("sydney_regatta" if DOMAIN == "surface" else "underwater_harbor"), PROFILE
 
-def mavlink_thread():
-    try:
-        master = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_DASHBOARD_PORT}')
-        while True:
-            msg = master.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
-            if msg:
-                lat = msg.lat / 1e7
-                lon = msg.lon / 1e7
-                server_recv_time = time.time()
-                socketio.emit('gps_believed_update', {
-                    'lat': lat,
-                    'lon': lon,
-                    'server_recv_time': server_recv_time
-                })
-    except Exception as e:
-        print(f"MAVLink thread error: {e}")
+M_PER_DEG_LAT = constants.M_PER_DEG_LAT
+M_PER_DEG_LON = constants.m_per_deg_lon(constants.HOME_LAT)
 
-# WO-24: one shared detector suite for the whole dashboard. The single AIS
-# listener (ais_thread) feeds it, and so does the MAVLink detector loop -- so
-# nothing double-binds the AIS UDP port.
-_det_suite = DetectorSuite(constants.DOMAIN, cfg={"known_mmsi": constants.VESSEL_MMSI})
+_det_suite = DetectorSuite(DOMAIN, cfg={"known_mmsi": constants.VESSEL_MMSI})
+_alert_lock = threading.Lock()
 
 
 def _push_alerts(alerts):
     for a in alerts:
-        socketio.emit('attack_alert', a.as_dict())
+        d = a.as_dict()
+        socketio.emit('attack_alert', d)
+        with _alert_lock:
+            with open(ALERT_LOG, "a") as f:
+                f.write(json.dumps(d) + "\n")
+
+
+# --- shared command connection (send arm/mode/goto/override) -----------------
+_cmd_conn = None
+_cmd_lock = threading.Lock()
+
+
+def cmd_conn():
+    global _cmd_conn
+    with _cmd_lock:
+        if _cmd_conn is None:
+            c = mavutil.mavlink_connection("tcp:127.0.0.1:5762", source_system=250)
+            c.wait_heartbeat(timeout=15)
+            _cmd_conn = c
+        return _cmd_conn
+
+
+# --- feed threads ------------------------------------------------------------
+def gz_pose_thread():
+    """CLEAN true position from Gazebo ground truth (no GPS noise)."""
+    topic = f"/world/{WORLD_NAME}/pose/info"
+    while True:
+        try:
+            proc = subprocess.Popen(["gz", "topic", "-e", "-t", topic],
+                                    stdout=subprocess.PIPE, text=True)
+            block, in_model = "", False
+            import re
+            for line in proc.stdout:
+                if f'name: "{MODEL_NAME}"' in line:
+                    in_model, block = True, line
+                    continue
+                if in_model:
+                    block += line
+                    if line.strip() == "}" and "position" in block and "orientation" in block:
+                        mx = re.search(r"position\s*\{\s*x:\s*([-\d.e]+)", block)
+                        my = re.search(r"position\s*\{[^}]*y:\s*([-\d.e]+)", block, re.S)
+                        if mx and my:
+                            x, y = float(mx.group(1)), float(my.group(1))
+                            socketio.emit('gps_true_update', {
+                                'lat': constants.HOME_LAT + y / M_PER_DEG_LAT,
+                                'lon': constants.HOME_LON + x / M_PER_DEG_LON})
+                        in_model = False
+        except Exception as e:
+            print(f"gz pose thread error: {e}; retry 3s"); time.sleep(3)
+
+
+def believed_thread():
+    while True:
+        try:
+            m = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_DASHBOARD_PORT}')
+            while True:
+                msg = m.recv_match(type='GLOBAL_POSITION_INT', blocking=True, timeout=2)
+                if msg and not (msg.lat == 0 and msg.lon == 0):
+                    socketio.emit('gps_believed_update', {'lat': msg.lat / 1e7, 'lon': msg.lon / 1e7})
+        except Exception as e:
+            print(f"believed thread error: {e}; retry 3s"); time.sleep(3)
 
 
 def ais_thread():
     try:
-        ais_ip, ais_port = constants.AIS_UDP_ADDR
-        for msg in UDPReceiver(ais_ip, ais_port):
+        ip, port = constants.AIS_UDP_ADDR
+        for msg in UDPReceiver(ip, port):
             try:
-                decoded = msg.decode()
-                # Check if it has lat/lon
-                if hasattr(decoded, 'lat') and hasattr(decoded, 'lon'):
-                    lat = decoded.lat
-                    lon = decoded.lon
-                    if lat and lon: # Sometimes they can be None or default
-                        socketio.emit('ais_update', {
-                            'mmsi': decoded.mmsi,
-                            'lat': float(lat),
-                            'lon': float(lon)
-                        })
-                        # same feed -> AIS detectors (ghost / impersonation)
-                        _push_alerts(_det_suite.update({
-                            "type": "ais", "t": time.time(),
-                            "mmsi": decoded.mmsi, "lat": float(lat), "lon": float(lon)}))
-            except Exception as e:
-                # ignore decode errors
+                d = msg.decode()
+                if hasattr(d, 'lat') and hasattr(d, 'lon') and d.lat and d.lon:
+                    socketio.emit('ais_update', {'mmsi': d.mmsi, 'lat': float(d.lat), 'lon': float(d.lon)})
+                    _push_alerts(_det_suite.update({"type": "ais", "t": time.time(),
+                                                    "mmsi": d.mmsi, "lat": float(d.lat), "lon": float(d.lon)}))
+            except Exception:
                 pass
     except Exception as e:
         print(f"AIS thread error: {e}")
 
-def detector_thread():
-    """WO-24: run the domain's blind detectors on the live MAVLink feed and push
-    each Alert to the browser as an 'attack_alert' event -- closing the
-    attack->alert loop. Taps a spare ArduPilot MAVLink port (SERIAL2 tcp:5763) so
-    it does not contend with the dashboard's own MAVLink feed. AIS events are fed
-    to the same shared suite from ais_thread. Never reads ground truth."""
-    suite = _det_suite
-    push = _push_alerts
 
-    label = f"{constants.DOMAIN.title()} — {constants.PROFILE_NAME} ({constants.ARDUPILOT_VEHICLE_TYPE})"
+def detector_thread():
+    label = f"{DOMAIN.title()} — {PROFILE} ({constants.ARDUPILOT_VEHICLE_TYPE})"
     while True:
         try:
             m = mavutil.mavlink_connection("tcp:127.0.0.1:5763")
@@ -120,51 +154,165 @@ def detector_thread():
                 msg = m.recv_match(blocking=True, timeout=1)
                 if msg is None:
                     continue
-                t = time.time()
-                mt = msg.get_type()
+                t, mt = time.time(), msg.get_type()
                 if mt == "GLOBAL_POSITION_INT":
-                    push(suite.update({"type": "believed_pos", "t": t, "lat": msg.lat / 1e7, "lon": msg.lon / 1e7}))
+                    _push_alerts(_det_suite.update({"type": "believed_pos", "t": t, "lat": msg.lat / 1e7, "lon": msg.lon / 1e7}))
                     socketio.emit('status_update', {'depth': msg.relative_alt / 1000.0})
                 elif mt == "LOCAL_POSITION_NED":
-                    push(suite.update({"type": "local_pos", "t": t, "n": msg.x, "e": msg.y, "d": msg.z, "vx": msg.vx, "vy": msg.vy}))
+                    _push_alerts(_det_suite.update({"type": "local_pos", "t": t, "n": msg.x, "e": msg.y, "d": msg.z, "vx": msg.vx, "vy": msg.vy}))
                 elif mt == "VFR_HUD":
                     socketio.emit('status_update', {'speed': msg.groundspeed})
                 elif mt == "HEARTBEAT" and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
                     armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-                    push(suite.update({"type": "armed", "t": t, "armed": armed}))
+                    _push_alerts(_det_suite.update({"type": "armed", "t": t, "armed": armed}))
                     socketio.emit('status_update', {'armed': armed, 'mode': mode_map.get(msg.custom_mode, str(msg.custom_mode))})
                 elif mt == "RC_CHANNELS":
                     driven = [getattr(msg, f"chan{i}_raw", 0) for i in (1, 3)]
                     if any(900 < v < 2100 and abs(v - 1500) > 100 for v in driven):
-                        push(suite.update({"type": "rc_override", "t": t, "domain": constants.DOMAIN}))
+                        _push_alerts(_det_suite.update({"type": "rc_override", "t": t, "domain": DOMAIN}))
         except Exception as e:
-            print(f"detector thread error: {e}; retrying in 3s")
-            time.sleep(3)
+            print(f"detector thread error: {e}; retry 3s"); time.sleep(3)
 
 
+# --- attack + command execution ---------------------------------------------
+_attacks = {}   # type -> stop_event
+
+
+def _relay(cmd):
+    try:
+        with open(RELAY_FIFO, "w") as f:
+            f.write(cmd + "\n")
+    except Exception as e:
+        print(f"relay write failed: {e}")
+
+
+def launch_attack(kind):
+    if kind == "gps_spoof":
+        _relay("step"); return "GPS spoof engaged (+50 m offset injected)"
+    if kind == "ais_spoof":
+        import ais_spoof
+        stop = threading.Event(); _attacks["ais_spoof"] = stop
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        threading.Thread(target=ais_spoof.run_ghost_vessel, args=(s, stop, 999999001, 2.0), daemon=True).start()
+        threading.Thread(target=ais_spoof.run_impersonation,
+                         args=(s, stop, lambda: (constants.HOME_LAT, constants.HOME_LON)),
+                         kwargs={"interval_s": 2.0, "offset_m": 300.0}, daemon=True).start()
+        return "AIS spoof engaged (ghost + impersonation broadcasting)"
+    if kind == "c2_replay":
+        import c2_replay
+        def _c2():
+            c = cmd_conn()
+            c.set_mode(c.mode_mapping().get("MANUAL", 0)); time.sleep(1.5)
+            for _ in range(5):
+                c.mav.command_long_send(c.target_system, c.target_component,
+                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0); time.sleep(1)
+            c2_replay.inject_forged_rc_override(c, throttle_pwm=1900, steering_pwm=1500, duration_s=8.0)
+        threading.Thread(target=_c2, daemon=True).start()
+        return "C2 injection: forged RC override (attacker seizing the throttle)"
+    if kind == "acoustic_spoof":
+        import acoustic_spoof as A
+        c = cmd_conn()
+        threading.Thread(target=A.run_feed, args=(c,), daemon=True).start()
+        time.sleep(1)
+        with A._lock:
+            A.state.mode = "ramp"; A.state.start_time = time.time(); A.state.active = True
+        _attacks["acoustic_spoof"] = A
+        return "Acoustic-positioning spoof engaged (walking the AUV's belief off)"
+    return "unknown attack"
+
+
+def stop_attacks():
+    _relay("off")
+    if "ais_spoof" in _attacks:
+        _attacks.pop("ais_spoof").set()
+    if "acoustic_spoof" in _attacks:
+        A = _attacks.pop("acoustic_spoof")
+        with A._lock:
+            A.state.active = False
+    return "all attacks stopped"
+
+
+def goto(lat, lon):
+    """Navigate to a point via a real AUTO mission (the WO-09-proven path;
+    GUIDED position-target didn't reliably drive the rover)."""
+    import auto_mission
+    c = cmd_conn()
+    # read current position as waypoint 0 (ArduPilot treats item 0 as home);
+    # the target is waypoint 1 so the vehicle actually travels a leg.
+    cur = None
+    end = time.time() + 3
+    while time.time() < end:
+        m = c.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
+        if m and m.lat:
+            cur = (m.lat / 1e7, m.lon / 1e7)
+        time.sleep(0.02)
+    wps = [cur, (lat, lon)] if cur else [(lat, lon)]
+    auto_mission.upload_mission(c, wps)
+    c.set_mode(c.mode_mapping().get("AUTO", 10)); time.sleep(1)
+    for _ in range(3):
+        c.mav.command_long_send(c.target_system, c.target_component,
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+        time.sleep(0.8)
+    return f"navigating to {lat:.5f}, {lon:.5f} (AUTO mission)"
+
+
+# --- routes ------------------------------------------------------------------
 @app.route('/')
 def index():
     return render_template('index.html')
 
-def ros_spin_thread(node):
-    rclpy.spin(node)
+
+@app.route('/cmd/attack', methods=['POST'])
+def cmd_attack():
+    kind = request.json.get('type')
+    try:
+        return jsonify(ok=True, msg=launch_attack(kind))
+    except Exception as e:
+        return jsonify(ok=False, msg=str(e)), 500
+
+
+@app.route('/cmd/stop', methods=['POST'])
+def cmd_stop():
+    return jsonify(ok=True, msg=stop_attacks())
+
+
+@app.route('/cmd/goto', methods=['POST'])
+def cmd_goto():
+    d = request.json
+    lat, lon = float(d['lat']), float(d['lon'])
+    # run async so the mission upload/arm never blocks the HTTP response
+    threading.Thread(target=lambda: goto(lat, lon), daemon=True).start()
+    return jsonify(ok=True, msg=f"destination set: {lat:.5f}, {lon:.5f} — commanding AUTO nav")
+
+
+@app.route('/cmd/report', methods=['POST'])
+def cmd_report():
+    """Score the blind detectors (this session's alerts) vs ground truth."""
+    try:
+        out = subprocess.run(
+            ["python3", os.path.join(_REPO, "tools", "score_detectors.py"),
+             "--alerts", ALERT_LOG, "--min-ts", str(SESSION_START)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30).stdout
+        return jsonify(ok=True, report=out)
+    except Exception as e:
+        return jsonify(ok=False, report=str(e)), 500
+
+
+@app.route('/cmd/vehicle', methods=['POST'])
+def cmd_vehicle():
+    """Switch the whole demo to another vehicle. Heavy: reboots the sim + this
+    dashboard via run_demo.sh (~40 s). The browser should show 'switching' and
+    reconnect."""
+    prof = request.json.get('profile')
+    if prof not in ("wamv", "blueboat", "bluerov2"):
+        return jsonify(ok=False, msg="unknown profile"), 400
+    script = f"{_REPO}/tools/run_demo.sh {prof} down >/dev/null 2>&1; {_REPO}/tools/run_demo.sh {prof} up >/dev/null 2>&1"
+    subprocess.Popen(["setsid", "bash", "-c", script],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return jsonify(ok=True, msg=f"switching to {prof} (~40 s) -- the page will reconnect")
+
 
 if __name__ == '__main__':
-    rclpy.init()
-    node = GPSMonitorNode()
-    t_ros = threading.Thread(target=ros_spin_thread, args=(node,), daemon=True)
-    t_ros.start()
-    
-    t_mav = threading.Thread(target=mavlink_thread, daemon=True)
-    t_mav.start()
-    
-    t_ais = threading.Thread(target=ais_thread, daemon=True)
-    t_ais.start()
-
-    t_det = threading.Thread(target=detector_thread, daemon=True)  # WO-24
-    t_det.start()
-
+    for fn in (gz_pose_thread, believed_thread, ais_thread, detector_thread):
+        threading.Thread(target=fn, daemon=True).start()
     socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)
-    
-    node.destroy_node()
-    rclpy.shutdown()
