@@ -193,7 +193,8 @@ def _gz_xy():
 
 
 # --- attack + command execution ---------------------------------------------
-_attacks = {}   # type -> stop_event
+_attacks = {}     # type -> stop_event
+_last_goal = None  # (lat, lon) of the last destination, to resume after an attack
 
 
 def _relay(cmd):
@@ -247,6 +248,14 @@ def stop_attacks():
         A = _attacks.pop("acoustic_spoof")
         with A._lock:
             A.state.active = False
+    # An attack may have left the boat in MANUAL (C2) or an EKF failsafe (GPS
+    # spoof), so it stops. If a destination is set, put it back on course.
+    if _last_goal is not None:
+        def _resume():
+            time.sleep(4)          # let the EKF re-settle after a GPS spoof
+            goto(*_last_goal)
+        threading.Thread(target=_resume, daemon=True).start()
+        return "attacks stopped — resuming course to destination"
     return "all attacks stopped"
 
 
@@ -256,6 +265,8 @@ def goto(lat, lon):
     on the auto_mission port (the shared cmd conn / GUIDED target did not
     reliably drive it), uploads a 2-waypoint mission (current -> target),
     switches to AUTO, and arms with confirmation."""
+    global _last_goal
+    _last_goal = (lat, lon)
     c = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_AUTO_MISSION_PORT}')
     if c.wait_heartbeat(timeout=10) is None:
         return "no autopilot heartbeat"
