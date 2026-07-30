@@ -43,6 +43,11 @@
         <span class="sub" id="vehicle">Live Monitor</span>
     </header>
 
+    <div id="switch_overlay" style="position:fixed; inset:0; background:rgba(2,6,23,.93); display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; z-index:10000;">
+        <div style="font-size:22px; font-weight:700;" id="switch_msg">Switching…</div>
+        <div class="muted">rebooting the simulator + dashboard — this page reloads automatically (~40 s)</div>
+    </div>
+
     <div id="report_overlay"><div id="report_box">
         <h3 style="margin-top:0">Detection report — blind detectors vs. ground truth</h3>
         <pre id="report_pre">…</pre>
@@ -213,10 +218,30 @@
             post('/cmd/report').then(r=>{ document.getElementById('report_pre').textContent=r.report||'(no data)';
                 document.getElementById('report_overlay').style.display='flex'; flash('report ready'); });
         };
+        function showSwitching(prof){
+            document.getElementById('switch_msg').textContent = 'Switching to ' + prof + ' …';
+            document.getElementById('switch_overlay').style.display = 'flex';
+            var t0 = Date.now();
+            var iv = setInterval(function(){
+                fetch('/whoami').then(function(r){ return r.json(); }).then(function(w){
+                    if(w && w.profile === prof){ clearInterval(iv); location.reload(); }
+                }).catch(function(){});   // dashboard is down mid-switch; keep polling
+                if(Date.now() - t0 > 150000){ clearInterval(iv);
+                    document.getElementById('switch_msg').textContent = 'Taking longer than expected — reload the page manually.'; }
+            }, 3000);
+        }
         document.getElementById('vehsel').onchange = function(e){
-            // switching vehicle reboots the whole stack -- guide, don't break the live demo
-            post('/cmd/vehicle',{profile:e.target.value}).then(r=>{ alert(r.msg); flash(r.msg); });
+            var prof = e.target.value;
+            flash('switching to ' + prof + ' …');
+            post('/cmd/vehicle', {profile: prof}).then(function(r){
+                if(r.switching === false){ flash(r.msg); return; }
+                showSwitching(prof);
+            }).catch(function(){ showSwitching(prof); });  // response may drop as the dashboard restarts
         };
+        // reflect the actual running vehicle in the dropdown on load
+        fetch('/whoami').then(function(r){ return r.json(); }).then(function(w){
+            if(w && w.profile){ var s=document.getElementById('vehsel'); if(s) s.value = w.profile; }
+        }).catch(function(){});
 
         // Click-to-set-destination
         var gotoMode=false, goalMarker=null, goalLatLng=null;

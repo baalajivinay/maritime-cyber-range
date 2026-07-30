@@ -406,10 +406,26 @@ def cmd_vehicle():
     prof = request.json.get('profile')
     if prof not in ("wamv", "blueboat", "bluerov2"):
         return jsonify(ok=False, msg="unknown profile"), 400
-    return jsonify(ok=True, safe=True,
-                   msg=f"To switch to {prof}, run ONE command in a terminal:  "
-                       f"tools/run_demo.sh {prof} up   (it auto-clears the current demo), "
-                       f"then reload this page.")
+    if prof == PROFILE:
+        return jsonify(ok=True, switching=False, msg=f"already running {prof}")
+    # Spawn the demo launcher detached. run_demo.sh's `up` self-cleans (kills any
+    # running demo of any profile) and reboots for the new one -- including a
+    # fresh dashboard with the new profile. This launcher is NOT matched by the
+    # teardown patterns, so it survives the current dashboard being killed. The
+    # browser polls /whoami and reloads when the new dashboard reports `prof`.
+    script = (f"source /opt/ros/jazzy/setup.bash 2>/dev/null; "
+              f"source '{_REPO}/ros2_ws/install/setup.bash' 2>/dev/null; "
+              f"exec '{_REPO}/tools/run_demo.sh' {prof} up")
+    subprocess.Popen(["setsid", "bash", "-c", script],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     stdin=subprocess.DEVNULL, start_new_session=True)
+    return jsonify(ok=True, switching=True, profile=prof,
+                   msg=f"switching to {prof} (~40 s) — the page reloads automatically")
+
+
+@app.route('/whoami')
+def whoami():
+    return jsonify(profile=PROFILE, domain=DOMAIN)
 
 
 if __name__ == '__main__':
