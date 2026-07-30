@@ -69,6 +69,16 @@
                     <button class="ctl atk" data-atk="c2_replay">C2 inject</button>
                     <button class="ctl atk" data-atk="acoustic_spoof">Acoustic spoof</button>
                 </div>
+                <div id="c2row" style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+                    <label class="muted" style="font-size:11px; white-space:nowrap;">C2 command</label>
+                    <select id="c2cmd" style="flex:1; background:#0b1220; color:var(--ink); border:1px solid #334155; border-radius:6px; padding:4px; font-size:12px;">
+                        <option value="rc_override">Seize throttle — full ahead</option>
+                        <option value="rc_stop">Cut throttle — stop</option>
+                        <option value="disarm">Force DISARM — kill motors</option>
+                        <option value="mode_hold">Force HOLD — halt mission</option>
+                        <option value="mode_manual">Force MANUAL — drop autonomy</option>
+                    </select>
+                </div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
                     <button id="btn_stop" class="ctl" style="background:#334155;">■ Stop attacks</button>
                     <button id="btn_report" class="ctl" style="background:#0369a1;">📊 Report</button>
@@ -193,7 +203,9 @@
 
         document.querySelectorAll('.atk').forEach(function(b){
             b.onclick = function(){ flash('launching '+b.dataset.atk+' …');
-                post('/cmd/attack',{type:b.dataset.atk}).then(r=>flash(r.msg)); };
+                var body={type:b.dataset.atk};
+                if(b.dataset.atk==='c2_replay'){ body.command=document.getElementById('c2cmd').value; }
+                post('/cmd/attack',body).then(r=>flash(r.msg)); };
         });
         document.getElementById('btn_stop').onclick = function(){ post('/cmd/stop').then(r=>flash(r.msg)); };
         document.getElementById('btn_report').onclick = function(){
