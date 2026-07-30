@@ -82,6 +82,12 @@
                 <div class="muted" id="errnote" style="margin-top:6px;">true vs. believed position</div>
             </div>
 
+            <div class="card" id="destcard" style="display:none;">
+                <h3>Destination</h3>
+                <div class="bignum"><span id="dist">—</span><small> m to go</small></div>
+                <div id="deststatus" class="muted" style="margin-top:6px;">en route…</div>
+            </div>
+
             <div class="card">
                 <h3>Vehicle telemetry</h3>
                 <div class="grid2">
@@ -158,6 +164,7 @@
             truePos=[d.lat,d.lon]; trueMarker.setLatLng(truePos); pushTrail(trueTrail, truePos);
             if(!centered){ map.setView(truePos, 16); centered=true; }
             refreshError();
+            if(typeof refreshDest==='function') refreshDest();
         });
         socket.on('gps_believed_update', function(d){
             if(d.lat===0 && d.lon===0) return;
@@ -198,14 +205,28 @@
         };
 
         // Click-to-set-destination
-        var gotoMode=false, goalMarker=null;
+        var gotoMode=false, goalMarker=null, goalLatLng=null;
+        function refreshDest(){
+            if(!goalLatLng || !truePos) return;
+            var d = metersBetween(truePos, goalLatLng);
+            document.getElementById('dist').textContent = d.toFixed(1);
+            var arrived = d < 10;   // within the waypoint acceptance radius
+            var st = document.getElementById('deststatus');
+            st.textContent = arrived ? '✓ ARRIVED' : 'en route…';
+            st.style.color = arrived ? '#22c55e' : '';
+            if(goalMarker) goalMarker.setTooltipContent(arrived ? 'GOAL ✓' : 'GOAL');
+        }
         document.getElementById('btn_goto').onclick=function(){ gotoMode=!gotoMode;
             this.classList.toggle('armed', gotoMode);
             flash(gotoMode?'destination mode ON — click the map':'destination mode off'); };
         map.on('click', function(e){
             if(!gotoMode) return;
             var lat=e.latlng.lat, lon=e.latlng.lng;
-            if(goalMarker) goalMarker.setLatLng([lat,lon]); else goalMarker=L.marker([lat,lon],{icon:dot('#22c55e')}).bindTooltip('GOAL').addTo(map);
+            goalLatLng=[lat,lon];
+            if(goalMarker) goalMarker.setLatLng(goalLatLng); else goalMarker=L.marker(goalLatLng,{icon:dot('#22c55e')}).bindTooltip('GOAL').addTo(map);
+            document.getElementById('destcard').style.display='block';
+            document.getElementById('deststatus').textContent='en route…';
+            document.getElementById('deststatus').style.color='';
             flash('sending destination …');
             post('/cmd/goto',{lat:lat,lon:lon}).then(r=>flash(r.msg));
             gotoMode=false; document.getElementById('btn_goto').classList.remove('armed');
