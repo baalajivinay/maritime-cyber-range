@@ -192,11 +192,9 @@
             post('/cmd/report').then(r=>{ document.getElementById('report_pre').textContent=r.report||'(no data)';
                 document.getElementById('report_overlay').style.display='flex'; flash('report ready'); });
         };
-        document.getElementById('vehsel').onclick = function(){}; // no-op focus
         document.getElementById('vehsel').onchange = function(e){
-            if(confirm('Switch to '+e.target.value+'? This reboots the sim (~40 s) and the page will reconnect.')){
-                flash('switching vehicle …'); post('/cmd/vehicle',{profile:e.target.value}).then(r=>flash(r.msg));
-            }
+            // switching vehicle reboots the whole stack -- guide, don't break the live demo
+            post('/cmd/vehicle',{profile:e.target.value}).then(r=>{ alert(r.msg); flash(r.msg); });
         };
 
         // Click-to-set-destination
