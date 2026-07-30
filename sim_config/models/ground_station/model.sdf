@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<!-- Ground control station: the shore station the operator commands the vehicle
+     from (the dashboard is its console). Placed as a visible landmark so the 3D
+     view shows the three cyber-range actors: vehicle, ground station, attacker. -->
+<sdf version="1.9">
+  <model name="ground_station">
+    <static>true</static>
+    <link name="base">
+      <visual name="hut">
+        <geometry><box><size>4 4 3</size></box></geometry>
+        <material><ambient>0.85 0.85 0.2 1</ambient><diffuse>0.9 0.9 0.25 1</diffuse></material>
+      </visual>
+      <visual name="mast">
+        <pose>0 0 4.0 0 0 0</pose>
+        <geometry><cylinder><radius>0.12</radius><length>5</length></cylinder></geometry>
+        <material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.3 0.3 0.3 1</diffuse></material>
+      </visual>
+      <visual name="dish">
+        <pose>0 0 6.6 0 0 0</pose>
+        <geometry><sphere><radius>0.8</radius></sphere></geometry>
+        <material><ambient>0.9 0.1 0.1 1</ambient><diffuse>1 0.15 0.15 1</diffuse></material>
+      </visual>
+      <collision name="c"><geometry><box><size>4 4 3</size></box></geometry></collision>
+    </link>
+  </model>
+</sdf>

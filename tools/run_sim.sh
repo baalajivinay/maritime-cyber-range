@@ -166,6 +166,16 @@ do_up() {
   wait_gz_model "$MODEL_NAME" 60 || fail "Gazebo model '$MODEL_NAME' never appeared (world didn't boot)"
   log "  world up, model '$MODEL_NAME' present [OK]"
 
+  # The VRX world can't <include> our ground-station model, so spawn it at
+  # runtime (the gz worlds include it directly). It's the shore GCS landmark.
+  if [[ "$WORLD_METHOD" == "vrx" ]]; then
+    local gs; gs=$(tr '\n' ' ' < "$REPO/sim_config/models/ground_station/model.sdf" | sed 's/"/\\"/g')
+    gz service -s "/world/$WORLD_NAME/create" --reqtype gz.msgs.EntityFactory \
+      --reptype gz.msgs.Boolean --timeout 6000 \
+      --req "sdf: \"$gs\" name: \"ground_station\" pose: {position: {x: -470 y: 250 z: 0}}" >/dev/null 2>&1 \
+      && log "  ground station spawned [OK]"
+  fi
+
   # 2) FDM relay (passthrough) with FIFO-fed stdin
   rm -f "$FIFO"; mkfifo "$FIFO"
   setsid bash -c "exec 9>'$FIFO'; sleep infinity" >/dev/null 2>&1 < /dev/null &

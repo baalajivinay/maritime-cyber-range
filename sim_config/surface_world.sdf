@@ -84,5 +84,11 @@
       <pose>0 0 0.15 0 0 0</pose>
     </include>
 
+
+    <!-- ground control station (the operator/GCS landmark) -->
+    <include>
+      <uri>model://ground_station</uri>
+      <pose>30 20 0 0 0 0</pose>
+    </include>
   </world>
 </sdf>
