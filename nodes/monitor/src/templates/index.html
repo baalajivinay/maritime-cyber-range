@@ -27,6 +27,13 @@
         .alert { border-left:4px solid #334155; padding:5px 8px; margin:5px 0; background:#0b1220; border-radius:4px; font-size:12px; animation: flash .8s; }
         @keyframes flash { from { background:#3b2020; } to { background:#0b1220; } }
         .muted { color: var(--muted); }
+        .ctl { background:#1d4ed8; color:#fff; border:none; border-radius:7px; padding:8px 6px; font-size:13px; font-weight:600; cursor:pointer; }
+        .ctl:hover { filter:brightness(1.15); }
+        .ctl.atk { background:#7c2d12; }
+        .ctl.armed { outline:2px solid #f59e0b; }
+        #report_overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:9999; }
+        #report_box { background:#0b1220; border:1px solid #334155; border-radius:10px; padding:20px; max-width:680px; width:90%; }
+        #report_box pre { background:#020617; padding:14px; border-radius:8px; overflow:auto; color:#e2e8f0; font-size:13px; }
     </style>
 </head>
 <body>
@@ -36,9 +43,39 @@
         <span class="sub" id="vehicle">Live Monitor</span>
     </header>
 
+    <div id="report_overlay"><div id="report_box">
+        <h3 style="margin-top:0">Detection report — blind detectors vs. ground truth</h3>
+        <pre id="report_pre">…</pre>
+        <div style="text-align:right"><button class="ctl" onclick="document.getElementById('report_overlay').style.display='none'">Close</button></div>
+    </div></div>
+
     <div class="wrap">
         <div id="map"></div>
         <div class="side">
+            <div class="card">
+                <h3>Operator controls</h3>
+                <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+                    <label class="muted" style="font-size:12px;">Vehicle</label>
+                    <select id="vehsel" style="flex:1; background:#0b1220; color:var(--ink); border:1px solid #334155; border-radius:6px; padding:5px;">
+                        <option value="wamv">WAM-V (surface)</option>
+                        <option value="blueboat">BlueBoat (surface)</option>
+                        <option value="bluerov2">BlueROV2 (AUV)</option>
+                    </select>
+                </div>
+                <button id="btn_goto" class="ctl" style="width:100%; margin-bottom:8px;">📍 Set destination (then click map)</button>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                    <button class="ctl atk" data-atk="gps_spoof">GPS spoof</button>
+                    <button class="ctl atk" data-atk="ais_spoof">AIS spoof</button>
+                    <button class="ctl atk" data-atk="c2_replay">C2 inject</button>
+                    <button class="ctl atk" data-atk="acoustic_spoof">Acoustic spoof</button>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
+                    <button id="btn_stop" class="ctl" style="background:#334155;">■ Stop attacks</button>
+                    <button id="btn_report" class="ctl" style="background:#0369a1;">📊 Report</button>
+                </div>
+                <div id="cmdmsg" class="muted" style="font-size:12px; margin-top:8px; min-height:16px;"></div>
+            </div>
+
             <div class="card">
                 <h3>GPS / Position spoof error</h3>
                 <div class="bignum"><span id="err">0.0</span><small> m</small></div>
@@ -139,6 +176,41 @@
                 a.innerHTML = '<span class="tag" style="background:'+(s.armed?'#7f1d1d':'#14532d')+';color:#fff">'+(s.armed?'ARMED':'disarmed')+'</span>'; }
             if(s.speed!==undefined) document.getElementById('speed').textContent = s.speed.toFixed(2)+' m/s';
             if(s.depth!==undefined) document.getElementById('depth').textContent = s.depth.toFixed(2)+' m';
+        });
+
+        // ---- Operator controls ----
+        function post(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}).then(r=>r.json()); }
+        function flash(msg){ document.getElementById('cmdmsg').textContent = msg; }
+
+        document.querySelectorAll('.atk').forEach(function(b){
+            b.onclick = function(){ flash('launching '+b.dataset.atk+' …');
+                post('/cmd/attack',{type:b.dataset.atk}).then(r=>flash(r.msg)); };
+        });
+        document.getElementById('btn_stop').onclick = function(){ post('/cmd/stop').then(r=>flash(r.msg)); };
+        document.getElementById('btn_report').onclick = function(){
+            flash('scoring detectors …');
+            post('/cmd/report').then(r=>{ document.getElementById('report_pre').textContent=r.report||'(no data)';
+                document.getElementById('report_overlay').style.display='flex'; flash('report ready'); });
+        };
+        document.getElementById('vehsel').onclick = function(){}; // no-op focus
+        document.getElementById('vehsel').onchange = function(e){
+            if(confirm('Switch to '+e.target.value+'? This reboots the sim (~40 s) and the page will reconnect.')){
+                flash('switching vehicle …'); post('/cmd/vehicle',{profile:e.target.value}).then(r=>flash(r.msg));
+            }
+        };
+
+        // Click-to-set-destination
+        var gotoMode=false, goalMarker=null;
+        document.getElementById('btn_goto').onclick=function(){ gotoMode=!gotoMode;
+            this.classList.toggle('armed', gotoMode);
+            flash(gotoMode?'destination mode ON — click the map':'destination mode off'); };
+        map.on('click', function(e){
+            if(!gotoMode) return;
+            var lat=e.latlng.lat, lon=e.latlng.lng;
+            if(goalMarker) goalMarker.setLatLng([lat,lon]); else goalMarker=L.marker([lat,lon],{icon:dot('#22c55e')}).bindTooltip('GOAL').addTo(map);
+            flash('sending destination …');
+            post('/cmd/goto',{lat:lat,lon:lon}).then(r=>flash(r.msg));
+            gotoMode=false; document.getElementById('btn_goto').classList.remove('armed');
         });
 
         var alertCount=0;
