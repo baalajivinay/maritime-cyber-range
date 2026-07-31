@@ -1,0 +1,18 @@
+# Build context = repo root. Keep the image lean and reproducible: never ship
+# host-built artifacts (they hardcode host paths) or throwaway run state.
+.git
+__pycache__
+**/__pycache__
+*.pyc
+# host-built ROS2 workspace artifacts -- VRX is REBUILT inside the image.
+# (ros2_ws/src/** is KEPT: it holds the vendored VRX source the image compiles.)
+ros2_ws/build
+ros2_ws/install
+ros2_ws/log
+# throwaway run state / evidence logs from local runs
+evidence/*.log
+evidence/*.jsonl
+eeprom.bin
+# editor / OS cruft
+.DS_Store
+.claude

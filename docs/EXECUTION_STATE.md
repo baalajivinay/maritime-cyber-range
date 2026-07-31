@@ -22,6 +22,100 @@ Guardrail: reuse the proven surface architecture (ArduPilotPlugin FDM JSON ->
 ground truth; per-attack private CSVs in `attack_logs/`). Do not reinvent it
 for underwater.
 
+## PACKAGING (2026-07-31) — Docker image + one-command launcher (WO-27)
+
+Goal: "download → extract → run the launcher → see the sim, set up the vehicle,
+check the dashboard." Chosen delivery: a **single Docker image** carrying the
+whole stack, with BOTH the web dashboard and the Gazebo 3D GUI (X11 forwarding).
+
+Key design: the repo's launchers are already `$HOME`-relative, so the image just
+reproduces the reference `$HOME` layout and `run_demo.sh`/`run_sim.sh` run
+UNCHANGED (no code rewrite). New files:
+- `deploy/Dockerfile` — Ubuntu 24.04 + ROS2 Jazzy + Gazebo Harmonic + ArduPilot
+  (rover+sub @ pinned 1f6e646d2a) + ardupilot_gazebo (@082a0fe) + SITL_Models +
+  dave (BlueROV2) + this repo with VRX (vendored @7609d1bd) colcon-built inside.
+  Mirrors sim_config/install_*.sh + build_*.sh. Layered so a repo edit only
+  rebuilds the cheap tail.
+- `deploy/entrypoint.sh` — re-entrant in-container verbs (up/gui/switch/status/
+  down/attack/shell); PID1 = `up` boots run_demo + stays alive.
+- `deploy/requirements.txt` — pinned Python runtime deps.
+- `.dockerignore` — keeps host-built ros2_ws/build|install OUT, vendored
+  ros2_ws/src/vrx IN.
+- `launch.sh` (host) — friendly one-command launcher: build/up/gui/switch/status/
+  attack/shell/logs/down. Handles X11 (DISPLAY, /tmp/.X11-unix, xhost, /dev/dri,
+  NVIDIA) + port 8080; opens the browser. macOS/Windows -> dashboard-only.
+- `docs/DEPLOY.md` — build/run/share (docker save|load), GUI X11 setup, layout.
+
+STATUS (update): IMAGE BUILDS (mcr:latest, 6.5 GB, all binaries+VRX baked in).
+**bluerov2 (underwater) FULLY VALIDATED in-container**: sim boots, dashboard
+serves (HTTP 200), acoustic attack -> 13 live detector alerts, AIS-None fix
+confirmed. Runtime fixes landed: entrypoint dropped `set -u` (ROS setup.bash has
+unbound vars -> instant exit-1); added iproute2(`ss`)+psmisc(`fuser`) the
+launchers need; Dockerfile COPY-split so app edits don't recompile VRX.
+**OPEN ISSUE — wamv (surface/VRX) does NOT boot in-container**: the VRX
+sydney_regatta world hangs in the containerized gz server (`ros_gz create` loops
+"Requesting list of world names" forever; `gz service /gazebo/worlds` times out).
+Ruled OUT: --net=host gz-transport interference (fails on bridge net too), missing
+X/GPU (fails with DISPLAY+/dev/dri forwarded too), Fuel download (VRX models are
+local on GZ_SIM_RESOURCE_PATH). The gz server loads sydney_regatta.sdf then stalls
+before serving worlds -- a world-load hang (VRX-in-Docker, known-hard). NEXT
+OPTIONS: (a) ship bluerov2 as the reliable containerized demo + document wamv runs
+natively on a GPU host; (b) keep debugging VRX headless (try xvfb-run wrapper /
+GZ_PARTITION / run world standalone `gz sim -s -r sydney_regatta.sdf` to see the
+hang). AWAITING USER DIRECTION.
+
+--- earlier build-failure fixes (all in-repo) ---
+Build iterated through THREE env failures, each fixed in-repo (so they won't recur):
+1. Build DNS couldn't resolve archive.ubuntu.com -> `launch.sh` builds with
+   `--network=host` (uses host DNS; host resolves the mirrors over IPv6).
+2. pip clashed with ROS's dpkg-managed numpy/blinker ("Cannot uninstall ...,
+   RECORD file not found") -> app deps now install into a `--system-site-packages`
+   venv at /opt/mcr-venv (shadows, never uninstalls); entrypoint prepends it to
+   PATH; requirements.txt trimmed to just pymavlink/pyais/Flask/Flask-SocketIO.
+3. ArduPilot install-prereqs + rosdep pip on Ubuntu 24.04 PEP-668 ->
+   `ENV PIP_BREAK_SYSTEM_PACKAGES=1` in the image.
+The build has since been interrupted twice by SESSION BOUNDARIES (not failures) --
+buildkit cache resumes it. **To resume: `./launch.sh build`** (cached layers make
+it fast up to wherever it got). Remaining UNVALIDATED layers = ArduPilot waf
+build (rover+sub) and VRX colcon build; watch those. After it builds:
+`./launch.sh up` -> http://localhost:8080, `./launch.sh gui` -> 3D.
+NOTE: all packaging + the detection-audit fixes are UNCOMMITTED.
+
+## DETECTION/ALERTS AUDIT (2026-07-31) — all 4 detectors verified, 3 fixes landed
+
+Triggered by "the acoustic alert isn't firing." Root-caused and audited the whole
+alert path live in both domains. **All four rule-based detectors work** — surface
+precision 1.00 / recall 1.00 (gps+ais+c2), underwater 1.00 / 1.00 (acoustic),
+**zero false positives** in either domain (C2 does NOT false-fire during AUTO nav).
+There is no ML in this project by design (roadmap WO-23 = rule-based detectors).
+
+Root cause of "acoustic alert never fires": a **profile/sim mismatch** — the
+dashboard was running profile `bluerov2` (underwater) while the booted sim was
+actually the WAM-V rover. The rover silently ignores the underwater
+VISION_POSITION_ESTIMATE, so the belief never drifts and no alert fires, with no
+error anywhere. Booting the real ArduSub stack: acoustic fires (12 live alerts, 1.00/1.00).
+
+Fixes landed this pass:
+1. **Mismatch guard** (`dashboard_server.py` `_domain_matches_vehicle` + red UI
+   `#warnbar`): the dashboard now checks the autopilot HEARTBEAT MAV_TYPE against
+   the profile domain and warns loudly if they disagree — so this silent-no-alert
+   trap can't recur.
+2. **Scorer auto-scoping** (`score_detectors.py`): the git-tracked
+   `attack_logs/*.csv` accumulate windows across ALL past runs, so the plain
+   documented command scored one run against months of history → bogus ~0.03
+   recall. Now auto-scopes to the alert file's own time span (explicit
+   `--min-ts`/`--max-ts` still override). Plain command now reports the true 1.00/1.00.
+3. **AIS suite verifier self-explains** (`run_attack_suite.py`): the suite's
+   `ais_spoof` check binds the AIS port with SO_REUSEPORT; when a blind detector
+   is concurrently bound, kernel REUSEPORT hashing routes ALL spoof datagrams to
+   ONE listener, so the verifier can see 0 and false-FAIL. It now says so and
+   points to the scorer as authoritative. Standalone (no concurrent detector) the
+   suite is a clean PASS (gps+ais+c2).
+
+Known design limitation (documented, not a bug): `AcousticDivergenceDetector`
+fires on belief drift only while **disarmed** — an armed, station-keeping AUV
+whose belief is spoofed would be missed. Fine for the demo (AUV idle when spoofed).
+
 ## CURRENT POSITION
 
 - **PROJECT COMPLETE (against stated scope).** CHECKPOINT 6 (final acceptance
