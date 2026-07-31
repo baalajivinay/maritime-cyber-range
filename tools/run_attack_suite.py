@@ -174,7 +174,16 @@ def check_gps_spoof(conn):
 
 def check_ais(conn):
     """Ghost (fabricated vessel) + impersonation (forged position under the real
-    MMSI). PASS if both signatures land on the AIS UDP channel."""
+    MMSI). PASS if both signatures land on the AIS UDP channel.
+
+    CAVEAT (measurement, not detection): this verifier binds the AIS port with
+    SO_REUSEPORT. The emulator/spoofer broadcast from a single source socket, so
+    the kernel's REUSEPORT hashing sends ALL their datagrams to exactly ONE bound
+    listener. If detection/run_detectors.py is ALSO bound to the AIS port at the
+    same time (the concurrent scoring workflow), it can win the hash and this
+    verifier then sees 0 messages -- a false FAIL. The detector's own result
+    (scored by tools/score_detectors.py) is authoritative for AIS. Run this suite
+    with no concurrent AIS listener for a clean PASS."""
     import ais_spoof
     from pyais.stream import IterMessages
     REAL = int(constants.VESSEL_MMSI)
@@ -226,6 +235,12 @@ def check_ais(conn):
     ghost_ok = seen.get(GHOST, 0) > 0
     imp_ok = seen.get(REAL, 0) > 0
     detail = f"ghost {GHOST}: {seen.get(GHOST,0)} msgs; impersonation of real MMSI {REAL}: {seen.get(REAL,0)} msgs"
+    if not ghost_ok and not imp_ok:
+        # Zero of BOTH signatures almost always means a concurrent AIS listener
+        # (e.g. run_detectors.py) won the SO_REUSEPORT hash -- not that the spoof
+        # failed. Say so, so a scoring-workflow run isn't misread as a real fail.
+        detail += "  [0/0 -> likely another AIS listener (run_detectors.py) grabbed the packets; " \
+                  "the scorer is authoritative -- re-run the suite with no concurrent detector]"
     return ("PASS" if (ghost_ok and imp_ok) else "FAIL"), detail
 
 

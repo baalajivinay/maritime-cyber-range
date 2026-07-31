@@ -42,6 +42,7 @@
         <h1>🛰️ Maritime Cyber Range</h1>
         <span class="sub" id="vehicle">Live Monitor</span>
     </header>
+    <div id="warnbar" style="display:none; background:#7f1d1d; color:#fff; padding:8px 14px; font-size:13px; font-weight:600; text-align:center;"></div>
 
     <div id="switch_overlay" style="position:fixed; inset:0; background:rgba(2,6,23,.93); display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; z-index:10000;">
         <div style="font-size:22px; font-weight:700;" id="switch_msg">Switching…</div>
@@ -200,6 +201,7 @@
                 a.innerHTML = '<span class="tag" style="background:'+(s.armed?'#7f1d1d':'#14532d')+';color:#fff">'+(s.armed?'ARMED':'disarmed')+'</span>'; }
             if(s.speed!==undefined) document.getElementById('speed').textContent = s.speed.toFixed(2)+' m/s';
             if(s.depth!==undefined) document.getElementById('depth').textContent = s.depth.toFixed(2)+' m';
+            if(s.warning){ var w=document.getElementById('warnbar'); if(w){ w.textContent='⚠ '+s.warning; w.style.display='block'; } }
         });
 
         // ---- Operator controls ----

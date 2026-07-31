@@ -97,6 +97,18 @@ project has achieved: surface precision 1.00 / recall 1.00; underwater recall
 1.00, precision ~0.82. The dashboard's **Attack Alerts** panel shows the same
 detector output live (WO-24).
 
+> Two gotchas the scoring workflow makes it easy to hit:
+> - **`score_detectors.py` auto-scopes to the alert file's own time span.** The
+>   `attack_logs/*.csv` ground truth is git-tracked and appended every run, so it
+>   holds windows from many past sessions; scoring one run against all of history
+>   would show a meaningless near-zero recall. The plain command handles this
+>   automatically now — pass `--min-ts`/`--max-ts` only to override.
+> - **Don't trust the attack SUITE's `ais_spoof` PASS/FAIL while a blind detector
+>   is bound to the AIS port.** Both bind UDP 10110 with SO_REUSEPORT and the
+>   kernel routes all spoof packets to one of them, so the suite can false-FAIL
+>   even though the detector caught the spoof. The **scorer** is authoritative for
+>   AIS; run the suite with no concurrent detector for a clean suite PASS.
+
 ## Adding your own vehicle
 
 1. **Model.** Provide a Gazebo SDF with an `ArduPilotPlugin` (its `<fdm_port_in>`
