@@ -125,6 +125,10 @@ def believed_thread():
 
 
 def ais_thread():
+    # AIS is a surface-only feed; underwater profiles set AIS_UDP_ADDR = None
+    # (no AIS propagates underwater), so there is nothing to listen to.
+    if not constants.AIS_UDP_ADDR:
+        return
     try:
         ip, port = constants.AIS_UDP_ADDR
         for msg in UDPReceiver(ip, port):
@@ -140,16 +144,38 @@ def ais_thread():
         print(f"AIS thread error: {e}")
 
 
+def _domain_matches_vehicle(mav_type):
+    """The whole 'acoustic alert never fires' class of bug came from running this
+    dashboard on one profile (e.g. bluerov2/underwater) while the booted sim was
+    actually a different vehicle (e.g. a WAM-V rover). The rover silently ignores
+    the underwater VISION_POSITION_ESTIMATE, so nothing ever drifts and no alert
+    fires -- with no error anywhere. Guard it: an underwater profile must be a
+    SUBMARINE; a surface profile must be a boat/rover."""
+    T = mavutil.mavlink
+    surface = {T.MAV_TYPE_GROUND_ROVER, T.MAV_TYPE_SURFACE_BOAT}
+    underwater = {T.MAV_TYPE_SUBMARINE}
+    expected = underwater if DOMAIN == "underwater" else surface
+    return mav_type in expected
+
+
 def detector_thread():
     label = f"{DOMAIN.title()} — {PROFILE} ({constants.ARDUPILOT_VEHICLE_TYPE})"
+    warned_mismatch = False
     while True:
         try:
             m = mavutil.mavlink_connection("tcp:127.0.0.1:5763")
-            m.wait_heartbeat(timeout=15)
+            hb = m.wait_heartbeat(timeout=15)
             m.mav.request_data_stream_send(m.target_system, m.target_component,
                                            mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
             mode_map = {v: k for k, v in m.mode_mapping().items()} if m.mode_mapping() else {}
             socketio.emit('status_update', {'vehicle': label, 'attacks': list(constants.ATTACKS)})
+            if hb is not None and not warned_mismatch and not _domain_matches_vehicle(hb.type):
+                warned_mismatch = True
+                warn = (f"PROFILE/SIM MISMATCH: dashboard profile '{PROFILE}' is {DOMAIN}, but the "
+                        f"running autopilot reports MAV_TYPE={hb.type}. Attacks/alerts for this "
+                        f"domain will NOT behave correctly. Reboot with tools/run_demo.sh {PROFILE} up.")
+                print("!! " + warn, flush=True)
+                socketio.emit('status_update', {'warning': warn})
             while True:
                 msg = m.recv_match(blocking=True, timeout=1)
                 if msg is None:
@@ -251,13 +277,16 @@ def launch_attack(kind, opts=None):
         return "C2 injection: " + labels.get(command, command)
     if kind == "acoustic_spoof":
         import acoustic_spoof as A
-        c = cmd_conn()
-        threading.Thread(target=A.run_feed, args=(c,), daemon=True).start()
-        time.sleep(1)
-        with A._lock:
-            A.state.mode = "ramp"; A.state.start_time = time.time(); A.state.active = True
         _attacks["acoustic_spoof"] = A
-        return "Acoustic-positioning spoof engaged (walking the AUV's belief off)"
+        def _ac():
+            c = cmd_conn()
+            threading.Thread(target=A.run_feed, args=(c,), daemon=True).start()
+            time.sleep(8)   # let ExternalNav ESTABLISH before walking it off,
+                            # else the belief never drifts and the detector sees nothing
+            with A._lock:
+                A.state.mode = "ramp"; A.state.start_time = time.time(); A.state.active = True
+        threading.Thread(target=_ac, daemon=True).start()
+        return "Acoustic-positioning spoof engaged (establishing nav ~8 s, then walking the AUV's belief off)"
     return "unknown attack"
 
 

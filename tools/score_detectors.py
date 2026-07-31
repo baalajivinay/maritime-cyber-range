@@ -66,26 +66,47 @@ def load_windows(path, merge_gap=8.0, pad=12.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--alerts", required=True)
-    ap.add_argument("--min-ts", type=float, default=0.0,
-                    help="ignore ground-truth/alerts before this wall-clock (scope to one run)")
+    ap.add_argument("--min-ts", type=float, default=None,
+                    help="ignore ground-truth/alerts before this wall-clock (scope to one run). "
+                         "Default: auto-scoped to the alert file's own time span.")
+    ap.add_argument("--max-ts", type=float, default=None,
+                    help="ignore ground-truth/alerts after this wall-clock. "
+                         "Default: auto-scoped to the alert file's own time span.")
     args = ap.parse_args()
 
-    # ground-truth windows per family
-    windows = {}
-    for fname, fam in GT_FILES.items():
-        w = [(a, b) for (a, b) in load_windows(os.path.join(LOGS, fname)) if b >= args.min_ts]
-        if w:
-            windows[fam] = w
-
-    # alerts
-    alerts = []
+    # load alerts first so we can auto-scope to their time span
+    all_alerts = []
     with open(args.alerts) as f:
         for line in f:
             line = line.strip()
             if line:
-                a = json.loads(line)
-                if a["t"] >= args.min_ts:
-                    alerts.append(a)
+                all_alerts.append(json.loads(line))
+
+    # The attack_logs/*.csv ground truth is git-tracked and APPENDED every run, so
+    # it accumulates windows from many past sessions. Scoring one run's alerts
+    # against all of history yields a meaningless near-zero recall. So unless the
+    # caller pins an explicit window, auto-scope to the span of THIS alert file
+    # (padded), which is the run that produced these alerts.
+    if all_alerts:
+        ats = [a["t"] for a in all_alerts]
+        if args.min_ts is None:
+            args.min_ts = min(ats) - 60.0
+        if args.max_ts is None:
+            args.max_ts = max(ats) + 60.0
+    else:
+        args.min_ts = args.min_ts if args.min_ts is not None else 0.0
+        args.max_ts = args.max_ts if args.max_ts is not None else float("inf")
+
+    # ground-truth windows per family (overlapping the scored span)
+    windows = {}
+    for fname, fam in GT_FILES.items():
+        w = [(a, b) for (a, b) in load_windows(os.path.join(LOGS, fname))
+             if b >= args.min_ts and a <= args.max_ts]
+        if w:
+            windows[fam] = w
+
+    # alerts within the scored span
+    alerts = [a for a in all_alerts if args.min_ts <= a["t"] <= args.max_ts]
 
     families = sorted(set(list(windows.keys()) + [a["attack_type"] for a in alerts]))
     print(f"{'attack':16} {'TP':>4} {'FP':>4} {'windows':>8} {'detected':>9} {'prec':>6} {'recall':>7}")
