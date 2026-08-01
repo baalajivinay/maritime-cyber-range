@@ -48,6 +48,9 @@ open_browser(){
 # Assemble the docker run flags for GUI (X11) + dashboard (port 8080).
 run_flags(){
   local flags=(--name "$NAME" --hostname mcr -d --rm)
+  # forward an optional control-auth token: when MCR_DASHBOARD_TOKEN is set, the
+  # dashboard requires it on every /cmd/* call (safe to expose). See docs/DEPLOY.md.
+  [ -n "${MCR_DASHBOARD_TOKEN:-}" ] && flags+=(-e "MCR_DASHBOARD_TOKEN=$MCR_DASHBOARD_TOKEN")
   if [ "$(uname -s)" = "Linux" ]; then
     # host networking = dashboard on localhost:8080 + simplest X/gz-transport
     flags+=(--net=host)

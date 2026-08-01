@@ -205,7 +205,16 @@
         });
 
         // ---- Operator controls ----
-        function post(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}).then(r=>r.json()); }
+        // Control token: only needed when the server sets MCR_DASHBOARD_TOKEN
+        // (e.g. when the dashboard is exposed). Read it from ?token=... (or
+        // #token=...) so a shared link like https://host/?token=SECRET just works.
+        var MCR_TOKEN = new URLSearchParams(location.search).get('token')
+                     || new URLSearchParams(location.hash.replace(/^#/,'')).get('token') || '';
+        function post(url, body){
+            var h = {'Content-Type':'application/json'};
+            if(MCR_TOKEN) h['X-MCR-Token'] = MCR_TOKEN;
+            return fetch(url,{method:'POST',headers:h,body:JSON.stringify(body||{})}).then(r=>r.json());
+        }
         function flash(msg){ document.getElementById('cmdmsg').textContent = msg; }
 
         document.querySelectorAll('.atk').forEach(function(b){
