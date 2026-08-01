@@ -18,6 +18,7 @@ import sys
 import json
 import time
 import math
+import hmac
 import socket
 import threading
 import subprocess
@@ -35,6 +36,26 @@ from detectors import DetectorSuite
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# --- optional control-endpoint auth (OFF unless MCR_DASHBOARD_TOKEN is set) ----
+# The /cmd/* endpoints change state: launch attacks, move the vehicle, reboot the
+# whole sim. With no token they are OPEN -- fine on localhost, but a real loophole
+# once the dashboard is reachable on a LAN or a public tunnel (anyone with the URL
+# could drive it). Set MCR_DASHBOARD_TOKEN to require a shared secret on every
+# control call; read-only views ('/', '/whoami', live telemetry) stay open. The
+# browser forwards it from the page URL's ?token=... as an X-MCR-Token header.
+CONTROL_TOKEN = os.environ.get("MCR_DASHBOARD_TOKEN", "").strip()
+
+
+@app.before_request
+def _gate_control_endpoints():
+    if not CONTROL_TOKEN:
+        return                                   # auth disabled -> open (default)
+    if not request.path.startswith("/cmd/"):
+        return                                   # only guard state-changing calls
+    supplied = request.headers.get("X-MCR-Token") or request.args.get("token", "")
+    if not hmac.compare_digest(supplied, CONTROL_TOKEN):
+        return jsonify(ok=False, msg="unauthorized: a valid control token is required"), 401
 
 PROFILE = constants.PROFILE_NAME
 DOMAIN = constants.DOMAIN

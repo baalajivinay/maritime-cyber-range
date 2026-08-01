@@ -92,6 +92,26 @@ The launcher wires this up automatically on Linux: `--net=host`, forwards
   VcXsrv (Windows) plus `-e DISPLAY=host.docker.internal:0` — Linux is the
   supported path for the GUI.
 
+## Securing an exposed dashboard (LAN / tunnel)
+
+By default the dashboard's control endpoints (`/cmd/attack`, `/cmd/goto`,
+`/cmd/vehicle`, …) are **open** — convenient on `localhost`, but a real loophole
+the moment the dashboard is reachable on a LAN or a public tunnel: anyone with the
+URL could launch attacks, move the vehicle, or reboot the sim. Read-only viewing
+(the map, telemetry, alerts) is harmless; **control** is what you gate.
+
+Set a shared token and every `/cmd/*` call requires it (read-only views stay open):
+
+```bash
+MCR_DASHBOARD_TOKEN='pick-a-long-secret' ./launch.sh up
+```
+
+Then share the dashboard as `http://<host>:8080/?token=pick-a-long-secret` — the
+page forwards the token automatically. Wrong/missing token → `401`. Leave
+`MCR_DASHBOARD_TOKEN` unset for frictionless local use. (The token is a
+demo-grade gate, not a substitute for not exposing a sim you care about; the
+built-in web server is a dev server without HTTPS.)
+
 ## What's inside (image layout)
 
 The image reproduces the reference machine's `$HOME` so the repo's own

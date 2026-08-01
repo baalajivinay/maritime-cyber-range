@@ -22,6 +22,30 @@ Guardrail: reuse the proven surface architecture (ArduPilotPlugin FDM JSON ->
 ground truth; per-attack private CSVs in `attack_logs/`). Do not reinvent it
 for underwater.
 
+## SECURITY/INTEGRITY AUDIT (2026-08-02)
+
+Swept the codebase for leakage + loopholes, goal-focused (a credible cyber-range
+= blind detectors scored against ground truth they never saw). Results:
+- **Ground-truth isolation: INTACT.** Only `tools/score_detectors.py` (offline)
+  reads `attack_logs/*.csv`; attacks WRITE their own CSVs; detectors + the live
+  dashboard path consume only live feeds. The AIS detector's `known_mmsi` is the
+  vessel's openly-broadcast MMSI (operational, not attack ground truth) — verified.
+- **Credential leak: NONE in this repo.** README warns a sudo password was once
+  hardcoded; confirmed absent from the current tree AND all git history here (it
+  lived in the pre-consolidation repos). Nothing to scrub.
+- **Injection: guarded.** All subprocess calls are list-form (no shell); the one
+  `bash -c` path (`/cmd/vehicle`) interpolates only a whitelisted profile.
+- **Flask debug OFF** (no Werkzeug-debugger RCE).
+- **FIXED — open control surface.** The `/cmd/*` endpoints (launch attacks / move
+  vehicle / reboot sim) had no auth — a real loophole once exposed on LAN/tunnel.
+  Added an OPTIONAL shared-token gate: `MCR_DASHBOARD_TOKEN` env (off by default).
+  When set, every `/cmd/*` needs the token (`X-MCR-Token` header or `?token=`);
+  read-only views stay open. UI forwards it from the page URL. `launch.sh` passes
+  the env through; docs/DEPLOY.md documents safe exposure. Verified with the Flask
+  test client (off→open; on→401 without / 200 with). Constant-time compare.
+- Noted (not fixed, acceptable for a demo): wildcard SocketIO CORS on read-only
+  telemetry; the built-in werkzeug dev server has no HTTPS.
+
 ## PACKAGING (2026-07-31) — Docker image + one-command launcher (WO-27)
 
 Goal: "download → extract → run the launcher → see the sim, set up the vehicle,
