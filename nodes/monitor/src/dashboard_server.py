@@ -20,8 +20,11 @@ import time
 import math
 import hmac
 import socket
+import statistics
+import resource
 import threading
 import subprocess
+from collections import deque
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
 from pymavlink import mavutil
@@ -31,8 +34,11 @@ _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.
 sys.path.insert(0, _REPO)
 sys.path.insert(0, os.path.join(_REPO, "detection"))
 sys.path.insert(0, os.path.join(_REPO, "attacks"))
+sys.path.insert(0, os.path.join(_REPO, "tools"))
 import constants
 from detectors import DetectorSuite
+from score_detectors import score as score_alerts
+from generate_report import render_family_table, render_overhead_panel
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
@@ -79,11 +85,93 @@ M_PER_DEG_LON = constants.m_per_deg_lon(constants.HOME_LAT)
 _det_suite = DetectorSuite(DOMAIN, cfg={"known_mmsi": constants.VESSEL_MMSI})
 _alert_lock = threading.Lock()
 
+# --- live system-overhead + detection-latency instrumentation ----------------
+# Mirrors detection/run_detectors.py's overhead sampling, but for THIS
+# in-process live detector loop, so the dashboard can show the same
+# CPU/memory/throughput picture in real time instead of only after the fact.
+_overhead_lock = threading.Lock()
+_event_durations = deque(maxlen=2000)   # perf_counter seconds per suite.update() call, rolling window
+_events_processed = 0
+_alerts_emitted = 0
+_attack_launch_t = {}      # attack_type -> wall time it was last launched from the UI
+_latency_reported = set()  # attack_types whose first-alert-since-launch has already been reported
+
+
+def tap(event):
+    """Feed one live event through the detector suite, timing the call for the
+    live overhead readout (see /cmd/report and the periodic overhead_update)."""
+    global _events_processed
+    t0 = time.perf_counter()
+    alerts = _det_suite.update(event)
+    dt = time.perf_counter() - t0
+    with _overhead_lock:
+        _event_durations.append(dt)
+        _events_processed += 1
+    _push_alerts(alerts)
+    return alerts
+
+
+def _pctile(sorted_vals, p):
+    if not sorted_vals:
+        return None
+    k = (len(sorted_vals) - 1) * p
+    f, c = int(k), min(int(k) + 1, len(sorted_vals) - 1)
+    if f == c:
+        return sorted_vals[f]
+    return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
+
+
+def _live_overhead_snapshot():
+    """Same shape as detection/run_detectors.py's overhead JSON, computed live
+    from this process's own resource usage + the rolling event-duration window."""
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    cpu_s = usage.ru_utime + usage.ru_stime
+    wall_s = time.time() - SESSION_START
+    with _overhead_lock:
+        proc_us = sorted(d * 1e6 for d in _event_durations)
+        n = _events_processed
+        emitted = _alerts_emitted
+    return {
+        "profile": PROFILE, "domain": DOMAIN,
+        "wall_s": round(wall_s, 3),
+        "cpu_s": round(cpu_s, 3),
+        "cpu_pct_of_wall": round(100.0 * cpu_s / wall_s, 3) if wall_s > 0 else None,
+        "peak_rss_mb": round(usage.ru_maxrss / 1024.0, 2),
+        "events_processed": n,
+        "alerts_emitted": emitted,
+        "events_per_sec": round(n / wall_s, 2) if wall_s > 0 else None,
+        "event_proc_time_us": {
+            "mean": round(statistics.mean(proc_us), 2) if proc_us else None,
+            "median": round(statistics.median(proc_us), 2) if proc_us else None,
+            "p95": round(_pctile(proc_us, 0.95), 2) if proc_us else None,
+            "max": round(max(proc_us), 2) if proc_us else None,
+        },
+    }
+
+
+def overhead_emitter():
+    while True:
+        time.sleep(5)
+        try:
+            socketio.emit('overhead_update', _live_overhead_snapshot())
+        except Exception:
+            pass
+
 
 def _push_alerts(alerts):
+    global _alerts_emitted
     for a in alerts:
         d = a.as_dict()
         socketio.emit('attack_alert', d)
+        with _overhead_lock:
+            _alerts_emitted += 1
+        launch_t = _attack_launch_t.get(a.attack_type)
+        if launch_t is not None and a.attack_type not in _latency_reported:
+            _latency_reported.add(a.attack_type)
+            socketio.emit('attack_latency', {
+                'attack_type': a.attack_type,
+                'latency_s': round(max(0.0, a.t - launch_t), 2),
+            })
         with _alert_lock:
             with open(ALERT_LOG, "a") as f:
                 f.write(json.dumps(d) + "\n")
@@ -157,8 +245,8 @@ def ais_thread():
                 d = msg.decode()
                 if hasattr(d, 'lat') and hasattr(d, 'lon') and d.lat and d.lon:
                     socketio.emit('ais_update', {'mmsi': d.mmsi, 'lat': float(d.lat), 'lon': float(d.lon)})
-                    _push_alerts(_det_suite.update({"type": "ais", "t": time.time(),
-                                                    "mmsi": d.mmsi, "lat": float(d.lat), "lon": float(d.lon)}))
+                    tap({"type": "ais", "t": time.time(),
+                         "mmsi": d.mmsi, "lat": float(d.lat), "lon": float(d.lon)})
             except Exception:
                 pass
     except Exception as e:
@@ -203,20 +291,20 @@ def detector_thread():
                     continue
                 t, mt = time.time(), msg.get_type()
                 if mt == "GLOBAL_POSITION_INT":
-                    _push_alerts(_det_suite.update({"type": "believed_pos", "t": t, "lat": msg.lat / 1e7, "lon": msg.lon / 1e7}))
+                    tap({"type": "believed_pos", "t": t, "lat": msg.lat / 1e7, "lon": msg.lon / 1e7})
                     socketio.emit('status_update', {'depth': msg.relative_alt / 1000.0})
                 elif mt == "LOCAL_POSITION_NED":
-                    _push_alerts(_det_suite.update({"type": "local_pos", "t": t, "n": msg.x, "e": msg.y, "d": msg.z, "vx": msg.vx, "vy": msg.vy}))
+                    tap({"type": "local_pos", "t": t, "n": msg.x, "e": msg.y, "d": msg.z, "vx": msg.vx, "vy": msg.vy})
                 elif mt == "VFR_HUD":
                     socketio.emit('status_update', {'speed': msg.groundspeed})
                 elif mt == "HEARTBEAT" and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
                     armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-                    _push_alerts(_det_suite.update({"type": "armed", "t": t, "armed": armed}))
+                    tap({"type": "armed", "t": t, "armed": armed})
                     socketio.emit('status_update', {'armed': armed, 'mode': mode_map.get(msg.custom_mode, str(msg.custom_mode))})
                 elif mt == "RC_CHANNELS":
                     driven = [getattr(msg, f"chan{i}_raw", 0) for i in (1, 3)]
                     if any(900 < v < 2100 and abs(v - 1500) > 100 for v in driven):
-                        _push_alerts(_det_suite.update({"type": "rc_override", "t": t, "domain": DOMAIN}))
+                        tap({"type": "rc_override", "t": t, "domain": DOMAIN})
         except Exception as e:
             print(f"detector thread error: {e}; retry 3s"); time.sleep(3)
 
@@ -254,6 +342,8 @@ def _relay(cmd):
 
 def launch_attack(kind, opts=None):
     opts = opts or {}
+    _attack_launch_t[kind] = time.time()
+    _latency_reported.discard(kind)
     if kind == "gps_spoof":
         _relay("step"); return "GPS spoof engaged (+50 m offset injected)"
     if kind == "ais_spoof":
@@ -436,15 +526,34 @@ def cmd_goto():
 
 @app.route('/cmd/report', methods=['POST'])
 def cmd_report():
-    """Score the blind detectors (this session's alerts) vs ground truth."""
+    """Score the blind detectors (this session's alerts) vs ground truth and
+    render the same precision/recall/FP-rate/latency + overhead tables as
+    tools/generate_report.py, scoped to this live session."""
     try:
-        out = subprocess.run(
-            ["python3", os.path.join(_REPO, "tools", "score_detectors.py"),
-             "--alerts", ALERT_LOG, "--min-ts", str(SESSION_START)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30).stdout
-        return jsonify(ok=True, report=out)
+        result = score_alerts(ALERT_LOG, min_ts=SESSION_START)
+        overhead = _live_overhead_snapshot()
+        rows = render_family_table(result["families"])
+        frag = f"""
+        <div class="tblwrap"><table class="detail">
+          <thead>
+            <tr>
+              <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+              <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+            </tr>
+          </thead>
+          <tbody>{rows or '<tr><td colspan="10" class="muted">no attacks scored yet this session</td></tr>'}</tbody>
+        </table></div>
+        <h4 style="margin:16px 0 8px;">System performance overhead (this session)</h4>
+        <div class="tblwrap">{render_overhead_panel(overhead)}</div>
+        """
+        return jsonify(ok=True, html=frag)
     except Exception as e:
-        return jsonify(ok=False, report=str(e)), 500
+        return jsonify(ok=False, html=f"<p class='missing'>error building report: {e}</p>"), 500
+
+
+@app.route('/live/overhead')
+def live_overhead():
+    return jsonify(_live_overhead_snapshot())
 
 
 @app.route('/cmd/vehicle', methods=['POST'])
@@ -479,6 +588,6 @@ def whoami():
 
 
 if __name__ == '__main__':
-    for fn in (gz_pose_thread, believed_thread, ais_thread, detector_thread):
+    for fn in (gz_pose_thread, believed_thread, ais_thread, detector_thread, overhead_emitter):
         threading.Thread(target=fn, daemon=True).start()
     socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)
