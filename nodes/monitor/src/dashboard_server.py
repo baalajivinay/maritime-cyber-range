@@ -26,7 +26,7 @@ import threading
 import subprocess
 from collections import deque
 from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, emit
 from pymavlink import mavutil
 from pyais.stream import UDPReceiver
 
@@ -65,6 +65,8 @@ def _gate_control_endpoints():
 
 PROFILE = constants.PROFILE_NAME
 DOMAIN = constants.DOMAIN
+VEHICLE_LABEL = f"{DOMAIN.title()} — {PROFILE} ({constants.ARDUPILOT_VEHICLE_TYPE})"
+_last_warning = None   # set by detector_thread if a profile/sim domain mismatch is seen
 RUN_DIR = os.environ.get("MCR_RUN_DIR", f"/tmp/mcr_run/{PROFILE}")
 RELAY_FIFO = os.path.join(RUN_DIR, "relay.fifo")
 SESSION_START = time.time()
@@ -268,7 +270,7 @@ def _domain_matches_vehicle(mav_type):
 
 
 def detector_thread():
-    label = f"{DOMAIN.title()} — {PROFILE} ({constants.ARDUPILOT_VEHICLE_TYPE})"
+    global _last_warning
     warned_mismatch = False
     while True:
         try:
@@ -277,13 +279,14 @@ def detector_thread():
             m.mav.request_data_stream_send(m.target_system, m.target_component,
                                            mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
             mode_map = {v: k for k, v in m.mode_mapping().items()} if m.mode_mapping() else {}
-            socketio.emit('status_update', {'vehicle': label, 'attacks': list(constants.ATTACKS)})
+            socketio.emit('status_update', {'vehicle': VEHICLE_LABEL, 'attacks': list(constants.ATTACKS)})
             if hb is not None and not warned_mismatch and not _domain_matches_vehicle(hb.type):
                 warned_mismatch = True
                 warn = (f"PROFILE/SIM MISMATCH: dashboard profile '{PROFILE}' is {DOMAIN}, but the "
                         f"running autopilot reports MAV_TYPE={hb.type}. Attacks/alerts for this "
                         f"domain will NOT behave correctly. Reboot with tools/run_demo.sh {PROFILE} up.")
                 print("!! " + warn, flush=True)
+                _last_warning = warn
                 socketio.emit('status_update', {'warning': warn})
             while True:
                 msg = m.recv_match(blocking=True, timeout=1)
@@ -493,6 +496,20 @@ def goto(lat, lon):
     print(f"[goto] AUTO to {lat:.5f},{lon:.5f} armed={armed}", flush=True)
     c.close()
     return f"sailing to {lat:.5f}, {lon:.5f} (AUTO){'' if armed else ' — arm not confirmed'}"
+
+
+@socketio.on('connect')
+def _on_client_connect():
+    """The vehicle label + which attack buttons apply is static (derivable from
+    constants at any time), but detector_thread only ever broadcasts it ONCE,
+    right after its first heartbeat during boot -- any browser that connects
+    later (i.e. the normal case: sim boots, then an operator opens the page)
+    silently never gets it, showing a generic header and every attack button
+    regardless of domain. Send it directly to each newly-connecting client
+    instead of relying on that one-shot broadcast."""
+    emit('status_update', {'vehicle': VEHICLE_LABEL, 'attacks': list(constants.ATTACKS)})
+    if _last_warning:
+        emit('status_update', {'warning': _last_warning})
 
 
 # --- routes ------------------------------------------------------------------
