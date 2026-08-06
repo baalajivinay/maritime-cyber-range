@@ -414,6 +414,19 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-07: Dashboard upgrade -- /cmd/report now renders the same rich
+  precision/recall/FP-rate/latency + overhead tables as generate_report.py
+  (reused its render_family_table/render_overhead_panel) instead of a raw CLI
+  text dump. Added live instrumentation to the dashboard's OWN in-process
+  detector loop (separate from detection/run_detectors.py): a "Live detection
+  metrics" card streams CPU%/peak RSS/events-per-sec/avg-proc-time every 5s via
+  a new `overhead_update` socket event, and a badge pops up with measured
+  detect-latency (launch-click -> first matching alert) via `attack_latency`.
+  Also made the layout responsive (stacks on screens <900px) and gave report
+  tables their own horizontal scroll instead of overflowing the page. Verified
+  the backend logic (tap()/latency/overhead snapshot) via a standalone import
+  smoke test (no live sim needed) and the frontend visually via the browser
+  preview (KPI card, latency badges, report overlay, mobile stacking).
 - 2026-08-07: Added the two docx-required metrics that were missing (detection
   latency in score_detectors.py, system overhead self-sampling in
   run_detectors.py) + tools/generate_report.py compiling both into
