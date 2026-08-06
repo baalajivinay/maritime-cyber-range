@@ -199,6 +199,51 @@ stack (wamv and bluerov2) to collect real `detector_overhead_*.json` samples
 profiles, honestly, since no live-sampled overhead data has been generated
 since the instrumentation landed), then regenerate the report.
 
+## LIVE DASHBOARD TEST (2026-08-07) — one fix landed, one real gap found deeper than expected
+
+Booted `wamv` for real (`tools/run_demo.sh wamv up`) and drove the dashboard
+through a browser instead of just reading code, to verify the previous
+session's live-KPI/report work actually functions end-to-end. It does: GPS
+spoof/AIS spoof both fired detectors, live latency badges showed correct
+values (0.00-0.08s), live CPU/RSS/events-per-sec updated in real time, and
+the rich `/cmd/report` overlay matched what was observed live.
+
+**Fixed and verified live (commit 1ca5379)**: `status_update` (vehicle label
++ which attack buttons apply) was only ever broadcast once, right after
+`detector_thread`'s first heartbeat during boot — before any browser
+normally connects. Every dashboard load after that showed generic "Live
+Monitor" and all four attack buttons regardless of domain (confirmed:
+Acoustic spoof visible on the surface WAM-V). Fixed via a `socketio.on
+('connect')` handler that sends the (static, constants-derived) label/attack
+list directly to each new client. Reproduced clean on two separate boots
+after the fix.
+
+**Found, NOT fixed — needs follow-up, likely NOT a dashboard code bug**: C2
+injection (`inject_forged_rc_override`) and click-to-navigate (`goto()`)
+both APPEAR to work (mode switches, vehicle arms, mission uploads/ACKs) but
+neither actually moves the vehicle. Traced with live MAVLink probes during
+an active RC override:
+- `RC_CHANNELS` (autopilot's own RC-input echo) stayed at chan1=1500/
+  chan3=1500 the ENTIRE override window (should show chan3≈1900).
+- `SERVO_OUTPUT_RAW` (actual actuator output) ALSO stayed flat at 1500/1500.
+- Direct Gazebo topic capture (`gz topic -e -t /wamv/thrusters/left|right/
+  thrust`) showed continuous ZERO-value thrust messages throughout — the
+  ArduPilotPlugin bridge is alive and publishing, but the value is always 0.
+- No `STATUSTEXT` failsafe announcement appeared during the window.
+- Reproduced across THREE independent fresh boots (not a one-off).
+
+This means ArduPilot's own control output never goes non-neutral regardless
+of command source (RC override OR AUTO mission) — the two attacks that DO
+work (GPS/AIS spoof) are pure sensor-injection and never touch actuators at
+all, which is consistent with a single shared root cause at the actuator/
+control-output layer, not two separate bugs. Prior checkpoints (WO-09/WO-10,
+WO-19's "+8.25m true depth seizure") documented this working before, so
+something in the current build/param state differs from what was validated
+then. NEXT: check ArduPilot Rover failsafe/safety params (`ARMING_CHECK`,
+`FS_ACTION`/throttle-failsafe settings, `MOT_SAFE_DISARM`) against what WO-09
+validated — this is ArduPilot/Gazebo-config debugging, not dashboard code,
+so out of scope for a quick dashboard-focused session.
+
 ## CURRENT POSITION
 
 - **PROJECT COMPLETE (against stated scope).** CHECKPOINT 6 (final acceptance
