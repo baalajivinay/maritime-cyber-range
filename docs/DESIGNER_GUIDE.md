@@ -13,8 +13,9 @@ read results, and add your own vehicle.
 | One-command sim | `tools/run_sim.sh` | Boots a whole domain's stack with real health checks: Gazebo world → FDM relay → ArduPilot SITL → MAVLink bridge → (surface) AIS emulator. |
 | Attacks | `attacks/*.py` | `gps_spoof`, `ais_spoof` (ghost + impersonation), `c2_replay` (RC-override / command injection), `acoustic_spoof` (submerged position spoof). |
 | Attack runner | `tools/run_attack_suite.py` | Runs the profile's applicable attacks, verifies each vs true Gazebo pose, reports PASS/FAIL/SKIP/N-A. |
-| Detection | `detection/` | Blind rule-based detectors on live feeds + a live dashboard alert layer. |
-| Scoring | `tools/score_detectors.py` | Replays blind detector alerts vs ground truth → precision/recall per attack. |
+| Detection | `detection/` | Blind rule-based detectors on live feeds + a live dashboard alert layer. `run_detectors.py` also self-samples its own CPU/memory/throughput (system-overhead metric). |
+| Scoring | `tools/score_detectors.py` | Replays blind detector alerts vs ground truth → precision/recall/false-positive-rate/detection-latency per attack. |
+| Evaluation report | `tools/generate_report.py` | Compiles every profile's scoring + overhead numbers into one HTML report (`evidence/evaluation_report.html`). |
 | Vehicle contract | `tools/validate_vehicle.py` | Checks a new vehicle meets the harness contract before you boot it. |
 
 Deeper design notes live in `docs/ARCHITECTURE.md`; the full build history and
@@ -92,10 +93,32 @@ python3 tools/run_attack_suite.py --profile wamv
 python3 tools/score_detectors.py --alerts evidence/detector_alerts_wamv.jsonl
 ```
 
-The scorer prints precision/recall per attack family. Reference results this
-project has achieved: surface precision 1.00 / recall 1.00; underwater recall
-1.00, precision ~0.82. The dashboard's **Attack Alerts** panel shows the same
+The scorer prints precision/recall/false-positive-rate/detection-latency per
+attack family. Reference results this project has achieved: surface precision
+1.00 / recall 1.00, mean latency well under a second; underwater recall 1.00,
+precision ~0.82. The dashboard's **Attack Alerts** panel shows the same
 detector output live (WO-24).
+
+`run_detectors.py` also writes `evidence/detector_overhead_<profile>.json` at
+exit — the CPU time, peak resident memory, and per-event processing time it
+cost to run the detection layer itself over that session. Since the detectors
+are a passive tap (never inline with vessel control), this figure *is* the
+whole system-performance-overhead the monitoring layer adds.
+
+### Compiling the evaluation report
+
+Once you have `evidence/detector_alerts_<profile>.jsonl` (+ optionally its
+`detector_overhead_<profile>.json`) for the profiles you care about:
+
+```bash
+python3 tools/generate_report.py     # -> evidence/evaluation_report.html
+```
+
+This is the project's "scenario evaluation report" — one page with a
+cross-vehicle summary (precision/recall/FP-rate/latency/CPU/RSS) and a
+per-attack breakdown per vehicle, generated from the same scoring code path as
+the CLI above (no separate logic to drift out of sync). It only reads what's
+already on disk; run the sim + `run_detectors.py` first to produce fresh data.
 
 > Two gotchas the scoring workflow makes it easy to hit:
 > - **`score_detectors.py` auto-scopes to the alert file's own time span.** The
