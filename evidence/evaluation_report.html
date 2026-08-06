@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Maritime Cyber Range -- Scenario Evaluation Report</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 980px;
+          margin: 2rem auto; padding: 0 1.5rem; line-height: 1.5;
+          color: #1a1a1a; background: #fff; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e6e6; background: #14161a; }
+    table { border-color: #3a3d44 !important; }
+    th { background: #1f2228 !important; }
+    tr:nth-child(even) td { background: #1a1d22 !important; }
+    code { background: #23262c !important; }
+    .missing { color: #f0a34a !important; }
+  }
+  h1 { margin-bottom: 0.2rem; }
+  .meta { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .methodology { background: rgba(120,120,120,0.08); border-radius: 8px; padding: 1rem 1.25rem;
+                   font-size: 0.92rem; margin-bottom: 2rem; }
+  .methodology h2 { margin-top: 0; font-size: 1.05rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0 1.5rem; font-size: 0.92rem; }
+  th, td { border: 1px solid #d0d3d8; padding: 0.4rem 0.6rem; text-align: right; }
+  th { background: #f4f5f7; text-align: right; }
+  td:first-child, th:first-child { text-align: left; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  table.kv th { text-align: left; width: 40%; }
+  table.kv td { text-align: left; }
+  section.profile { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid #d0d3d8; }
+  .domain { font-weight: normal; color: #777; font-size: 1rem; }
+  .src { color: #666; font-size: 0.85rem; }
+  code { background: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 4px; }
+  .missing { color: #a05a00; font-style: italic; }
+  footer { margin-top: 3rem; color: #888; font-size: 0.8rem; border-top: 1px solid #d0d3d8; padding-top: 1rem; }
+</style>
+</head>
+<body>
+  <h1>Autonomous Maritime Cyber Range</h1>
+  <div class="meta">Scenario evaluation report &middot; generated 2026-08-07 03:35:54 IST</div>
+
+  <div class="methodology">
+    <h2>Methodology</h2>
+    <p><b>Detection accuracy</b> (precision/recall) and <b>false-positive rate</b> come from
+    replaying each run's blind detector alerts (<code>detection/run_detectors.py</code>, which
+    never sees attack ground truth) against the private ground-truth logs in
+    <code>attack_logs/</code>, via <code>tools/score_detectors.py</code>. A ground-truth
+    action is clustered into a time window; an alert is a true positive if it falls in a
+    window of the same attack family and a false positive otherwise; a window with no
+    matching alert is a miss.</p>
+    <p><b>Detection latency</b> is the time from an attack's action start to the first
+    matching alert. Most attacks log ground truth continuously, so the window's earliest
+    timestamp is the action start. One exception: C2's forged RC-override is logged once,
+    <em>after</em> its multi-second override loop -- its logged duration is used to recover
+    the actual start. A small number of near-zero samples are clamped at 0s rather than
+    reported as a physically-impossible negative latency.</p>
+    <p><b>System performance overhead</b> is the CPU time, peak memory, and per-event
+    processing time of the detection layer itself, sampled live via the stdlib
+    <code>resource</code> module during <code>detection/run_detectors.py</code>. The
+    detectors are a passive tap alongside the autopilot/dashboard (never inline with vessel
+    control), so this figure is the whole resource cost the monitoring layer adds to the
+    system.</p>
+  </div>
+
+  <h2>Cross-vehicle summary</h2>
+  
+    <table class="summary">
+      <thead>
+        <tr>
+          <th>Vehicle profile</th><th>Domain</th><th>Precision</th><th>Recall</th>
+          <th>FP rate</th><th>Mean latency</th><th>p95 latency</th><th>CPU (of wall)</th><th>Peak RSS</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+        <tr>
+          <td>bluerov2</td>
+          <td>underwater</td>
+          <td>82%</td>
+          <td>100%</td>
+          <td>18%</td>
+          <td>0.01s</td>
+          <td>0.01s</td>
+          <td>n/a</td>
+          <td>n/a</td>
+        </tr>
+        <tr>
+          <td>wamv</td>
+          <td>surface</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0%</td>
+          <td>0.04s</td>
+          <td>0.08s</td>
+          <td>n/a</td>
+          <td>n/a</td>
+        </tr>
+      </tbody>
+    </table>
+
+  
+    <section class="profile">
+      <h2>bluerov2 <span class="domain">(underwater)</span></h2>
+      <p class="src">Scored from <code>evidence/detector_alerts_bluerov2.jsonl</code>,
+         window 20:31:03
+         &ndash; 20:34:11.</p>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr>
+          <td>acoustic_spoof</td>
+          <td>15</td>
+          <td>4</td>
+          <td>21%</td>
+          <td>1/1</td>
+          <td>79%</td>
+          <td>100%</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+        </tr>
+
+        <tr>
+          <td>c2_replay</td>
+          <td>3</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.01s</td>
+          <td>0.01s</td>
+          <td>0.01s</td>
+        </tr>
+        </tbody>
+      </table>
+      <h3>System performance overhead</h3>
+      <p class="missing">No system-overhead sample for this profile yet -- run <code>detection/run_detectors.py</code> live to collect one.</p>
+    </section>
+    <section class="profile">
+      <h2>wamv <span class="domain">(surface)</span></h2>
+      <p class="src">Scored from <code>evidence/detector_alerts_wamv.jsonl</code>,
+         window 13:39:00
+         &ndash; 13:41:29.</p>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr>
+          <td>ais_spoof</td>
+          <td>10</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+        </tr>
+
+        <tr>
+          <td>c2_replay</td>
+          <td>3</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.04s</td>
+          <td>0.04s</td>
+          <td>0.04s</td>
+        </tr>
+
+        <tr>
+          <td>gps_spoof</td>
+          <td>2</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.09s</td>
+          <td>0.09s</td>
+          <td>0.09s</td>
+        </tr>
+        </tbody>
+      </table>
+      <h3>System performance overhead</h3>
+      <p class="missing">No system-overhead sample for this profile yet -- run <code>detection/run_detectors.py</code> live to collect one.</p>
+    </section>
+
+  <footer>
+    Data sources: <code>evidence/detector_alerts_*.jsonl</code>,
+    <code>attack_logs/*.csv</code> (ground truth, read only by the offline scorer),
+    <code>evidence/detector_overhead_*.json</code>.
+    Regenerate with <code>python3 tools/generate_report.py</code>.
+  </footer>
+</body>
+</html>

@@ -140,6 +140,65 @@ Known design limitation (documented, not a bug): `AcousticDivergenceDetector`
 fires on belief drift only while **disarmed** — an armed, station-keeping AUV
 whose belief is spoofed would be missed. Fine for the demo (AUV idle when spoofed).
 
+## OBJECTIVE-DOC AUDIT + PERFORMANCE METRICS + EVALUATION REPORT (2026-08-07)
+
+Read `CYBER RANGE.docx` (the funding-facing Phase I proposal, root of repo) end
+to end and audited the codebase against it. Findings: every in-scope item
+(GPS/AIS/C2 attacks, rule-based detection, live dashboard) is done and
+exceeded for the surface vehicle. The dual-domain (underwater AUV) work and
+the third vehicle (BlueBoat) are OUTSIDE that doc's stated Phase I scope
+(explicitly surface-only; "multi-vessel fleet simulation" is listed as
+out-of-scope) — kept per user direction, just noted here as a scope
+deviation, not fixed. Two docx-required items were genuinely missing and are
+now built:
+
+1. **Detection latency** — `tools/score_detectors.py` now computes, per
+   attack family, the time from an attack's action start to its first
+   matching alert (mean/median/p95/max), alongside the existing
+   precision/recall. Handles the one asymmetric ground-truth case: C2's
+   `inject_rc_override` logs a single row *after* its multi-second loop, so
+   its logged duration is used to recover the true action start (see the
+   module docstring). Refactored the scorer's core into an importable
+   `score()` function (single source of truth for the CLI table AND the
+   report). Verified unchanged precision/recall on existing evidence
+   (wamv 1.00/1.00, bluerov2 1.00/0.82) — the latency addition is purely
+   additive.
+2. **System performance overhead** — `detection/run_detectors.py` now
+   self-samples via the stdlib `resource` module (CPU time, peak RSS) and
+   `time.perf_counter()` around each detector `.update()` call (per-event
+   processing time), writing `evidence/detector_overhead_<profile>.json` at
+   exit. Framing: the detectors are a passive tap, never inline with vessel
+   control, so this IS the whole overhead the monitoring layer adds to the
+   system. Smoke-tested standalone (no live SITL) — survives a dead MAVLink
+   thread and null-safe reports 0 events; the synthetic 0-event artifact was
+   deleted, not committed.
+3. **Scenario evaluation report** — new `tools/generate_report.py` compiles
+   every profile with a `detector_alerts_*.jsonl` into one self-contained
+   `evidence/evaluation_report.html` (cross-vehicle summary table + per-attack
+   detail + overhead panel per vehicle + methodology section). Verified
+   rendering in-browser (dark mode via `prefers-color-scheme`, both profiles'
+   tables correct).
+
+**Also fixed while auditing**: `attack_logs/gps_spoof_ground_truth.csv` had
+grown to 330K rows / 57MB (git-tracked, appended every run since inception —
+was almost the entire 177MB `.git`). Trimmed to the two most recent sessions
+(commit 656c0b0, corrected in 6d22aa3 after the first trim accidentally kept
+a stray session that didn't overlap `evidence/detector_alerts_wamv.jsonl`'s
+window — caught because the scorer's gps_spoof recall dropped to 0/0 after
+the first trim; re-verify precision/recall after ANY ground-truth trim, don't
+just check the file shrank). `__pycache__` dirs + `eeprom.bin` (untracked,
+gitignored) also deleted.
+
+**Not done, flagged not built**: the docx's "five isolated nodes, each a
+separate container or VM" architecture — current deploy (WO-27) is one
+monolithic Docker image. Not addressed this pass.
+
+Next, if resumed: run `detection/run_detectors.py` live against a booted
+stack (wamv and bluerov2) to collect real `detector_overhead_*.json` samples
+(none exist yet — the report currently shows "n/a" for CPU/RSS on both
+profiles, honestly, since no live-sampled overhead data has been generated
+since the instrumentation landed), then regenerate the report.
+
 ## CURRENT POSITION
 
 - **PROJECT COMPLETE (against stated scope).** CHECKPOINT 6 (final acceptance
@@ -355,6 +414,12 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-07: Added the two docx-required metrics that were missing (detection
+  latency in score_detectors.py, system overhead self-sampling in
+  run_detectors.py) + tools/generate_report.py compiling both into
+  evidence/evaluation_report.html. Also fixed the runaway gps_spoof ground
+  truth CSV (330K rows -> ~3K, was most of .git). See the dated section above
+  for details/caveats.
 - 2026-07-30: CHECKPOINT 6 (final acceptance) PASS -> PROJECT COMPLETE against
   stated scope. All mandatory WOs + all 6 checkpoints done. Only optional
   WO-22/WO-27 remain if ever wanted.
