@@ -188,7 +188,19 @@ def cmd_conn():
     global _cmd_conn
     with _cmd_lock:
         if _cmd_conn is None:
-            c = mavutil.mavlink_connection("tcp:127.0.0.1:5762", source_system=250)
+            # source_system MUST be 255 (ArduPilot's default SYSID_MYGCS) --
+            # ArduPilot only honors RC_CHANNELS_OVERRIDE (and possibly other
+            # GCS-privileged traffic) from the sender it's configured to
+            # trust, and silently drops it otherwise with zero error.
+            # Confirmed empirically (2026-08-07): source_system=250 (this
+            # function's value before this fix) made the RC-override C2
+            # attack a silent no-op -- the vehicle never actually moved,
+            # which looked like an actuator/Gazebo bug but wasn't one. This
+            # field is a plain, unauthenticated message header value, not a
+            # real access control, so spoofing it to 255 is exactly what a
+            # real attacker would do -- using it here is what makes this a
+            # correct demonstration of the attack, not a workaround.
+            c = mavutil.mavlink_connection("tcp:127.0.0.1:5762", source_system=255)
             c.wait_heartbeat(timeout=15)
             _cmd_conn = c
         return _cmd_conn
