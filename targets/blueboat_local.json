@@ -1,0 +1,38 @@
+{
+  "name": "blueboat_local",
+  "description": "This repo's own BlueBoat reference vehicle, booted via tools/run_sim.sh blueboat up. Uses method=fdm_relay since we own its physics engine.",
+  "domain": "surface",
+  "authorized": true,
+  "mavlink": {
+    "connection": "tcp:127.0.0.1:5763",
+    "source_system": 255
+  },
+  "attacks": {
+    "gps_spoof": {
+      "enabled": true,
+      "method": "fdm_relay",
+      "bind": ["127.0.0.1", 9002],
+      "gazebo_addr": ["127.0.0.1", 9100],
+      "relay_fifo": "/tmp/mcr_run/blueboat/relay.fifo",
+      "profile": "ramp",
+      "step_offset_m": 50.0,
+      "ramp_rate_m_per_s": 0.5,
+      "direction_deg": 90.0
+    },
+    "ais_spoof": {
+      "enabled": true,
+      "udp_addr": ["127.0.0.1", 10110],
+      "own_mmsi": "503999888",
+      "modes": ["ghost", "impersonate"]
+    },
+    "c2_replay": {
+      "enabled": true,
+      "target_mode_for_injection": "HOLD",
+      "allow_arm_and_actuate": true,
+      "rc_throttle_pwm": 1700,
+      "rc_steering_pwm": 1500,
+      "duration_s": 8.0
+    }
+  },
+  "timing": { "settle_s": 5.0, "window_s": 20.0 }
+}
