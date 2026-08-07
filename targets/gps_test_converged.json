@@ -1,0 +1,28 @@
+{
+  "name": "gps_test_converged",
+  "description": "Bare SITL with GPS1_TYPE=14 that had already been running/GPS-locked for a while before this test -- demonstrates the EKF rejecting a sudden 50m jump once converged (RESILIENT). Contrast with gps_test_fresh.json (same attack, unconverged EKF, VULNERABLE). connection port is from a torn-down instance -- update before reuse.",
+  "domain": "surface",
+  "authorized": true,
+  "mavlink": {
+    "connection": "tcp:127.0.0.1:5810",
+    "source_system": 255
+  },
+  "attacks": {
+    "gps_spoof": {
+      "enabled": true,
+      "method": "gps_input",
+      "gps_id": 0,
+      "profile": "step",
+      "step_offset_m": 50.0,
+      "direction_deg": 90.0,
+      "gps_home": {
+        "lat": 12.9716,
+        "lon": 77.5946
+      }
+    }
+  },
+  "timing": {
+    "settle_s": 5.0,
+    "window_s": 8.0
+  }
+}

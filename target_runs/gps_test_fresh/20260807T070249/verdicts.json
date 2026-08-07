@@ -1,0 +1,66 @@
+{
+  "target": "gps_test_fresh",
+  "domain": "surface",
+  "run_ts": "20260807T070249",
+  "baseline": {
+    "lat": null,
+    "lon": null,
+    "mode": "MANUAL",
+    "armed": false,
+    "servo1": 1500,
+    "servo3": 1500,
+    "heartbeats": 4
+  },
+  "attacks": {
+    "gps_spoof": {
+      "vulnerability": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "fused_lat0": 12.9716,
+          "fused_lon0": 77.5946,
+          "method": "gps_input",
+          "gps_id": 0,
+          "raw_peak_delta_m": 50.0,
+          "peak_delta_m": 50.0,
+          "expected_offset_m": 50.0
+        }
+      }
+    }
+  },
+  "detectability": {
+    "min_ts": 1786066317.8427622,
+    "max_ts": 1786066437.8427622,
+    "families": {
+      "gps_spoof": {
+        "tp": 1,
+        "fp": 0,
+        "windows": 1,
+        "detected": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "latency": {
+          "n": 1,
+          "mean_s": 0.098,
+          "median_s": 0.098,
+          "p95_s": 0.098,
+          "max_s": 0.098
+        }
+      }
+    },
+    "overall": {
+      "tp": 1,
+      "fp": 0,
+      "windows": 1,
+      "detected": 1,
+      "precision": 1.0,
+      "recall": 1.0,
+      "latency": {
+        "n": 1,
+        "mean_s": 0.098,
+        "median_s": 0.098,
+        "p95_s": 0.098,
+        "max_s": 0.098
+      }
+    }
+  }
+}

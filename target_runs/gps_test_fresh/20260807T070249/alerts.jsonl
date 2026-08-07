@@ -1,0 +1,1 @@
+{"t": 1786066377.8427622, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 512 m/s (> 15) -- implausible"}
