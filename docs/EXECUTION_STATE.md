@@ -453,6 +453,54 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-07 (night): **Resilience-tester pivot Phases 1-4 COMPLETE + docs
+  landed (Phase 5).** The vehicle-agnostic testing tool described in the PIVOT
+  entry below is now fully built and evidenced. Summary for a fresh session:
+  read `docs/TARGET_TESTING.md` first (front door, mirrors DESIGNER_GUIDE.md).
+  - Phase 1 (commit 564caf5): `targets/loader.py`, `tools/validate_target.py`,
+    `tools/test_target.py` skeleton + C2 mode-change check. Proved
+    vehicle-agnosticism against 3 independent ArduPilot instances. Root-caused
+    + fixed the C2 RC-override bug along the way (source_system 250 vs 255,
+    ArduPilot's SYSID_MYGCS default) -- commit adae412, fixed in both the
+    dashboard and the new loader's default.
+  - Phase 2 (commit cd10161): AIS spoof wiring (vulnerability structurally
+    N/A on bare ArduPilot, detectability fully tested) + live `DetectorSuite`
+    tap threaded through every attack window + `score_detectors.py` made
+    target-scoped via an additive `gt_dir` param (zero behavior change for
+    existing callers).
+  - Phase 3 (commit 2e53253): `attacks/gps_input_inject.py` (standard MAVLink
+    `GPS_INPUT`, autopilot-agnostic) + the raw-vs-fused GPS verdict logic
+    (`GPS_RAW_INT` confirms ingestion, `GLOBAL_POSITION_INT` confirms whether
+    fusion trusted it -- this split is what lets the tool distinguish "EKF
+    rejected it" from "injection never landed"). Preceded by an analysis
+    (recorded in the plan file) confirming Gazebo has no better free/open
+    hydrodynamics option, but ArduPilot's proprietary FDM protocol didn't need
+    to stay load-bearing -- `GPS_INPUT` is the protocol-standard equivalent,
+    also valid for PX4 and real hardware later.
+  - Phase 4 (commit 7120660): `tools/generate_target_report.py` (recommendation
+    text per VULNERABLE finding, detectability-gap notes, synthesized
+    deployment-readiness verdict per target) + `targets/blueboat_local.json` +
+    `targets/bluerov2_local.json`, all 3 reference vehicles live-tested through
+    the exact same code path as external targets. Caught and fixed a real gap
+    while running BlueROV2: the RC-override check's channel/servo assumptions
+    are Rover-specific and don't hold for ArduSub's thruster layout (override
+    registered in `RC_CHANNELS` but the watched servo never moved) -- gated
+    `domain == "underwater"` to always return INCONCLUSIVE for that sub-check
+    rather than let a false RESILIENT stand. `target_runs/resilience_report.html`
+    now covers 6 targets (3 reference vehicles + 3 external/throwaway SITL
+    instances proving genericity), all 4 verdict outcomes represented.
+  - Phase 5 (this entry + commit after it): `docs/TARGET_TESTING.md` written.
+  - Known, documented limitations (not fixed, by design -- see
+    `docs/TARGET_TESTING.md`'s "Known limitations" section): `fdm_relay`
+    GPS-spoof pollutes the shared `attack_logs/gps_spoof_ground_truth.csv`
+    (relay is a separate already-running process, trimmed back twice this
+    session); C2 RC-override underwater gate is a documented scope limit, not
+    a bug fix, pending a real ArduSub-aware channel mapping.
+  - Remaining/optional, not required for the internship deliverable: the
+    plan's 2-day buffer (unused), real-hardware support, a "legitimate
+    GPS_INPUT bridge" for testing gps_input against a real-physics reference
+    vehicle simultaneously, fixing the ArduSub channel-mapping gap itself.
+  - Full rationale/design history: `~/.claude/plans/crystalline-frolicking-thompson.md`.
 - 2026-08-07 (evening): **PIVOT** -- the project's primary deliverable is now
   a vehicle-agnostic resilience-testing TOOL (point it at any ArduPilot
   vehicle, ours or someone else's, and get a vulnerability/detectability
