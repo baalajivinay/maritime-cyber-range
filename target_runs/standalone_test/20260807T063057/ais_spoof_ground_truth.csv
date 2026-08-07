@@ -1,0 +1,9 @@
+wall_ts,attack_type,description
+1786064479.7374637,ghost,fabricated vessel
+1786064479.737888,impersonate,own_mmsi=912345678
+1786064481.7392132,ghost,fabricated vessel
+1786064481.7397916,impersonate,own_mmsi=912345678
+1786064483.7407641,impersonate,own_mmsi=912345678
+1786064483.7407825,ghost,fabricated vessel
+1786064485.741869,ghost,fabricated vessel
+1786064485.7419455,impersonate,own_mmsi=912345678

@@ -127,12 +127,18 @@ def _latency_stats(latencies):
     }
 
 
-def score(alerts_path, min_ts=None, max_ts=None):
+def score(alerts_path, min_ts=None, max_ts=None, gt_dir=None):
     """Score one alert-log file against ground truth. Returns a dict:
     {min_ts, max_ts, families: {fam: {...}}, overall: {...}}. This is the
     single source of truth for both the CLI table (main(), below) and
     tools/generate_report.py.
+
+    gt_dir: directory holding the GT_FILES CSVs, defaults to attack_logs/
+    (LOGS). Lets tools/test_target.py score a target run's own
+    target_runs/<name>/<run_ts>/ ground truth through this exact same
+    function, without touching the git-tracked reference-vehicle logs.
     """
+    gt_dir = gt_dir or LOGS
     all_alerts = []
     with open(alerts_path) as f:
         for line in f:
@@ -158,7 +164,7 @@ def score(alerts_path, min_ts=None, max_ts=None):
     # ground-truth windows per family (overlapping the scored span)
     windows = {}
     for fname, fam in GT_FILES.items():
-        w = [win for win in load_windows(os.path.join(LOGS, fname), fname)
+        w = [win for win in load_windows(os.path.join(gt_dir, fname), fname)
              if win["padded"][1] >= min_ts and win["padded"][0] <= max_ts]
         if w:
             windows[fam] = w
