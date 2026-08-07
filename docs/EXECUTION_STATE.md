@@ -218,31 +218,25 @@ Acoustic spoof visible on the surface WAM-V). Fixed via a `socketio.on
 list directly to each new client. Reproduced clean on two separate boots
 after the fix.
 
-**Found, NOT fixed — needs follow-up, likely NOT a dashboard code bug**: C2
-injection (`inject_forged_rc_override`) and click-to-navigate (`goto()`)
-both APPEAR to work (mode switches, vehicle arms, mission uploads/ACKs) but
-neither actually moves the vehicle. Traced with live MAVLink probes during
-an active RC override:
-- `RC_CHANNELS` (autopilot's own RC-input echo) stayed at chan1=1500/
-  chan3=1500 the ENTIRE override window (should show chan3≈1900).
-- `SERVO_OUTPUT_RAW` (actual actuator output) ALSO stayed flat at 1500/1500.
-- Direct Gazebo topic capture (`gz topic -e -t /wamv/thrusters/left|right/
-  thrust`) showed continuous ZERO-value thrust messages throughout — the
-  ArduPilotPlugin bridge is alive and publishing, but the value is always 0.
-- No `STATUSTEXT` failsafe announcement appeared during the window.
-- Reproduced across THREE independent fresh boots (not a one-off).
+**RESOLVED (2026-08-07, later same day)**: the C2 RC-override half of this
+was root-caused and fixed while building `targets/`/`tools/test_target.py`
+(the vehicle-agnostic resilience tester, see below). Actual cause:
+`dashboard_server.py`'s `cmd_conn()` used `source_system=250`. ArduPilot
+only honors `RC_CHANNELS_OVERRIDE` from the sender matching `SYSID_MYGCS`
+(default `255`) — with 250 it silently drops the override, zero error,
+which looks exactly like a dead actuator/Gazebo bridge but isn't one. Fixed
+(`source_system=255`) and verified live with precise timing: speed rises
+0 -> 2.24 m/s starting at t=6.6s (matching the 6.5s arm/mode-switch
+sequence), holds through the full 8s override window, decays after
+release. `attacks/c2_replay.py`'s own standalone `connect()` was never
+affected (it doesn't override pymavlink's default, which is already 255) —
+this bug was isolated to the dashboard's `cmd_conn()`.
 
-This means ArduPilot's own control output never goes non-neutral regardless
-of command source (RC override OR AUTO mission) — the two attacks that DO
-work (GPS/AIS spoof) are pure sensor-injection and never touch actuators at
-all, which is consistent with a single shared root cause at the actuator/
-control-output layer, not two separate bugs. Prior checkpoints (WO-09/WO-10,
-WO-19's "+8.25m true depth seizure") documented this working before, so
-something in the current build/param state differs from what was validated
-then. NEXT: check ArduPilot Rover failsafe/safety params (`ARMING_CHECK`,
-`FS_ACTION`/throttle-failsafe settings, `MOT_SAFE_DISARM`) against what WO-09
-validated — this is ArduPilot/Gazebo-config debugging, not dashboard code,
-so out of scope for a quick dashboard-focused session.
+**`goto()`/click-to-navigate is a SEPARATE, still-open question** — its
+MAVLink connection already used the (correct) default 255, so this same
+fix does not explain why AUTO-mode navigation didn't move the vehicle.
+Untouched since the original finding; still needs the ArduPilot
+failsafe/param investigation described below if picked back up.
 
 ## CURRENT POSITION
 
@@ -459,6 +453,17 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-07 (evening): **PIVOT** -- the project's primary deliverable is now
+  a vehicle-agnostic resilience-testing TOOL (point it at any ArduPilot
+  vehicle, ours or someone else's, and get a vulnerability/detectability
+  report), not the fixed 3-vehicle demo. The old "PROJECT COMPLETE" status
+  below is against the OLD scope; this is new, additive work, see
+  `targets/`, `tools/test_target.py`, `tools/validate_target.py`. Phase 0+1
+  done and verified live against 3 independent ArduPilot instances
+  (commit 564caf5). Along the way, root-caused and fixed the C2 RC-override
+  bug noted just below (commit adae412). Full plan at
+  `~/.claude/plans/crystalline-frolicking-thompson.md`. Phases 2-5 (AIS +
+  detectability, GPS_INPUT injection, unified report, docs) remain.
 - 2026-08-07: Dashboard upgrade -- /cmd/report now renders the same rich
   precision/recall/FP-rate/latency + overhead tables as generate_report.py
   (reused its render_family_table/render_overhead_panel) instead of a raw CLI
