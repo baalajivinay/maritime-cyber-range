@@ -421,6 +421,214 @@ def run_ais_spoof_test(target_cfg, out_dir, conn, det_suite, alerts):
                     "modes_run": [m for m in modes if m != "impersonate" or own_mmsi]}
 
 
+# --- GPS spoof: two injection methods, one 4-outcome verdict -----------------
+# See docs/EXECUTION_STATE.md / plan for why there are two methods: which one
+# is CORRECT depends on which simulation interface the target's autopilot
+# actually uses, not which is "more real" in the abstract. fdm_relay attacks
+# ArduPilot's own proprietary JSON SITL protocol (real, zero-setup, but
+# ArduPilot-specific); gps_input attacks the standard MAVLink GPS_INPUT
+# message (works on any MAVLink autopilot configured to accept it, ArduPilot
+# or PX4, real hardware later). Physics realism lives in whichever engine
+# feeds the legitimate stream on that channel, not in which method is used.
+
+_M_PER_DEG_LAT = 111320.0
+
+
+def _m_per_deg_lon(lat):
+    return _M_PER_DEG_LAT * math.cos(math.radians(lat))
+
+
+def _horiz_m(lat1, lon1, lat2, lon2):
+    """Flat-earth approximation, fine at this scale -- matches
+    detection/detectors.py's _horiz_m convention."""
+    dn = (lat2 - lat1) * _M_PER_DEG_LAT
+    de = (lon2 - lon1) * _m_per_deg_lon((lat1 + lat2) / 2.0)
+    return math.hypot(dn, de)
+
+
+def _gps_verdict(peak_delta_m, expected_offset_m, ingestion_confirmed, fused_baseline_seen, extra_evidence):
+    """Shared 4-outcome logic for both GPS-spoof methods below."""
+    evidence = dict(extra_evidence, peak_delta_m=round(peak_delta_m, 2) if peak_delta_m is not None else None,
+                     expected_offset_m=round(expected_offset_m, 2))
+    if not ingestion_confirmed:
+        evidence["reason"] = ("target never showed any sign of ingesting the forged position at all -- "
+                               "not a demonstrated security property, this attack vector may not apply "
+                               "to this target as configured.")
+        return "N/A", evidence
+    if not fused_baseline_seen or peak_delta_m is None:
+        evidence["reason"] = "ingestion confirmed but no fused-position baseline to compare against -- can't judge divergence"
+        return "INCONCLUSIVE", evidence
+    if peak_delta_m >= 0.6 * expected_offset_m:
+        return "VULNERABLE", evidence
+    if peak_delta_m < min(5.0, 0.15 * expected_offset_m):
+        return "RESILIENT", evidence
+    evidence["reason"] = f"partial divergence ({peak_delta_m:.1f}m, expected ~{expected_offset_m:.1f}m) -- ambiguous"
+    return "INCONCLUSIVE", evidence
+
+
+def run_gps_spoof_fdm_relay(conn, target_cfg, out_dir, det_suite, alerts):
+    """Controls the ALREADY-RUNNING attacks/gps_spoof.py relay (started as
+    part of the target's own boot sequence, e.g. tools/run_sim.sh -- this
+    function does not start it) via its FIFO, matching
+    nodes/monitor/src/dashboard_server.py's _relay() convention. Real
+    Gazebo-hydrodynamics-fed GPS spoofing: the relay perturbs ArduPilot's
+    own JSON FDM position feed in flight, so whatever the EKF sees is
+    genuinely physics-derived, just forged in transit.
+
+    KNOWN LIMITATION (unlike every other attack path in this file): this
+    method's ground truth is NOT isolated to target_runs/ -- the relay is a
+    separate, already-running process (owned by the target's own boot
+    sequence) with its own internal logging to the SHARED, git-tracked
+    attack_logs/gps_spoof_ground_truth.csv (confirmed empirically
+    2026-08-07: a run polluted it with ~5000 rows, trimmed back out).
+    Fixing this properly means adding a log-path override to
+    attacks/gps_spoof.py's relay, which is explicitly marked "verified
+    working, do not change without re-testing" -- deliberately not touched
+    here. Only relevant for method=fdm_relay (this project's own reference
+    vehicles); gps_input's ground truth is fully isolated as normal.
+    """
+    domain = target_cfg["domain"]
+    gcfg = target_cfg["attacks"]["gps_spoof"]
+    fifo = gcfg.get("relay_fifo")
+    window_s = target_cfg["timing"]["window_s"]
+    profile = gcfg.get("profile", "step")
+
+    if not fifo or not os.path.exists(fifo):
+        return "INCONCLUSIVE", {"reason": f"relay_fifo '{fifo}' not found -- is the target's own "
+                                           "attacks/gps_spoof.py relay running (started by its boot sequence)?"}
+
+    pre_lat = pre_lon = None
+    end = time.time() + 3.0
+    while time.time() < end and pre_lat is None:
+        msg = conn.recv_match(blocking=True, timeout=1)
+        if msg is None:
+            continue
+        _tap(det_suite, alerts, msg, domain)
+        if msg.get_type() == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0):
+            pre_lat, pre_lon = msg.lat / 1e7, msg.lon / 1e7
+
+    t_inject = time.time()
+    with open(fifo, "w") as f:
+        f.write(profile + "\n")
+    _log_ground_truth(out_dir, "gps_spoof_ground_truth.csv", t_inject, profile, f"fdm_relay {profile}")
+
+    peak_delta = 0.0
+    end = time.time() + window_s
+    while time.time() < end:
+        msg = conn.recv_match(blocking=True, timeout=1)
+        if msg is None:
+            continue
+        _tap(det_suite, alerts, msg, domain)
+        if msg.get_type() == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0) and pre_lat is not None:
+            lat, lon = msg.lat / 1e7, msg.lon / 1e7
+            peak_delta = max(peak_delta, _horiz_m(pre_lat, pre_lon, lat, lon))
+
+    with open(fifo, "w") as f:
+        f.write("off\n")
+
+    expected = gcfg.get("step_offset_m", 50.0) if profile == "step" else gcfg.get("ramp_rate_m_per_s", 0.5) * window_s
+    return _gps_verdict(peak_delta, expected, pre_lat is not None, pre_lat is not None,
+                         {"pre_lat": pre_lat, "pre_lon": pre_lon, "method": "fdm_relay"})
+
+
+def run_gps_spoof_gps_input(conn, target_cfg, out_dir, det_suite, alerts):
+    """Injects forged GPS_INPUT (MAVLink #232) directly -- works against ANY
+    MAVLink autopilot configured for external GPS (ArduPilot: GPS1_TYPE=14),
+    not just this project's own vehicles. See attacks/gps_input_inject.py
+    for the injection mechanics."""
+    import gps_input_inject as gii
+    domain = target_cfg["domain"]
+    gcfg = target_cfg["attacks"]["gps_spoof"]
+    gps_id = gcfg.get("gps_id", 0)
+    home = gcfg.get("gps_home", {"lat": -33.724223, "lon": 150.679736})
+    lat0, lon0, alt0 = home["lat"], home["lon"], 0.0
+    profile = gcfg.get("profile", "ramp")
+    window_s = target_cfg["timing"]["window_s"]
+
+    state = gii.InjectState()
+    state.step_offset_m = gcfg.get("step_offset_m", 50.0)
+    state.ramp_rate_m_per_s = gcfg.get("ramp_rate_m_per_s", 0.5)
+    state.direction_deg = gcfg.get("direction_deg", 90.0)
+
+    stop = threading.Event()
+    feed_thread = threading.Thread(target=gii.run_gps_input_feed,
+                                    args=(conn, lat0, lon0, alt0, state, gps_id, stop), daemon=True)
+    feed_thread.start()
+
+    # Phase 1: establish an unspoofed fix for a few seconds (models a target
+    # that's already GPS-locked, real or via a legitimate feed on the same
+    # channel) and record BOTH the raw (pre-fusion) and fused baseline
+    # positions before judging anything.
+    raw_lat0 = raw_lon0 = None
+    fused_lat0 = fused_lon0 = None
+    end = time.time() + 5.0
+    while time.time() < end:
+        msg = conn.recv_match(blocking=True, timeout=1)
+        if msg is None:
+            continue
+        _tap(det_suite, alerts, msg, domain)
+        mt = msg.get_type()
+        if mt == "GPS_RAW_INT" and msg.lat != 0:
+            raw_lat0, raw_lon0 = msg.lat / 1e7, msg.lon / 1e7
+        elif mt == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0):
+            fused_lat0, fused_lon0 = msg.lat / 1e7, msg.lon / 1e7
+
+    if raw_lat0 is None:
+        stop.set()
+        feed_thread.join(timeout=2)
+        return _gps_verdict(None, 1.0, False, False, {"method": "gps_input", "gps_id": gps_id})
+
+    t_inject = time.time()
+    state.mode = profile
+    state.start_time = t_inject
+    state.active = True
+    _log_ground_truth(out_dir, "gps_spoof_ground_truth.csv", t_inject, profile, f"gps_input {profile} gps_id={gps_id}")
+
+    # Track raw (pre-fusion, i.e. did the forged value even reach the wire)
+    # and fused (post-EKF, i.e. did the vehicle's BELIEF actually move)
+    # divergence SEPARATELY -- this is what distinguishes "the EKF genuinely
+    # rejected the spoof" (raw moves, fused doesn't -- RESILIENT) from "the
+    # injection itself never took effect" (neither moves -- a tool bug, not
+    # a security finding) rather than guessing from the fused delta alone.
+    raw_peak_delta = 0.0
+    fused_peak_delta = 0.0
+    end = time.time() + window_s
+    while time.time() < end:
+        msg = conn.recv_match(blocking=True, timeout=1)
+        if msg is None:
+            continue
+        _tap(det_suite, alerts, msg, domain)
+        mt = msg.get_type()
+        if mt == "GPS_RAW_INT" and msg.lat != 0:
+            raw_peak_delta = max(raw_peak_delta, _horiz_m(raw_lat0, raw_lon0, msg.lat / 1e7, msg.lon / 1e7))
+        elif mt == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0) and fused_lat0 is not None:
+            fused_peak_delta = max(fused_peak_delta, _horiz_m(fused_lat0, fused_lon0, msg.lat / 1e7, msg.lon / 1e7))
+
+    state.active = False
+    stop.set()
+    feed_thread.join(timeout=2)
+
+    expected = state.step_offset_m if profile == "step" else state.ramp_rate_m_per_s * window_s
+    ingestion_confirmed = raw_peak_delta >= 0.6 * expected
+    evidence = {"fused_lat0": fused_lat0, "fused_lon0": fused_lon0, "method": "gps_input", "gps_id": gps_id,
+                "raw_peak_delta_m": round(raw_peak_delta, 2)}
+    if not ingestion_confirmed:
+        evidence["reason"] = (f"raw GPS_RAW_INT never reflected the forged offset (moved only "
+                               f"{raw_peak_delta:.1f}m of an expected {expected:.1f}m) -- the injection did not "
+                               "reach the wire as expected. Likely a tool/config issue (wrong gps_id, GPS1_TYPE "
+                               "not 14), not a security finding.")
+        return "INCONCLUSIVE", evidence
+    return _gps_verdict(fused_peak_delta, expected, True, fused_lat0 is not None, evidence)
+
+
+def run_gps_spoof_test(conn, target_cfg, out_dir, det_suite, alerts):
+    gcfg = target_cfg["attacks"]["gps_spoof"]
+    method = gcfg.get("method", "gps_input")
+    if method == "fdm_relay":
+        return run_gps_spoof_fdm_relay(conn, target_cfg, out_dir, det_suite, alerts)
+    return run_gps_spoof_gps_input(conn, target_cfg, out_dir, det_suite, alerts)
+
+
 # --- orchestration -------------------------------------------------------
 
 def run_target_test(target_name, requested_attacks=None):
@@ -459,6 +667,13 @@ def run_target_test(target_name, requested_attacks=None):
         results["attacks"]["c2_replay"] = run_c2_replay_test(conn, target, baseline, out_dir, det_suite, alerts)
         print(f"[test_target]   mode_change: {results['attacks']['c2_replay']['mode_change']['verdict']}")
         print(f"[test_target]   rc_override: {results['attacks']['c2_replay']['rc_override']['verdict']}")
+
+    if "gps_spoof" in to_run and enabled.get("gps_spoof", {}).get("enabled"):
+        method = enabled["gps_spoof"].get("method", "gps_input")
+        print(f"[test_target] running gps_spoof vulnerability check (method={method}) ...")
+        verdict, evidence = run_gps_spoof_test(conn, target, out_dir, det_suite, alerts)
+        results["attacks"]["gps_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}
+        print(f"[test_target]   vulnerability: {verdict}")
 
     if "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
         print("[test_target] running ais_spoof (vulnerability N/A by design; scoring detectability) ...")

@@ -1,0 +1,64 @@
+{
+  "target": "wamv_local",
+  "domain": "surface",
+  "run_ts": "20260807T070609",
+  "baseline": {
+    "lat": -33.7227678,
+    "lon": 150.6739893,
+    "mode": "MANUAL",
+    "armed": false,
+    "servo1": 1500,
+    "servo3": 1500,
+    "heartbeats": 6
+  },
+  "attacks": {
+    "gps_spoof": {
+      "vulnerability": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_lat": -33.7227678,
+          "pre_lon": 150.6739893,
+          "method": "fdm_relay",
+          "peak_delta_m": 9.93,
+          "expected_offset_m": 10.0
+        }
+      }
+    }
+  },
+  "detectability": {
+    "min_ts": 0.0,
+    "max_ts": Infinity,
+    "families": {
+      "gps_spoof": {
+        "tp": 0,
+        "fp": 0,
+        "windows": 1,
+        "detected": 0,
+        "precision": NaN,
+        "recall": 0.0,
+        "latency": {
+          "n": 0,
+          "mean_s": null,
+          "median_s": null,
+          "p95_s": null,
+          "max_s": null
+        }
+      }
+    },
+    "overall": {
+      "tp": 0,
+      "fp": 0,
+      "windows": 1,
+      "detected": 0,
+      "precision": NaN,
+      "recall": 0.0,
+      "latency": {
+        "n": 0,
+        "mean_s": null,
+        "median_s": null,
+        "p95_s": null,
+        "max_s": null
+      }
+    }
+  }
+}

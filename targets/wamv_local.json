@@ -13,6 +13,7 @@
       "method": "fdm_relay",
       "bind": ["127.0.0.1", 9002],
       "gazebo_addr": ["127.0.0.1", 9100],
+      "relay_fifo": "/tmp/mcr_run/wamv/relay.fifo",
       "profile": "ramp",
       "step_offset_m": 50.0,
       "ramp_rate_m_per_s": 0.5,
