@@ -1,0 +1,22 @@
+wall_ts,attack_type,description
+1786117463.2361112,impersonate,own_mmsi=503999888
+wall_ts,attack_type,description
+1786117463.2360072,ghost,fabricated vessel
+1786117465.236508,impersonate,own_mmsi=503999888
+1786117465.2368577,ghost,fabricated vessel
+1786117467.2369351,impersonate,own_mmsi=503999888
+1786117467.237305,ghost,fabricated vessel
+1786117469.2376733,ghost,fabricated vessel
+1786117469.237993,impersonate,own_mmsi=503999888
+1786117471.238444,ghost,fabricated vessel
+1786117471.2386627,impersonate,own_mmsi=503999888
+1786117473.2391703,impersonate,own_mmsi=503999888
+1786117473.2391553,ghost,fabricated vessel
+1786117475.2397625,ghost,fabricated vessel
+1786117475.2397711,impersonate,own_mmsi=503999888
+1786117477.2403069,impersonate,own_mmsi=503999888
+1786117477.2402964,ghost,fabricated vessel
+1786117479.2409172,impersonate,own_mmsi=503999888
+1786117479.240904,ghost,fabricated vessel
+1786117481.2414472,ghost,fabricated vessel
+1786117481.2416368,impersonate,own_mmsi=503999888

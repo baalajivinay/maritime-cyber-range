@@ -242,11 +242,28 @@ def run_c2_rc_override_test(conn, target_cfg, baseline, out_dir, det_suite, aler
     verdict here should be corroborated with independent evidence the
     vehicle can move under ANY command before it's treated as a real
     security finding.
+
+    CHANNEL MAPPING IS ROVER-SPECIFIC (confirmed 2026-08-07): this check
+    sends chan1=steering/chan3=throttle and reads back servo3 -- the
+    ArduRover convention used throughout this project. ArduSub's 6-DOF
+    vectored-thruster mapping is different and unvalidated here (an
+    underwater test came back RESILIENT with servo3 never moving, but
+    RC_CHANNELS still echoed the override and the detector correctly fired
+    on it -- i.e. the override DID register, just not on a channel this
+    check happens to read for its own verdict). Rather than risk a false
+    RESILIENT, this returns INCONCLUSIVE for domain=underwater until a
+    validated ArduSub channel/servo mapping is added.
     """
     domain = target_cfg["domain"]
     ccfg = target_cfg["attacks"]["c2_replay"]
     if not ccfg.get("allow_arm_and_actuate"):
         return "N/A", {"reason": "allow_arm_and_actuate is false (default) -- skipped"}
+    if domain == "underwater":
+        return "INCONCLUSIVE", {"reason": "this check's channel/servo mapping (chan1/chan3, servo3) is validated "
+                                           "for Rover-style vehicles only -- ArduSub's thruster layout is different "
+                                           "and unvalidated here, so a RESILIENT/VULNERABLE verdict would not be "
+                                           "trustworthy. Needs a validated ArduSub channel mapping before this "
+                                           "sub-check is meaningful for underwater targets."}
 
     thr = ccfg.get("rc_throttle_pwm", 1700)
     steer = ccfg.get("rc_steering_pwm", 1500)
