@@ -1,6 +1,6 @@
 WO-15 attack suite -- profile=wamv domain=surface
-run: 2026-07-31 13:48:50
+run: 2026-08-08 02:15:31
 
-[PASS] gps_spoof: MAVLink position jumped 50.0 m; TRUE pose moved 0.01 m
-[PASS] ais_spoof: ghost 999999001: 6 msgs; impersonation of real MMSI 123456789: 7 msgs
-[PASS] c2_replay: forged RC override moved TRUE pose 8.10 m
+[PASS] gps_spoof: MAVLink position jumped 50.0 m; TRUE pose moved 0.03 m
+[FAIL] ais_spoof: ghost 999999001: 0 msgs; impersonation of real MMSI 123456789: 0 msgs  [0/0 -> likely another AIS listener (run_detectors.py) grabbed the packets; the scorer is authoritative -- re-run the suite with no concurrent detector]
+[PASS] c2_replay: forged RC override moved TRUE pose 8.06 m

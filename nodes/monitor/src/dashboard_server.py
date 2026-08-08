@@ -17,15 +17,16 @@ import os
 import sys
 import json
 import time
-import math
 import hmac
+import html as html_lib
 import socket
 import statistics
 import resource
+import tempfile
 import threading
 import subprocess
 from collections import deque
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 from flask_socketio import SocketIO, emit
 from pymavlink import mavutil
 from pyais.stream import UDPReceiver
@@ -188,18 +189,20 @@ def cmd_conn():
     global _cmd_conn
     with _cmd_lock:
         if _cmd_conn is None:
-            # source_system MUST be 255 (ArduPilot's default SYSID_MYGCS) --
-            # ArduPilot only honors RC_CHANNELS_OVERRIDE (and possibly other
-            # GCS-privileged traffic) from the sender it's configured to
-            # trust, and silently drops it otherwise with zero error.
-            # Confirmed empirically (2026-08-07): source_system=250 (this
-            # function's value before this fix) made the RC-override C2
-            # attack a silent no-op -- the vehicle never actually moved,
-            # which looked like an actuator/Gazebo bug but wasn't one. This
-            # field is a plain, unauthenticated message header value, not a
-            # real access control, so spoofing it to 255 is exactly what a
-            # real attacker would do -- using it here is what makes this a
-            # correct demonstration of the attack, not a workaround.
+            # source_system is DELIBERATELY the plain ArduPilot default (255),
+            # NOT constants.GCS_SOURCE_SYSTEM -- this connection is used only
+            # to launch C2 attacks (RC-override/disarm/mode-change), i.e. it
+            # simulates an attacker who does not know a hardened vehicle's
+            # real trusted GCS id. Confirmed empirically (2026-08-07):
+            # source_system=250 made the RC-override attack a silent no-op
+            # against a vehicle with NO hardening at all -- that earlier
+            # finding was really about ArduPilot's MAV_GCS_SYSID default
+            # (255), not the now-deprecated SYSID_MYGCS this comment used to
+            # cite. A properly hardened vehicle (MAV_GCS_SYSID set +
+            # MAV_OPTIONS=1 / GCS_SYSID_ENFORCE, see vehicle_twins/*_resilient_*/)
+            # will correctly reject this connection's commands -- that
+            # rejection IS the security property being demonstrated, so do
+            # NOT "fix" this to use constants.GCS_SOURCE_SYSTEM.
             c = mavutil.mavlink_connection("tcp:127.0.0.1:5762", source_system=255)
             c.wait_heartbeat(timeout=15)
             _cmd_conn = c
@@ -207,8 +210,14 @@ def cmd_conn():
 
 
 # --- feed threads ------------------------------------------------------------
+_last_true_pos = None  # (lat, lon), kept fresh by gz_pose_thread -- lets
+                        # AIS impersonation anchor on where the vehicle
+                        # actually is instead of the world's fixed origin
+
+
 def gz_pose_thread():
     """CLEAN true position from Gazebo ground truth (no GPS noise)."""
+    global _last_true_pos
     topic = f"/world/{WORLD_NAME}/pose/info"
     while True:
         try:
@@ -227,9 +236,10 @@ def gz_pose_thread():
                         my = re.search(r"position\s*\{[^}]*y:\s*([-\d.e]+)", block, re.S)
                         if mx and my:
                             x, y = float(mx.group(1)), float(my.group(1))
-                            socketio.emit('gps_true_update', {
-                                'lat': constants.HOME_LAT + y / M_PER_DEG_LAT,
-                                'lon': constants.HOME_LON + x / M_PER_DEG_LON})
+                            lat = constants.HOME_LAT + y / M_PER_DEG_LAT
+                            lon = constants.HOME_LON + x / M_PER_DEG_LON
+                            _last_true_pos = (lat, lon)
+                            socketio.emit('gps_true_update', {'lat': lat, 'lon': lon})
                         in_model = False
         except Exception as e:
             print(f"gz pose thread error: {e}; retry 3s"); time.sleep(3)
@@ -286,7 +296,7 @@ def detector_thread():
     warned_mismatch = False
     while True:
         try:
-            m = mavutil.mavlink_connection("tcp:127.0.0.1:5763")
+            m = mavutil.mavlink_connection("tcp:127.0.0.1:5763", source_system=constants.GCS_SOURCE_SYSTEM)
             hb = m.wait_heartbeat(timeout=15)
             m.mav.request_data_stream_send(m.target_system, m.target_component,
                                            mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
@@ -367,7 +377,7 @@ def launch_attack(kind, opts=None):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         threading.Thread(target=ais_spoof.run_ghost_vessel, args=(s, stop, 999999001, 2.0), daemon=True).start()
         threading.Thread(target=ais_spoof.run_impersonation,
-                         args=(s, stop, lambda: (constants.HOME_LAT, constants.HOME_LON)),
+                         args=(s, stop, lambda: _last_true_pos or (constants.HOME_LAT, constants.HOME_LON)),
                          kwargs={"interval_s": 2.0, "offset_m": 300.0}, daemon=True).start()
         return "AIS spoof engaged (ghost + impersonation broadcasting)"
     if kind == "c2_replay":
@@ -443,7 +453,8 @@ def goto(lat, lon):
     switches to AUTO, and arms with confirmation."""
     global _last_goal
     _last_goal = (lat, lon)
-    c = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_AUTO_MISSION_PORT}')
+    c = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_AUTO_MISSION_PORT}',
+                                   source_system=constants.GCS_SOURCE_SYSTEM)
     if c.wait_heartbeat(timeout=10) is None:
         return "no autopilot heartbeat"
     # reset to a clean fresh state -- arming from MANUAL/disarmed is what reliably
@@ -510,6 +521,10 @@ def goto(lat, lon):
     return f"sailing to {lat:.5f}, {lon:.5f} (AUTO){'' if armed else ' — arm not confirmed'}"
 
 
+_connected_clients = 0
+_connected_lock = threading.Lock()
+
+
 @socketio.on('connect')
 def _on_client_connect():
     """The vehicle label + which attack buttons apply is static (derivable from
@@ -519,9 +534,28 @@ def _on_client_connect():
     silently never gets it, showing a generic header and every attack button
     regardless of domain. Send it directly to each newly-connecting client
     instead of relying on that one-shot broadcast."""
+    global _connected_clients
+    with _connected_lock:
+        _connected_clients += 1
     emit('status_update', {'vehicle': VEHICLE_LABEL, 'attacks': list(constants.ATTACKS)})
     if _last_warning:
         emit('status_update', {'warning': _last_warning})
+
+
+@socketio.on('disconnect')
+def _on_client_disconnect():
+    """No attack should keep running unattended once the operator closes the
+    dashboard. Only stop when the LAST connected browser goes away (not on
+    every disconnect) so a second tab, or a brief network drop with an
+    automatic reconnect, doesn't cut off an attack someone is still
+    watching from elsewhere."""
+    global _connected_clients
+    with _connected_lock:
+        _connected_clients = max(0, _connected_clients - 1)
+        remaining = _connected_clients
+    if remaining == 0:
+        print("[dashboard] last client disconnected -- stopping any active attacks", flush=True)
+        stop_attacks()
 
 
 # --- routes ------------------------------------------------------------------
@@ -553,62 +587,96 @@ def cmd_goto():
     return jsonify(ok=True, msg=f"destination set: {lat:.5f}, {lon:.5f} — commanding AUTO nav")
 
 
-@app.route('/cmd/report', methods=['POST'])
-def cmd_report():
+def _report_table_html():
     """Score the blind detectors (this session's alerts) vs ground truth and
     render the same precision/recall/FP-rate/latency + overhead tables as
-    tools/generate_report.py, scoped to this live session."""
+    tools/generate_report.py, scoped to this live session. Shared by the
+    in-page report overlay and the downloadable PDF so they can never drift
+    out of sync with each other."""
+    result = score_alerts(ALERT_LOG, min_ts=SESSION_START)
+    overhead = _live_overhead_snapshot()
+    rows = render_family_table(result["families"])
+    return f"""
+    <div class="tblwrap"><table class="detail">
+      <thead>
+        <tr>
+          <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+          <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+        </tr>
+      </thead>
+      <tbody>{rows or '<tr><td colspan="10" class="muted">no attacks scored yet this session</td></tr>'}</tbody>
+    </table></div>
+    <h4 style="margin:16px 0 8px;">System performance overhead (this session)</h4>
+    <div class="tblwrap">{render_overhead_panel(overhead)}</div>
+    """
+
+
+@app.route('/cmd/report', methods=['POST'])
+def cmd_report():
     try:
-        result = score_alerts(ALERT_LOG, min_ts=SESSION_START)
-        overhead = _live_overhead_snapshot()
-        rows = render_family_table(result["families"])
-        frag = f"""
-        <div class="tblwrap"><table class="detail">
-          <thead>
-            <tr>
-              <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
-              <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
-            </tr>
-          </thead>
-          <tbody>{rows or '<tr><td colspan="10" class="muted">no attacks scored yet this session</td></tr>'}</tbody>
-        </table></div>
-        <h4 style="margin:16px 0 8px;">System performance overhead (this session)</h4>
-        <div class="tblwrap">{render_overhead_panel(overhead)}</div>
-        """
-        return jsonify(ok=True, html=frag)
+        return jsonify(ok=True, html=_report_table_html())
     except Exception as e:
         return jsonify(ok=False, html=f"<p class='missing'>error building report: {e}</p>"), 500
+
+
+_REPORT_PDF_CSS = """
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1a1a1a; margin: 0; padding: 24px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .meta { color: #666; font-size: 0.85rem; margin-bottom: 1.2rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0.6rem 0 1.2rem; font-size: 0.82rem; }
+  th, td { border: 1px solid #ccc; padding: 4px 7px; text-align: right; }
+  th { background: #f2f2f2; }
+  td:first-child, th:first-child { text-align: left; }
+  table.kv th { text-align: left; width: 45%; }
+  table.kv td { text-align: left; }
+  h4 { text-transform: uppercase; font-size: 0.75rem; letter-spacing: .04em; color: #555; }
+  .missing { color: #a05a00; font-style: italic; }
+"""
+
+
+@app.route('/cmd/report/pdf')
+def cmd_report_pdf():
+    """Same report as /cmd/report, rendered to a downloadable PDF via a
+    headless Chromium (Playwright, already a project dependency) instead of
+    an in-page overlay -- for taking the report off the screen and into a
+    presentation/handoff document."""
+    try:
+        body = _report_table_html()
+    except Exception as e:
+        return jsonify(ok=False, msg=f"error building report: {e}"), 500
+
+    generated = time.strftime("%Y-%m-%d %H:%M:%S %Z")
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+    <title>{html_lib.escape(VEHICLE_LABEL)} — resilience report</title>
+    <style>{_REPORT_PDF_CSS}</style></head><body>
+    <h1>Maritime Cyber Range — Live Session Report</h1>
+    <div class="meta">{html_lib.escape(VEHICLE_LABEL)} &middot; generated {generated}</div>
+    {body}
+    </body></html>"""
+
+    try:
+        from playwright.sync_api import sync_playwright
+        with tempfile.TemporaryDirectory() as td:
+            pdf_path = os.path.join(td, "report.pdf")
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                page = browser.new_page()
+                page.set_content(html, wait_until="load")
+                page.pdf(path=pdf_path, format="A4", margin={"top": "14mm", "bottom": "14mm",
+                                                              "left": "12mm", "right": "12mm"})
+                browser.close()
+            data = open(pdf_path, "rb").read()
+    except Exception as e:
+        return jsonify(ok=False, msg=f"PDF rendering unavailable ({e}) -- see /cmd/report for the HTML version"), 500
+
+    fname = f"resilience_report_{PROFILE}_{time.strftime('%Y%m%dT%H%M%S')}.pdf"
+    return Response(data, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 @app.route('/live/overhead')
 def live_overhead():
     return jsonify(_live_overhead_snapshot())
-
-
-@app.route('/cmd/vehicle', methods=['POST'])
-def cmd_vehicle():
-    """Switching vehicle means rebooting the whole stack + this dashboard for a
-    different profile. Doing that live from here proved fragile (it can leave
-    overlapping worlds mid-presentation), so this now just GUIDES the operator to
-    relaunch cleanly instead of tearing down the running demo."""
-    prof = request.json.get('profile')
-    if prof not in ("wamv", "blueboat", "bluerov2"):
-        return jsonify(ok=False, msg="unknown profile"), 400
-    if prof == PROFILE:
-        return jsonify(ok=True, switching=False, msg=f"already running {prof}")
-    # Spawn the demo launcher detached. run_demo.sh's `up` self-cleans (kills any
-    # running demo of any profile) and reboots for the new one -- including a
-    # fresh dashboard with the new profile. This launcher is NOT matched by the
-    # teardown patterns, so it survives the current dashboard being killed. The
-    # browser polls /whoami and reloads when the new dashboard reports `prof`.
-    script = (f"source /opt/ros/jazzy/setup.bash 2>/dev/null; "
-              f"source '{_REPO}/ros2_ws/install/setup.bash' 2>/dev/null; "
-              f"exec '{_REPO}/tools/run_demo.sh' {prof} up")
-    subprocess.Popen(["setsid", "bash", "-c", script],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     stdin=subprocess.DEVNULL, start_new_session=True)
-    return jsonify(ok=True, switching=True, profile=prof,
-                   msg=f"switching to {prof} (~40 s) — the page reloads automatically")
 
 
 @app.route('/whoami')

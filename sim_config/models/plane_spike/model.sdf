@@ -1,0 +1,208 @@
+<sdf version="1.9">
+  <!--
+    Phase B spike model (2026-08-08): does ArduPlane firmware arm and hold
+    a healthy EKF state underwater, via the exact same Gazebo JSON-FDM path
+    every other vehicle in this project uses, driven by nothing but a
+    single aft propeller (no control fins yet — that's Phase B2, only if
+    this passes)? Crude capsule geometry, roughly torpedo-scale, mass
+    chosen for near-neutral buoyancy. NOT REMUS-100's real dimensions —
+    this is throwaway scaffolding to answer one narrow architecture
+    question before investing in real geometry.
+  -->
+  <model name="plane_spike">
+    <link name="base_link">
+      <!-- CG offset below the cylinder's own geometric center, same fix
+           already found live for the CUSV rebuild (2026-08-08): a
+           rotationally-symmetric hull with CG at its own centroid has no
+           preferred roll orientation at all, so it can settle/tumble into
+           anything. This isn't just a simulator workaround either — real
+           torpedo AUVs do the same thing physically (battery pack low in
+           the hull) specifically to keep roll stable near zero. First
+           boot of this model (no CG offset) sank to the seabed and never
+           produced any thrust response — diagnosed as this same missing-
+           asymmetry class of bug before assuming anything about ArduPlane
+           firmware itself. -->
+      <inertial>
+        <pose>0 0 -0.03 0 0 0</pose>
+        <mass>46.0</mass>
+        <inertia>
+          <ixx>0.24</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>9.12</iyy>
+          <iyz>0</iyz>
+          <izz>9.12</izz>
+        </inertia>
+      </inertial>
+
+      <collision name="hull_collision">
+        <geometry>
+          <cylinder><radius>0.1</radius><length>1.5</length></cylinder>
+        </geometry>
+      </collision>
+
+      <visual name="hull_visual">
+        <geometry>
+          <cylinder><radius>0.1</radius><length>1.5</length></cylinder>
+        </geometry>
+        <material>
+          <diffuse>0.8 0.5 0.1 1</diffuse>
+          <ambient>0.6 0.4 0.1 1</ambient>
+        </material>
+      </visual>
+    </link>
+
+    <!-- single aft propeller, thrust along the vehicle's own forward (x)
+         axis — no rotation needed on this link's pose since the joint
+         axis is declared directly in vehicle-frame x, not the rotated-Z
+         convention the surface vehicles' vertical thrusters use. -->
+    <link name="prop_link">
+      <pose>-0.75 0 0 0 0 0</pose>
+      <inertial>
+        <mass>0.2</mass>
+        <inertia>
+          <ixx>0.01</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.01</iyy>
+          <iyz>0</iyz>
+          <izz>0.01</izz>
+        </inertia>
+      </inertial>
+      <visual name="prop_visual">
+        <geometry>
+          <cylinder><radius>0.08</radius><length>0.02</length></cylinder>
+        </geometry>
+        <material>
+          <diffuse>0.1 0.1 0.1 1</diffuse>
+          <ambient>0.1 0.1 0.1 1</ambient>
+        </material>
+      </visual>
+    </link>
+    <joint name="prop_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>prop_link</child>
+      <axis>
+        <xyz>1 0 0</xyz>
+        <limit>
+          <lower>-1e16</lower>
+          <upper>1e16</upper>
+        </limit>
+        <dynamics>
+          <damping>0.02</damping>
+        </dynamics>
+      </axis>
+    </joint>
+
+    <!-- sensors -->
+    <link name="imu_link">
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>0.1</mass>
+        <inertia>
+          <ixx>0.0001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0001</iyy>
+          <iyz>0</iyz>
+          <izz>0.0001</izz>
+        </inertia>
+      </inertial>
+      <sensor name="imu_sensor" type="imu">
+        <pose degrees="true">0 0 0 180 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>1000.0</update_rate>
+      </sensor>
+    </link>
+    <joint name="imu_joint" type="revolute">
+      <child>imu_link</child>
+      <parent>base_link</parent>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <dynamics>
+          <damping>1.0</damping>
+        </dynamics>
+      </axis>
+    </joint>
+
+    <!-- plugins -->
+    <plugin name="gz::sim::systems::JointStatePublisher"
+      filename="gz-sim-joint-state-publisher-system">
+    </plugin>
+    <plugin name="gz::sim::systems::OdometryPublisher"
+      filename="gz-sim-odometry-publisher-system">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <dimensions>3</dimensions>
+    </plugin>
+
+    <plugin name="gz::sim::systems::Thruster"
+      filename="gz-sim-thruster-system">
+      <namespace>plane_spike</namespace>
+      <joint_name>prop_joint</joint_name>
+      <thrust_coefficient>0.02</thrust_coefficient>
+      <fluid_density>1025</fluid_density>
+      <propeller_diameter>0.14</propeller_diameter>
+      <velocity_control>0</velocity_control>
+      <use_angvel_cmd>0</use_angvel_cmd>
+    </plugin>
+
+    <!-- light drag, crude/placeholder like the mass — not tuned, just
+         enough to keep the vehicle from accelerating forever. -->
+    <plugin filename="gz-sim-hydrodynamics-system"
+            name="gz::sim::systems::Hydrodynamics">
+      <link_name>base_link</link_name>
+      <water_density>1025.0</water_density>
+      <xDotU>0</xDotU>
+      <yDotV>0</yDotV>
+      <zDotW>0</zDotW>
+      <kDotP>0</kDotP>
+      <mDotQ>0</mDotQ>
+      <nDotR>0</nDotR>
+      <xU>-5</xU>
+      <yV>-15</yV>
+      <zW>-15</zW>
+      <kP>-2</kP>
+      <mQ>-2</mQ>
+      <nR>-2</nR>
+      <xUabsU>-8</xUabsU>
+      <yVabsV>-25</yVabsV>
+      <zWabsW>-25</zWabsW>
+      <kPabsP>-3</kPabsP>
+      <mQabsQ>-3</mQabsQ>
+      <nRabsR>-3</nRabsR>
+    </plugin>
+
+    <!-- ardupilot plugin — channel 2 (SERVO3, ArduPlane's standard
+         Throttle default) is the only channel that does anything, since
+         no fin joints exist yet. Frame transforms unchanged from every
+         other vehicle in this project — modelXYZToAirplaneXForwardZDown
+         is a generic Gazebo<->ArduPilot convention, not Rover/Sub-specific
+         (its own name literally references the Plane/Airplane frame). -->
+    <plugin name="ArduPilotPlugin"
+      filename="ArduPilotPlugin">
+      <fdm_addr>127.0.0.1</fdm_addr>
+      <fdm_port_in>9100</fdm_port_in>
+      <connectionTimeoutMaxCount>5</connectionTimeoutMaxCount>
+      <lock_step>1</lock_step>
+      <gazeboXYZToNED degrees="true">0 0 0 180 0 90</gazeboXYZToNED>
+      <modelXYZToAirplaneXForwardZDown degrees="true">0 0 0 180 0 0</modelXYZToAirplaneXForwardZDown>
+      <imuName>imu_link::imu_sensor</imuName>
+
+      <control channel="2">
+        <jointName>prop_joint</jointName>
+        <multiplier>50</multiplier>
+        <offset>-0.5</offset>
+        <servo_min>1000</servo_min>
+        <servo_max>2000</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>/model/plane_spike/joint/prop_joint/cmd_thrust</cmd_topic>
+      </control>
+    </plugin>
+
+  </model>
+</sdf>

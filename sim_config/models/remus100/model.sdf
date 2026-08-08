@@ -1,0 +1,416 @@
+<sdf version="1.9">
+  <!--
+    REMUS-100 fallback model (2026-08-08, Phase C-fallback): a real US Navy
+    shallow-water mine-countermeasures AUV, and the most-cited AUV in
+    academic hydrodynamics literature. Mass/dimensions/inertia/drag below
+    are REMUS-100's actual sourced values, taken directly from Thor I.
+    Fossen's MIT-licensed, still-maintained reference implementation
+    (github.com/cybergalactic/PythonVehicleSimulator,
+    src/python_vehicle_simulator/vehicles/remus100.py):
+      length 1.6 m, diameter 0.19 m, mass 31.9 kg, neutrally buoyant
+      (W=B exactly), CG offset 0.02 m below center (r_bg=[0,0,0.02] in
+      Fossen's own body-frame convention), parasitic drag Cd=0.42.
+    (Fossen's file separately notes a 1.9 m variant elsewhere in the
+    literature — this model uses the 1.6 m figure from the maintained
+    reference implementation itself, not a marketing page, and states
+    which one plainly rather than picking silently.)
+
+    IMPORTANT, DISCLOSED MISMATCH: REMUS-100's real actuation is ONE
+    propeller plus TWO control fins (rudder, stern-plane) — fin-steered,
+    not multi-thruster. NO ArduPilot firmware supports that control
+    scheme: ArduSub's entire motor-mixing library (AP_Motors6DOF, every
+    frame type including CUSTOM) is architecturally "N thrusters into a
+    6DOF force/torque matrix," with zero concept of a control surface
+    anywhere in it. Confirmed further: ArduPilot's own GitHub issue #21568
+    requests exactly this capability for ArduSub and remains open/
+    unimplemented; a Blue Robotics community thread on this exact question
+    has an experienced developer stating plainly "no autopilot firmware
+    currently supports this application." A genuine attempt was made to
+    get real fin-steered control via ArduPlane firmware instead (see
+    docs/EXECUTION_STATE.md's dated Phase B entries) — EKF/arming
+    genuinely survived underwater (a real, novel result), but ArduPlane's
+    throttle path either silently ignores RC override (MANUAL mode, a
+    real RC-validity gate) or crashes outright with a floating-point
+    exception (GUIDED mode's TECS, built around real-airspeed math that
+    doesn't exist underwater) — a firmware-level dead end, not a
+    configuration problem, so that path was abandoned.
+
+    This model therefore uses a 6-thruster vectored frame — the SAME
+    proven, working architecture BlueROV2 already uses on ArduSub —
+    repositioned and rescaled for REMUS's much slimmer 1.6x0.19 m hull
+    rather than BlueROV2's ~0.46x0.34 m box. This is real hull physics on
+    a simplified, disclosed actuation scheme, not a claim of fin-steered
+    fidelity. State this plainly wherever this twin's results are shown,
+    not as a footnote.
+
+    Buoyancy shape: REMUS-100 is neutrally buoyant at 31.9 kg using its
+    real outer hull volume — but a plain cylinder of length 1.6 m and
+    diameter 0.19 m displaces ~46.5 kg (46% too much), because the real
+    hull tapers at bow and stern rather than being a flat-ended tube.
+    Fossen's own reference model computes mass from a PROLATE SPHEROID
+    approximation instead (m = 4/3 * pi * rho * a * b^2, a=L/2, b=diameter/2
+    — this exact formula, confirmed directly against remus100.py's own
+    source): that gives ~31.0 kg, within 3% of the real 31.9 kg.
+
+    An <ellipsoid> collision geometry was tried first (the most literally
+    accurate shape) but confirmed live to sink steadily rather than float
+    neutrally — gz-sim-buoyancy-system's ellipsoid volume handling doesn't
+    appear to compute the true displaced volume correctly in this Gazebo
+    version. Switched to the same box-collision approximation every other
+    vehicle in this project already uses successfully (BlueROV2, CUSV): a
+    1.6 x 0.1375 x 0.1375 m box has the same 0.0302 m^3 volume as the
+    spheroid calculation, but at the world's actual water density
+    (1025 kg/m^3, not the 1026 used in the spheroid derivation above) that
+    displaces ~31.0 kg against the real 31.9 kg vehicle mass — a small
+    (~2.7%) deficit that confirmed live as a slow, steady sink, not
+    numerical noise. First trim to 1.6 x 0.1395 x 0.1395 m (0.0311 m^3,
+    neutral for the 31.9 kg base_link alone) still sank, slower but real
+    (~0.2 m/s) — traced to the 6 thruster links (0.05 kg each, 0.3 kg
+    total) having mass but no <collision> geometry of their own, so the
+    buoyancy plugin (which sums per-link displaced volume) never accounts
+    for their weight. True system mass is 31.9 + 0.3 = 32.2 kg. A first
+    pass at the exact-neutral side length (0.1401 m, rounded down) still
+    left a ~0.01 kg deficit (confirmed live: a small but real ~0.03-0.04
+    m/s terminal sink velocity, consistent with that deficit against the
+    hull's own quadratic heave drag) — floating-point rounding matters at
+    this scale. Final trim: 1.6 x 0.14013 x 0.14013 m (volume 0.031418
+    m^3 = 32.204/1025, ~4 g positive) for genuine neutral buoyancy of the
+    WHOLE assembly, erring slightly positive (float, not sink, on any
+    residual error) — the exact same class of trim
+    BlueROV2's own model.sdf documents doing (box height 0.065->0.0632
+    there, for the identical reason), and, like that one, a physically
+    faithful trim rather than a hack: real AUVs are likewise ballasted to
+    near-neutral. Visual geometry kept as a box too, for consistency,
+    rather than mixing an accurate-looking visual with different collision
+    physics.
+
+    Inertia (ixx/iyy/izz): also Fossen's own spheroid formulas, confirmed
+    against source: Ixx = (2/5)*m*b^2 (roll, about the long axis),
+    Iyy = Izz = (1/5)*m*(a^2+b^2) (pitch/yaw).
+
+    Drag (xUabsU/yVabsV/zWabsW): derived from Fossen's Cd=0.42 via
+    0.5*rho*Cd*Area, using frontal area (pi*b^2) for surge and side-profile
+    area (L*2b) for sway/heave — a reasoned derivation from the real
+    sourced coefficient, not an arbitrary number. Angular damping terms are
+    NOT derived the same way (this project's own CUSV rebuild found mass/
+    translational-drag scaling is a poor proxy for angular damping on an
+    elongated hull) — tuned instead for stable, controllable behavior
+    under the 6-thruster scheme, live-verified.
+
+    Thruster layout: BlueROV2's proven 4-horizontal-vectored +
+    2-vertical geometry (same 45-degree cant angles, i.e. same rotation
+    values — those define local thrust DIRECTION, independent of hull
+    size), repositioned for REMUS's 1.6 m length (front/back pairs spread
+    to +-0.5 m for real pitch/yaw moment arms) and 0.095 m radius
+    (horizontal thrusters mounted at the hull surface, y=+-0.095 m —
+    necessarily smaller moment arms than BlueROV2's wider frame, since
+    REMUS's hull has no room for a wider mount; disclosed, not hidden).
+    Thrust scaled proportionally to BlueROV2's own (mass ratio 31.9/10 ~=
+    3.19), then reduced for controllable, not toy-like, acceleration.
+  -->
+  <model name="remus100">
+    <pose>0 0 0 0 0 0</pose>
+
+    <link name="base_link">
+      <inertial>
+        <pose>0.0 0.0 -0.02 0 0 0</pose>
+        <mass>31.9</mass>
+        <inertia>
+          <ixx>0.1152</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>4.1408</iyy>
+          <iyz>0</iyz>
+          <izz>4.1408</izz>
+        </inertia>
+      </inertial>
+
+      <collision name="base_link_collision">
+        <geometry>
+          <box><size>1.6 0.14013 0.14013</size></box>
+        </geometry>
+      </collision>
+
+      <visual name="base_link_visual">
+        <geometry>
+          <box><size>1.6 0.14013 0.14013</size></box>
+        </geometry>
+        <material>
+          <diffuse>0.85 0.65 0.13 1</diffuse>
+          <ambient>0.6 0.45 0.1 1</ambient>
+          <specular>0.5 0.5 0.5 1</specular>
+        </material>
+      </visual>
+
+      <sensor name="imu_sensor" type="imu">
+        <pose>0 0 0 3.142 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>1000.0</update_rate>
+      </sensor>
+    </link>
+
+    <!-- Hydrodynamics: real Cd=0.42-derived surge drag, side-profile-area
+         derived sway/heave drag, live-tuned angular damping (see header). -->
+    <plugin
+        filename="gz-sim-hydrodynamics-system"
+        name="gz::sim::systems::Hydrodynamics">
+      <link_name>base_link</link_name>
+      <water_density>1025.0</water_density>
+      <xDotU>0</xDotU>
+      <yDotV>0</yDotV>
+      <zDotW>0</zDotW>
+      <kDotP>0</kDotP>
+      <mDotQ>0</mDotQ>
+      <nDotR>0</nDotR>
+      <xU>0</xU>
+      <yV>0</yV>
+      <zW>0</zW>
+      <kP>-5</kP>
+      <mQ>-8</mQ>
+      <nR>-8</nR>
+      <xUabsU>-6.11</xUabsU>
+      <yVabsV>-65.5</yVabsV>
+      <zWabsW>-65.5</zWabsW>
+      <kPabsP>-8</kPabsP>
+      <mQabsQ>-15</mQabsQ>
+      <nRabsR>-15</nRabsR>
+    </plugin>
+
+    <!-- 4 horizontal vectored thrusters (surge/sway/yaw), 45-degree cant —
+         same rotation values as BlueROV2 (thrust direction, not
+         hull-size-dependent), repositioned to REMUS's 1.6 m length and
+         0.095 m radius. -->
+    <link name="thruster1">
+      <pose>0.5 -0.095 0.0 -1.571 1.571 -0.785</pose>
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.0005</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0005</iyy><iyz>0</iyz><izz>0.0005</izz>
+        </inertia>
+      </inertial>
+      <visual name="thruster_visual">
+        <geometry><cylinder><radius>0.03</radius><length>0.015</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse><ambient>0.1 0.1 0.1 1</ambient></material>
+      </visual>
+    </link>
+    <link name="thruster2">
+      <pose>0.5 0.095 0.0 -1.571 1.571 -2.356</pose>
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.0005</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0005</iyy><iyz>0</iyz><izz>0.0005</izz>
+        </inertia>
+      </inertial>
+      <visual name="thruster_visual">
+        <geometry><cylinder><radius>0.03</radius><length>0.015</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse><ambient>0.1 0.1 0.1 1</ambient></material>
+      </visual>
+    </link>
+    <link name="thruster3">
+      <pose>-0.5 -0.095 0.0 -1.571 1.571 0.785</pose>
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.0005</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0005</iyy><iyz>0</iyz><izz>0.0005</izz>
+        </inertia>
+      </inertial>
+      <visual name="thruster_visual">
+        <geometry><cylinder><radius>0.03</radius><length>0.015</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse><ambient>0.1 0.1 0.1 1</ambient></material>
+      </visual>
+    </link>
+    <link name="thruster4">
+      <pose>-0.5 0.095 0.0 -1.571 1.571 2.356</pose>
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.0005</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0005</iyy><iyz>0</iyz><izz>0.0005</izz>
+        </inertia>
+      </inertial>
+      <visual name="thruster_visual">
+        <geometry><cylinder><radius>0.03</radius><length>0.015</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse><ambient>0.1 0.1 0.1 1</ambient></material>
+      </visual>
+    </link>
+
+    <!-- 2 vertical thrusters (heave/roll), mounted at the hull surface. -->
+    <link name="thruster5">
+      <pose>0.0 -0.095 0.08 0 0 0</pose>
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.0005</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0005</iyy><iyz>0</iyz><izz>0.0005</izz>
+        </inertia>
+      </inertial>
+      <visual name="thruster_visual">
+        <geometry><cylinder><radius>0.03</radius><length>0.015</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse><ambient>0.1 0.1 0.1 1</ambient></material>
+      </visual>
+    </link>
+    <link name="thruster6">
+      <pose>0.0 0.095 0.08 0 0 0</pose>
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.0005</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0005</iyy><iyz>0</iyz><izz>0.0005</izz>
+        </inertia>
+      </inertial>
+      <visual name="thruster_visual">
+        <geometry><cylinder><radius>0.03</radius><length>0.015</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse><ambient>0.1 0.1 0.1 1</ambient></material>
+      </visual>
+    </link>
+
+    <joint name="thruster1_joint" type="revolute">
+      <parent>base_link</parent><child>thruster1</child>
+      <axis><xyz>0 0 -1</xyz></axis>
+    </joint>
+    <joint name="thruster2_joint" type="revolute">
+      <parent>base_link</parent><child>thruster2</child>
+      <axis><xyz>0 0 -1</xyz></axis>
+    </joint>
+    <joint name="thruster3_joint" type="revolute">
+      <parent>base_link</parent><child>thruster3</child>
+      <axis><xyz>0 0 -1</xyz></axis>
+    </joint>
+    <joint name="thruster4_joint" type="revolute">
+      <parent>base_link</parent><child>thruster4</child>
+      <axis><xyz>0 0 -1</xyz></axis>
+    </joint>
+    <joint name="thruster5_joint" type="revolute">
+      <parent>base_link</parent><child>thruster5</child>
+      <axis><xyz>0 0 -1</xyz></axis>
+    </joint>
+    <joint name="thruster6_joint" type="revolute">
+      <parent>base_link</parent><child>thruster6</child>
+      <axis><xyz>0 0 -1</xyz></axis>
+    </joint>
+
+    <!-- Thrust scaled from BlueROV2's own (mass ratio 31.9/10 ~= 3.19),
+         moderated for controllable rather than toy-like acceleration —
+         see header derivation. -->
+    <plugin filename="gz-sim-thruster-system" name="gz::sim::systems::Thruster">
+      <namespace>remus100</namespace>
+      <joint_name>thruster1_joint</joint_name>
+      <thrust_coefficient>0.02</thrust_coefficient>
+      <fluid_density>1025.0</fluid_density>
+      <propeller_diameter>0.06</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>False</use_angvel_cmd>
+    </plugin>
+    <plugin filename="gz-sim-thruster-system" name="gz::sim::systems::Thruster">
+      <namespace>remus100</namespace>
+      <joint_name>thruster2_joint</joint_name>
+      <thrust_coefficient>0.02</thrust_coefficient>
+      <fluid_density>1025.0</fluid_density>
+      <propeller_diameter>0.06</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>False</use_angvel_cmd>
+    </plugin>
+    <plugin filename="gz-sim-thruster-system" name="gz::sim::systems::Thruster">
+      <namespace>remus100</namespace>
+      <joint_name>thruster3_joint</joint_name>
+      <thrust_coefficient>-0.02</thrust_coefficient>
+      <fluid_density>1025.0</fluid_density>
+      <propeller_diameter>0.06</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>False</use_angvel_cmd>
+    </plugin>
+    <plugin filename="gz-sim-thruster-system" name="gz::sim::systems::Thruster">
+      <namespace>remus100</namespace>
+      <joint_name>thruster4_joint</joint_name>
+      <thrust_coefficient>-0.02</thrust_coefficient>
+      <fluid_density>1025.0</fluid_density>
+      <propeller_diameter>0.06</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>False</use_angvel_cmd>
+    </plugin>
+    <plugin filename="gz-sim-thruster-system" name="gz::sim::systems::Thruster">
+      <namespace>remus100</namespace>
+      <joint_name>thruster5_joint</joint_name>
+      <thrust_coefficient>0.02</thrust_coefficient>
+      <fluid_density>1025.0</fluid_density>
+      <propeller_diameter>0.06</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>False</use_angvel_cmd>
+    </plugin>
+    <plugin filename="gz-sim-thruster-system" name="gz::sim::systems::Thruster">
+      <namespace>remus100</namespace>
+      <joint_name>thruster6_joint</joint_name>
+      <thrust_coefficient>-0.02</thrust_coefficient>
+      <fluid_density>1025.0</fluid_density>
+      <propeller_diameter>0.06</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>False</use_angvel_cmd>
+    </plugin>
+
+    <plugin name="ArduPilotPlugin" filename="libArduPilotPlugin.so">
+      <fdm_addr>127.0.0.1</fdm_addr>
+      <fdm_port_in>9100</fdm_port_in>
+      <connectionTimeoutMaxCount>5</connectionTimeoutMaxCount>
+      <lock_step>1</lock_step>
+      <modelXYZToAirplaneXForwardZDown>0 0 0 3.142 0 0</modelXYZToAirplaneXForwardZDown>
+      <gazeboXYZToNED>0 0 0 3.142 0 1.571</gazeboXYZToNED>
+      <imuName>imu_sensor</imuName>
+
+      <control channel="0">
+        <jointName>thruster1_joint</jointName>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>/model/remus100/joint/thruster1_joint/cmd_thrust</cmd_topic>
+        <offset>-0.5</offset><multiplier>150</multiplier>
+      </control>
+      <control channel="1">
+        <jointName>thruster2_joint</jointName>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>/model/remus100/joint/thruster2_joint/cmd_thrust</cmd_topic>
+        <offset>-0.5</offset><multiplier>150</multiplier>
+      </control>
+      <control channel="2">
+        <jointName>thruster3_joint</jointName>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>/model/remus100/joint/thruster3_joint/cmd_thrust</cmd_topic>
+        <offset>-0.5</offset><multiplier>150</multiplier>
+      </control>
+      <control channel="3">
+        <jointName>thruster4_joint</jointName>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>/model/remus100/joint/thruster4_joint/cmd_thrust</cmd_topic>
+        <offset>-0.5</offset><multiplier>150</multiplier>
+      </control>
+      <control channel="4">
+        <jointName>thruster5_joint</jointName>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>/model/remus100/joint/thruster5_joint/cmd_thrust</cmd_topic>
+        <offset>-0.5</offset><multiplier>150</multiplier>
+      </control>
+      <control channel="5">
+        <jointName>thruster6_joint</jointName>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>/model/remus100/joint/thruster6_joint/cmd_thrust</cmd_topic>
+        <offset>-0.5</offset><multiplier>150</multiplier>
+      </control>
+    </plugin>
+
+    <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>map</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <dimensions>3</dimensions>
+      <odom_publish_frequency>100</odom_publish_frequency>
+    </plugin>
+    <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher"></plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"></plugin>
+
+  </model>
+</sdf>

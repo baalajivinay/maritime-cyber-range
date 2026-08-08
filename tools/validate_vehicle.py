@@ -32,7 +32,6 @@ Usage:
   python3 tools/validate_vehicle.py <profile>      # e.g. wamv | bluerov2
 Exit code 0 = all checks pass.
 """
-import json
 import os
 import re
 import sys

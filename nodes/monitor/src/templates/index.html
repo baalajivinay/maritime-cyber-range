@@ -4,164 +4,228 @@
     <title>Maritime Cyber Range — Live Monitor</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --blue:#2563eb; --red:#dc2626; --orange:#ea580c; --ok:#16a34a; --bg:#0f172a; --panel:#1e293b; --ink:#e2e8f0; --muted:#94a3b8; }
+        :root {
+            --bg:        #0a0d12;
+            --panel:     #12161d;
+            --panel-alt: #161b23;
+            --border:    #262d38;
+            --ink:       #c7ccd4;
+            --ink-hi:    #eef1f5;
+            --muted:     #6b7280;
+            --accent:    #5b8cc8;
+            --ok:        #3fa66b;
+            --danger:    #b5534a;
+            --warn:      #b8873a;
+            --true-pos:  #5b8cc8;
+            --believed:  #b5534a;
+            --ais:       #7d7593;
+            --goal:      #3fa66b;
+            --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+            --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+        }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: system-ui, sans-serif; background: #0b1220; color: var(--ink); }
-        header { background: var(--bg); padding: 12px 20px; display:flex; align-items:center; gap:14px; border-bottom:2px solid #1e293b; }
-        header h1 { font-size: 18px; margin:0; letter-spacing:.3px; }
-        header .sub { color: var(--muted); font-size: 13px; }
-        .dot { width:10px; height:10px; border-radius:50%; background:var(--ok); box-shadow:0 0 8px var(--ok); }
-        .wrap { display:flex; gap:14px; padding:14px; height: calc(100vh - 52px); }
-        #map { flex: 1; border-radius: 10px; overflow:hidden; min-width:0; }
-        .side { width: 340px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
-        .card { background: var(--panel); border-radius:10px; padding:14px; }
-        .card h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); font-weight:700; }
-        .bignum { font-size:44px; font-weight:800; line-height:1; }
-        .bignum small { font-size:16px; color:var(--muted); font-weight:600; }
-        .tag { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:700; }
-        .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; font-size:13px; }
-        .grid2 .k { color:var(--muted); }
-        .legend div { display:flex; align-items:center; gap:8px; font-size:13px; margin:4px 0; }
-        .sw { width:14px; height:14px; border-radius:3px; }
-        #alerts { max-height: 260px; overflow-y:auto; }
-        .alert { border-left:4px solid #334155; padding:5px 8px; margin:5px 0; background:#0b1220; border-radius:4px; font-size:12px; animation: flash .8s; }
-        @keyframes flash { from { background:#3b2020; } to { background:#0b1220; } }
-        .muted { color: var(--muted); }
-        .ctl { background:#1d4ed8; color:#fff; border:none; border-radius:7px; padding:8px 6px; font-size:13px; font-weight:600; cursor:pointer; }
-        .ctl:hover { filter:brightness(1.15); }
-        .ctl.atk { background:#7c2d12; }
-        .ctl.armed { outline:2px solid #f59e0b; }
-        #report_overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:9999; padding:20px; }
-        #report_box { background:#0b1220; border:1px solid #334155; border-radius:10px; padding:20px; max-width:820px; width:100%; max-height:85vh; overflow-y:auto; }
-        #report_box .tblwrap { overflow-x:auto; }
-        #report_box table.detail { border-collapse:collapse; min-width:640px; width:100%; margin:8px 0 4px; font-size:12.5px; }
-        #report_box table.kv { border-collapse:collapse; width:100%; margin:8px 0 4px; font-size:12.5px; }
-        #report_box th, #report_box td { border:1px solid #334155; padding:5px 8px; text-align:right; }
-        #report_box th { background:#111827; text-align:right; }
-        #report_box td:first-child, #report_box th:first-child { text-align:left; }
-        #report_box tr:nth-child(even) td { background:#0f172a; }
-        #report_box table.kv th { text-align:left; width:45%; background:#111827; }
-        #report_box table.kv td { text-align:left; }
-        #report_box .missing { color:#f59e0b; font-style:italic; }
-        #report_box h4 { color:var(--muted); text-transform:uppercase; font-size:12px; letter-spacing:.5px; }
+        body { margin: 0; font-family: var(--sans); background: var(--bg); color: var(--ink); font-size: 14px; }
 
-        /* live metrics + latency toast */
-        .kpi { display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; font-size:12.5px; }
-        .kpi .k { color:var(--muted); }
-        .kpi .v { font-weight:700; text-align:right; }
-        #latency_badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; min-height: 0; }
-        .latbadge { background:#0b1220; border:1px solid #334155; border-radius:999px; padding:3px 10px; font-size:11.5px;
-                    display:flex; align-items:center; gap:6px; animation: pop .35s ease; }
-        .latbadge b { font-size:12.5px; }
-        @keyframes pop { from { transform:scale(.85); opacity:0; } to { transform:scale(1); opacity:1; } }
+        header {
+            background: var(--panel);
+            padding: 10px 20px;
+            display: flex; align-items: center; gap: 18px;
+            border-bottom: 1px solid var(--border);
+        }
+        header .brand { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: var(--ink-hi); text-transform: uppercase; }
+        header .sub { color: var(--muted); font-size: 12.5px; letter-spacing: .5px; text-transform: uppercase; }
+        header .statusbadge {
+            margin-left: auto; display: flex; align-items: center; gap: 7px;
+            font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted);
+        }
+        .statusbadge .sq { width: 8px; height: 8px; background: var(--danger); border: 1px solid var(--border); }
+        .statusbadge.on .sq { background: var(--ok); }
+
+        #warnbar {
+            display: none; background: #241414; color: #e0a89f; border-bottom: 1px solid var(--danger);
+            padding: 7px 20px; font-size: 12.5px; letter-spacing: .3px; text-align: center;
+        }
+
+        .wrap { display: flex; gap: 1px; padding: 0; height: calc(100vh - 49px); background: var(--border); }
+        #map { flex: 1; min-width: 0; filter: saturate(0.55) brightness(0.9); }
+        .side { width: 360px; background: var(--bg); display: flex; flex-direction: column; overflow-y: auto; }
+
+        .panel { border-bottom: 1px solid var(--border); padding: 16px 18px; }
+        .panel.console { background: #14100e; border-top: 2px solid var(--warn); border-bottom: 1px solid var(--border); }
+        .panel h3 {
+            margin: 0 0 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+            color: var(--muted); font-weight: 700; display: flex; align-items: center; justify-content: space-between;
+        }
+        .panel h3 .count { color: var(--danger); font-family: var(--mono); }
+
+        .metric-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+        .metric-row:last-child { border-bottom: none; }
+        .metric-row .k { color: var(--muted); }
+        .metric-row .v { font-family: var(--mono); color: var(--ink-hi); text-align: right; }
+
+        .bignum { font-family: var(--mono); font-size: 34px; font-weight: 600; line-height: 1; color: var(--ink-hi); margin-top: 6px; }
+        .bignum small { font-size: 13px; color: var(--muted); font-weight: 400; font-family: var(--sans); }
+        .bignum-note { color: var(--muted); font-size: 12px; margin-top: 6px; letter-spacing: .2px; }
+
+        .tag { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; letter-spacing: .5px;
+               border: 1px solid; background: transparent; }
+        .tag.danger { color: var(--danger); border-color: var(--danger); }
+        .tag.ok { color: var(--ok); border-color: var(--ok); }
+
+        /* buttons -- flat, bordered, no fills, no rounding beyond a hairline */
+        .ctl {
+            background: var(--panel-alt); color: var(--ink); border: 1px solid var(--border);
+            border-radius: 2px; padding: 8px 6px; font-size: 12.5px; font-weight: 600;
+            letter-spacing: .3px; cursor: pointer; font-family: var(--sans);
+        }
+        .ctl:hover { border-color: var(--accent); color: var(--ink-hi); }
+        .ctl.atk { border-left: 3px solid var(--danger); text-align: left; padding-left: 10px; }
+        .ctl.atk:hover { background: #1c1310; }
+        .ctl.primary { border-left: 3px solid var(--accent); }
+        .ctl.armed { border-color: var(--warn); color: var(--warn); }
+        .ctl.linklike { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+        .btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+        select.ctl2, #c2cmd {
+            width: 100%; background: var(--panel-alt); color: var(--ink); border: 1px solid var(--border);
+            border-radius: 2px; padding: 6px; font-size: 12px; font-family: var(--sans);
+        }
+        .fieldlabel { color: var(--muted); font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; margin: 10px 0 5px; }
+
+        #cmdmsg { color: var(--muted); font-size: 11.5px; margin-top: 10px; min-height: 14px; font-family: var(--mono); }
+
+        #alerts { max-height: 240px; overflow-y: auto; }
+        .alert { border-left: 3px solid var(--border); padding: 6px 9px; margin: 6px 0; background: var(--panel-alt); font-size: 12px; }
+        .alert .atype { font-family: var(--mono); font-weight: 700; letter-spacing: .3px; }
+        .alert .atime { color: var(--muted); font-size: 11px; }
+        .muted { color: var(--muted); }
+
+        .kpi { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 10px; font-size: 12px; font-family: var(--mono); }
+        .kpi .k { color: var(--muted); font-family: var(--sans); font-size: 11.5px; }
+        .kpi .v { font-weight: 600; text-align: right; color: var(--ink-hi); }
+        #latency_badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .latbadge {
+            background: var(--panel-alt); border: 1px solid var(--border); border-radius: 2px;
+            padding: 3px 8px; font-size: 11px; font-family: var(--mono);
+        }
+        .latbadge b { color: var(--ink-hi); }
+
+        .legend-row { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+        .legend-row .item { display: flex; align-items: center; gap: 6px; }
+        .sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+        #report_overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px; }
+        #report_box { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 22px; max-width: 820px; width: 100%; max-height: 85vh; overflow-y: auto; }
+        #report_box h3 { color: var(--ink-hi); font-size: 15px; text-transform: none; letter-spacing: 0; }
+        #report_box .tblwrap { overflow-x: auto; }
+        #report_box table.detail { border-collapse: collapse; min-width: 640px; width: 100%; margin: 8px 0 4px; font-size: 12px; font-family: var(--mono); }
+        #report_box table.kv { border-collapse: collapse; width: 100%; margin: 8px 0 4px; font-size: 12.5px; }
+        #report_box th, #report_box td { border: 1px solid var(--border); padding: 5px 8px; text-align: right; }
+        #report_box th { background: var(--panel-alt); text-align: right; color: var(--muted); font-weight: 600; }
+        #report_box td:first-child, #report_box th:first-child { text-align: left; }
+        #report_box tr:nth-child(even) td { background: #0e1116; }
+        #report_box table.kv th { text-align: left; width: 45%; background: var(--panel-alt); }
+        #report_box table.kv td { text-align: left; }
+        #report_box .missing { color: var(--warn); font-style: italic; }
+        #report_box h4 { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
 
         @media (max-width: 900px) {
-            .wrap { flex-direction:column; height:auto; }
-            #map { height:46vh; flex:none; }
-            .side { width:100%; max-height:none; }
+            .wrap { flex-direction: column; height: auto; }
+            #map { height: 46vh; flex: none; }
+            .side { width: 100%; max-height: none; }
         }
     </style>
 </head>
 <body>
     <header>
-        <span class="dot" id="conn"></span>
-        <h1>🛰️ Maritime Cyber Range</h1>
+        <span class="brand">Maritime Cyber Range</span>
         <span class="sub" id="vehicle">Live Monitor</span>
+        <span class="statusbadge" id="statusbadge"><span class="sq" id="conn"></span><span id="conntext">Offline</span></span>
     </header>
-    <div id="warnbar" style="display:none; background:#7f1d1d; color:#fff; padding:8px 14px; font-size:13px; font-weight:600; text-align:center;"></div>
-
-    <div id="switch_overlay" style="position:fixed; inset:0; background:rgba(2,6,23,.93); display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; z-index:10000;">
-        <div style="font-size:22px; font-weight:700;" id="switch_msg">Switching…</div>
-        <div class="muted">rebooting the simulator + dashboard — this page reloads automatically (~40 s)</div>
-    </div>
+    <div id="warnbar"></div>
 
     <div id="report_overlay"><div id="report_box">
-        <h3 style="margin-top:0">Detection report — blind detectors vs. ground truth</h3>
+        <h3 style="margin-top:0">Detection Report — Blind Detectors vs. Ground Truth</h3>
         <div id="report_html"><p class="muted">…</p></div>
-        <div style="text-align:right; margin-top:10px;"><button class="ctl" onclick="document.getElementById('report_overlay').style.display='none'">Close</button></div>
+        <div style="text-align:right; margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">
+            <a class="ctl primary linklike" href="/cmd/report/pdf">Download PDF</a>
+            <button class="ctl" onclick="document.getElementById('report_overlay').style.display='none'">Close</button>
+        </div>
     </div></div>
 
     <div class="wrap">
         <div id="map"></div>
         <div class="side">
-            <div class="card">
-                <h3>Operator controls</h3>
-                <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-                    <label class="muted" style="font-size:12px;">Vehicle</label>
-                    <select id="vehsel" style="flex:1; background:#0b1220; color:var(--ink); border:1px solid #334155; border-radius:6px; padding:5px;">
-                        <option value="wamv">WAM-V (surface)</option>
-                        <option value="blueboat">BlueBoat (surface)</option>
-                        <option value="bluerov2">BlueROV2 (AUV)</option>
-                    </select>
-                </div>
-                <button id="btn_goto" class="ctl" style="width:100%; margin-bottom:8px;">📍 Set destination (then click map)</button>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-                    <button class="ctl atk" data-atk="gps_spoof">GPS spoof</button>
-                    <button class="ctl atk" data-atk="ais_spoof">AIS spoof</button>
-                    <button class="ctl atk" data-atk="c2_replay">C2 inject</button>
-                    <button class="ctl atk" data-atk="acoustic_spoof">Acoustic spoof</button>
-                </div>
-                <div id="c2row" style="display:flex; gap:6px; align-items:center; margin-top:6px;">
-                    <label class="muted" style="font-size:11px; white-space:nowrap;">C2 command</label>
-                    <select id="c2cmd" style="flex:1; background:#0b1220; color:var(--ink); border:1px solid #334155; border-radius:6px; padding:4px; font-size:12px;">
-                        <option value="rc_override">Seize throttle — full ahead</option>
-                        <option value="rc_stop">Cut throttle — stop</option>
-                        <option value="disarm">Force DISARM — kill motors</option>
-                        <option value="mode_hold">Force HOLD — halt mission</option>
-                        <option value="mode_manual">Force MANUAL — drop autonomy</option>
-                    </select>
-                </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
-                    <button id="btn_stop" class="ctl" style="background:#334155;">■ Stop attacks</button>
-                    <button id="btn_report" class="ctl" style="background:#0369a1;">📊 Report</button>
-                </div>
-                <div id="cmdmsg" class="muted" style="font-size:12px; margin-top:8px; min-height:16px;"></div>
+
+            <div class="panel">
+                <h3>Vehicle Status</h3>
+                <div class="metric-row"><div class="k">Mode</div><div class="v" id="mode">—</div></div>
+                <div class="metric-row"><div class="k">Armed</div><div class="v" id="armed">—</div></div>
+                <div class="metric-row"><div class="k">Speed</div><div class="v" id="speed">—</div></div>
+                <div class="metric-row"><div class="k">Depth / Alt</div><div class="v" id="depth">—</div></div>
             </div>
 
-            <div class="card">
-                <h3>GPS / Position spoof error</h3>
-                <div class="bignum"><span id="err">0.0</span><small> m</small></div>
-                <div class="muted" id="errnote" style="margin-top:6px;">true vs. believed position</div>
+            <div class="panel">
+                <h3>Position Integrity</h3>
+                <div class="bignum"><span id="err">0.0</span><small> m deviation</small></div>
+                <div class="bignum-note" id="errnote">true vs. believed position</div>
             </div>
 
-            <div class="card" id="destcard" style="display:none;">
+            <div class="panel" id="destcard" style="display:none;">
                 <h3>Destination</h3>
-                <div class="bignum"><span id="dist">—</span><small> m to go</small></div>
-                <div id="deststatus" class="muted" style="margin-top:6px;">en route…</div>
+                <div class="bignum"><span id="dist">—</span><small> m remaining</small></div>
+                <div class="bignum-note" id="deststatus">en route</div>
             </div>
 
-            <div class="card">
-                <h3>Vehicle telemetry</h3>
-                <div class="grid2">
-                    <div class="k">Mode</div><div id="mode">—</div>
-                    <div class="k">Armed</div><div id="armed">—</div>
-                    <div class="k">Speed</div><div id="speed">—</div>
-                    <div class="k">Depth/Alt</div><div id="depth">—</div>
+            <div class="panel console">
+                <h3>Attack Console</h3>
+                <button id="btn_goto" class="ctl" style="width:100%; margin-bottom:10px;">Set Destination (click map after)</button>
+                <div class="btnrow">
+                    <button class="ctl atk" data-atk="gps_spoof">GPS Spoof</button>
+                    <button class="ctl atk" data-atk="ais_spoof">AIS Spoof</button>
+                    <button class="ctl atk" data-atk="c2_replay">C2 Inject</button>
+                    <button class="ctl atk" data-atk="acoustic_spoof">Acoustic Spoof</button>
                 </div>
+                <div class="fieldlabel">C2 Command</div>
+                <select id="c2cmd">
+                    <option value="rc_override">Seize throttle — full ahead</option>
+                    <option value="rc_stop">Cut throttle — stop</option>
+                    <option value="disarm">Force DISARM — kill motors</option>
+                    <option value="mode_hold">Force HOLD — halt mission</option>
+                    <option value="mode_manual">Force MANUAL — drop autonomy</option>
+                </select>
+                <div class="btnrow" style="margin-top:10px;">
+                    <button id="btn_stop" class="ctl">Stop Attacks</button>
+                    <button id="btn_report" class="ctl primary">Report</button>
+                </div>
+                <div id="cmdmsg"></div>
             </div>
 
-            <div class="card">
-                <h3>Live detection metrics <span class="muted" style="text-transform:none; font-weight:400;">(system overhead)</span></h3>
+            <div class="panel">
+                <h3>Detection Alerts <span class="count" id="alert_count">(0)</span></h3>
+                <div id="alerts"><p class="muted">No attacks detected.</p></div>
+            </div>
+
+            <div class="panel">
+                <h3>System Metrics</h3>
                 <div class="kpi">
                     <div class="k">CPU (of wall)</div><div class="v" id="ov_cpu">—</div>
                     <div class="k">Peak RSS</div><div class="v" id="ov_rss">—</div>
-                    <div class="k">Events/sec</div><div class="v" id="ov_eps">—</div>
+                    <div class="k">Events / sec</div><div class="v" id="ov_eps">—</div>
                     <div class="k">Avg proc time</div><div class="v" id="ov_proc">—</div>
                 </div>
                 <div id="latency_badges"></div>
             </div>
 
-            <div class="card legend">
-                <h3>Legend</h3>
-                <div><span class="sw" style="background:var(--blue)"></span> True position (Gazebo ground truth)</div>
-                <div><span class="sw" style="background:var(--red)"></span> Believed position (ArduPilot)</div>
-                <div><span class="sw" style="background:var(--orange)"></span> AIS contacts</div>
+            <div class="panel">
+                <div class="legend-row">
+                    <span class="item"><span class="sw" style="background:var(--true-pos)"></span>True</span>
+                    <span class="item"><span class="sw" style="background:var(--believed)"></span>Believed</span>
+                    <span class="item"><span class="sw" style="background:var(--ais)"></span>AIS contact</span>
+                    <span class="item"><span class="sw" style="background:var(--goal)"></span>Goal</span>
+                </div>
             </div>
 
-            <div class="card">
-                <h3>Attack alerts <span id="alert_count" style="color:var(--red)">(0)</span></h3>
-                <div id="alerts"><p class="muted">No attacks detected.</p></div>
-            </div>
         </div>
     </div>
 
@@ -173,15 +237,15 @@
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                     {maxZoom: 20, attribution: '© OpenStreetMap'}).addTo(map);
 
-        function dot(color){ return L.divIcon({className:'', iconSize:[16,16], iconAnchor:[8,8],
-            html:'<div style="width:16px;height:16px;border-radius:50%;background:'+color+
-                 ';border:2px solid #fff;box-shadow:0 0 6px '+color+'"></div>'}); }
+        function dot(color){ return L.divIcon({className:'', iconSize:[12,12], iconAnchor:[6,6],
+            html:'<div style="width:12px;height:12px;border-radius:50%;background:'+color+
+                 ';border:2px solid #0a0d12;"></div>'}); }
 
-        var trueMarker = L.marker(HOME, {icon: dot('#2563eb'), zIndexOffset:1000}).bindTooltip('TRUE',{permanent:false}).addTo(map);
-        var believedMarker = L.marker(HOME, {icon: dot('#dc2626'), zIndexOffset:1000}).bindTooltip('BELIEVED',{permanent:false}).addTo(map);
-        var trueTrail = L.polyline([], {color:'#2563eb', weight:3, opacity:.7}).addTo(map);
-        var believedTrail = L.polyline([], {color:'#dc2626', weight:3, opacity:.7, dashArray:'1,0'}).addTo(map);
-        var connector = L.polyline([], {color:'#f59e0b', weight:2, dashArray:'6,6', opacity:.9}).addTo(map);
+        var trueMarker = L.marker(HOME, {icon: dot('#5b8cc8'), zIndexOffset:1000}).bindTooltip('TRUE',{permanent:false}).addTo(map);
+        var believedMarker = L.marker(HOME, {icon: dot('#b5534a'), zIndexOffset:1000}).bindTooltip('BELIEVED',{permanent:false}).addTo(map);
+        var trueTrail = L.polyline([], {color:'#5b8cc8', weight:2, opacity:.6}).addTo(map);
+        var believedTrail = L.polyline([], {color:'#b5534a', weight:2, opacity:.6, dashArray:'1,0'}).addTo(map);
+        var connector = L.polyline([], {color:'#b8873a', weight:1.5, dashArray:'5,5', opacity:.8}).addTo(map);
         var aisMarkers = {};
 
         var truePos = null, believedPos = null, centered = false;
@@ -203,15 +267,23 @@
             var el = document.getElementById('err');
             el.textContent = d.toFixed(1);
             var spoofed = d > 5;
-            el.style.color = spoofed ? '#dc2626' : '#16a34a';
+            el.style.color = spoofed ? 'var(--danger)' : 'var(--ok)';
             document.getElementById('errnote').textContent = spoofed ?
-                '⚠ believed position DIVERGED from true' : 'true ≈ believed (nominal)';
+                'believed position diverged from true' : 'true ≈ believed (nominal)';
             connector.setLatLngs([truePos, believedPos]);
         }
 
         var socket = io();
-        socket.on('connect', function(){ document.getElementById('conn').style.background='#16a34a'; });
-        socket.on('disconnect', function(){ document.getElementById('conn').style.background='#dc2626'; });
+        socket.on('connect', function(){
+            document.getElementById('conn').style.background='var(--ok)';
+            document.getElementById('conntext').textContent='Online';
+            document.getElementById('statusbadge').classList.add('on');
+        });
+        socket.on('disconnect', function(){
+            document.getElementById('conn').style.background='var(--danger)';
+            document.getElementById('conntext').textContent='Offline';
+            document.getElementById('statusbadge').classList.remove('on');
+        });
 
         socket.on('gps_true_update', function(d){
             truePos=[d.lat,d.lon]; trueMarker.setLatLng(truePos); pushTrail(trueTrail, truePos);
@@ -226,7 +298,7 @@
         });
         socket.on('ais_update', function(d){
             var ll=[d.lat,d.lon];
-            if(!aisMarkers[d.mmsi]) aisMarkers[d.mmsi]=L.marker(ll,{icon:dot('#ea580c')}).bindTooltip('AIS '+d.mmsi).addTo(map);
+            if(!aisMarkers[d.mmsi]) aisMarkers[d.mmsi]=L.marker(ll,{icon:dot('#7d7593')}).bindTooltip('AIS '+d.mmsi).addTo(map);
             else aisMarkers[d.mmsi].setLatLng(ll);
         });
         socket.on('status_update', function(s){
@@ -235,10 +307,10 @@
                 b.style.display = s.attacks.indexOf(b.dataset.atk) >= 0 ? '' : 'none'; }); }
             if(s.mode!==undefined) document.getElementById('mode').textContent = s.mode;
             if(s.armed!==undefined){ var a=document.getElementById('armed');
-                a.innerHTML = '<span class="tag" style="background:'+(s.armed?'#7f1d1d':'#14532d')+';color:#fff">'+(s.armed?'ARMED':'disarmed')+'</span>'; }
+                a.innerHTML = '<span class="tag '+(s.armed?'danger':'ok')+'">'+(s.armed?'ARMED':'DISARMED')+'</span>'; }
             if(s.speed!==undefined) document.getElementById('speed').textContent = s.speed.toFixed(2)+' m/s';
             if(s.depth!==undefined) document.getElementById('depth').textContent = s.depth.toFixed(2)+' m';
-            if(s.warning){ var w=document.getElementById('warnbar'); if(w){ w.textContent='⚠ '+s.warning; w.style.display='block'; } }
+            if(s.warning){ var w=document.getElementById('warnbar'); if(w){ w.textContent=s.warning; w.style.display='block'; } }
         });
 
         // ---- Operator controls ----
@@ -278,36 +350,12 @@
         socket.on('attack_latency', function(a){
             var box = document.getElementById('latency_badges');
             var el = document.createElement('div'); el.className='latbadge';
-            el.style.borderColor = alertColors[a.attack_type] || '#334155';
+            el.style.borderLeftColor = alertColors[a.attack_type] || '#262d38';
+            el.style.borderLeftWidth = '2px';
             el.innerHTML = a.attack_type.toUpperCase()+' detected in <b>'+a.latency_s.toFixed(2)+'s</b>';
             box.insertBefore(el, box.firstChild);
             while(box.children.length > 4) box.removeChild(box.lastChild);
         });
-        function showSwitching(prof){
-            document.getElementById('switch_msg').textContent = 'Switching to ' + prof + ' …';
-            document.getElementById('switch_overlay').style.display = 'flex';
-            var t0 = Date.now();
-            var iv = setInterval(function(){
-                fetch('/whoami').then(function(r){ return r.json(); }).then(function(w){
-                    if(w && w.profile === prof){ clearInterval(iv); location.reload(); }
-                }).catch(function(){});   // dashboard is down mid-switch; keep polling
-                if(Date.now() - t0 > 150000){ clearInterval(iv);
-                    document.getElementById('switch_msg').textContent = 'Taking longer than expected — reload the page manually.'; }
-            }, 3000);
-        }
-        document.getElementById('vehsel').onchange = function(e){
-            var prof = e.target.value;
-            flash('switching to ' + prof + ' …');
-            post('/cmd/vehicle', {profile: prof}).then(function(r){
-                if(r.switching === false){ flash(r.msg); return; }
-                showSwitching(prof);
-            }).catch(function(){ showSwitching(prof); });  // response may drop as the dashboard restarts
-        };
-        // reflect the actual running vehicle in the dropdown on load
-        fetch('/whoami').then(function(r){ return r.json(); }).then(function(w){
-            if(w && w.profile){ var s=document.getElementById('vehsel'); if(s) s.value = w.profile; }
-        }).catch(function(){});
-
         // Click-to-set-destination
         var gotoMode=false, goalMarker=null, goalLatLng=null;
         function refreshDest(){
@@ -316,20 +364,20 @@
             document.getElementById('dist').textContent = d.toFixed(1);
             var arrived = d < 10;   // within the waypoint acceptance radius
             var st = document.getElementById('deststatus');
-            st.textContent = arrived ? '✓ ARRIVED' : 'en route…';
-            st.style.color = arrived ? '#22c55e' : '';
-            if(goalMarker) goalMarker.setTooltipContent(arrived ? 'GOAL ✓' : 'GOAL');
+            st.textContent = arrived ? 'ARRIVED' : 'en route';
+            st.style.color = arrived ? 'var(--ok)' : '';
+            if(goalMarker) goalMarker.setTooltipContent(arrived ? 'GOAL (ARRIVED)' : 'GOAL');
         }
         document.getElementById('btn_goto').onclick=function(){ gotoMode=!gotoMode;
             this.classList.toggle('armed', gotoMode);
-            flash(gotoMode?'destination mode ON — click the map':'destination mode off'); };
+            flash(gotoMode?'destination mode on — click the map':'destination mode off'); };
         map.on('click', function(e){
             if(!gotoMode) return;
             var lat=e.latlng.lat, lon=e.latlng.lng;
             goalLatLng=[lat,lon];
-            if(goalMarker) goalMarker.setLatLng(goalLatLng); else goalMarker=L.marker(goalLatLng,{icon:dot('#22c55e')}).bindTooltip('GOAL').addTo(map);
+            if(goalMarker) goalMarker.setLatLng(goalLatLng); else goalMarker=L.marker(goalLatLng,{icon:dot('#3fa66b')}).bindTooltip('GOAL').addTo(map);
             document.getElementById('destcard').style.display='block';
-            document.getElementById('deststatus').textContent='en route…';
+            document.getElementById('deststatus').textContent='en route';
             document.getElementById('deststatus').style.color='';
             flash('sending destination …');
             post('/cmd/goto',{lat:lat,lon:lon}).then(r=>flash(r.msg));
@@ -337,15 +385,15 @@
         });
 
         var alertCount=0;
-        var alertColors={gps_spoof:'#ea580c', ais_spoof:'#8b5cf6', c2_replay:'#dc2626', acoustic_spoof:'#2563eb'};
+        var alertColors={gps_spoof:'#b8873a', ais_spoof:'#7d7593', c2_replay:'#b5534a', acoustic_spoof:'#5b8cc8'};
         socket.on('attack_alert', function(a){
             if(alertCount===0) document.getElementById('alerts').innerHTML='';
             alertCount++; document.getElementById('alert_count').textContent='('+alertCount+')';
             var t=new Date(a.t*1000).toLocaleTimeString();
             var row=document.createElement('div'); row.className='alert';
-            row.style.borderLeftColor = alertColors[a.attack_type]||'#334155';
-            row.innerHTML='<strong style="color:'+(alertColors[a.attack_type]||'#fff')+'">'+a.attack_type.toUpperCase()+
-                          '</strong> <span class="muted">'+t+'</span><br>'+a.detail;
+            row.style.borderLeftColor = alertColors[a.attack_type]||'#262d38';
+            row.innerHTML='<span class="atype" style="color:'+(alertColors[a.attack_type]||'#eef1f5')+'">'+a.attack_type.toUpperCase()+
+                          '</span> <span class="atime">'+t+'</span><br>'+a.detail;
             var box=document.getElementById('alerts'); box.insertBefore(row, box.firstChild);
         });
     </script>

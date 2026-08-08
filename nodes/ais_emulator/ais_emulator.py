@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import sys
 import socket
@@ -20,7 +21,7 @@ import constants
 
 UDP_IP, UDP_PORT = constants.AIS_UDP_ADDR
 
-# Sydney Regatta World Origin
+# World origin (per active vehicle profile)
 WORLD_LAT = constants.HOME_LAT
 WORLD_LON = constants.HOME_LON
 M_PER_DEG_LAT = constants.M_PER_DEG_LAT
@@ -29,7 +30,22 @@ M_PER_DEG_LON = constants.m_per_deg_lon(WORLD_LAT)
 MMSI = constants.VESSEL_MMSI
 VESSEL_NAME = constants.VESSEL_NAME
 
-GZ_POSE_TOPIC = "/world/sydney_regatta/dynamic_pose/info"
+# Model + world name come from the active profile's "world" config (same
+# pattern dashboard_server.py and run_attack_suite.py use) -- NOT hardcoded
+# to "wamv"/"sydney_regatta". Confirmed bug (2026-08-08): this used to be
+# hardcoded, so with MCR_VEHICLE_PROFILE=blueboat (model "blueboat", world
+# "surface_harbor") this emulator subscribed to a Gazebo topic that never
+# existed, silently broadcasting a fixed, non-moving position at the world
+# origin for the entire session instead of the vessel's real pose.
+try:
+    _world = json.load(open(os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "profiles", constants.PROFILE_NAME + ".json"))).get("world", {})
+except Exception:
+    _world = {}
+MODEL_NAME = _world.get("model_name", constants.PROFILE_NAME)
+WORLD_NAME = _world.get("world_name", "sydney_regatta")
+GZ_POSE_TOPIC = f"/world/{WORLD_NAME}/dynamic_pose/info"
 POSE_STALE_WARN_S = 10.0  # warn if no live pose update arrives within this long
 
 class AISEmulator:
@@ -88,7 +104,7 @@ class AISEmulator:
             if not self.running:
                 break
                 
-            if 'name: "wamv"' in line:
+            if f'name: "{MODEL_NAME}"' in line:
                 in_wamv = True
                 current_block = line
                 continue

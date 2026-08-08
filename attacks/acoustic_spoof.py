@@ -46,7 +46,7 @@ import constants
 from pymavlink import mavutil
 
 ENDPOINT = os.environ.get("MCR_ACOUSTIC_ENDPOINT", "tcp:127.0.0.1:5762")
-ODOM_TOPIC = "/model/bluerov2/odometry"
+ODOM_TOPIC = os.environ.get("MCR_ACOUSTIC_ODOM_TOPIC", f"/model/{constants.MODEL_NAME}/odometry")
 
 ATTACK_LOG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

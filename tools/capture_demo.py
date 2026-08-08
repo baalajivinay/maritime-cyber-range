@@ -1,6 +1,5 @@
 import asyncio
 import os
-import time
 from playwright.async_api import async_playwright
 
 async def run_demo():

@@ -1,0 +1,32 @@
+{
+  "name": "auv_resilient_bluerov2_hardened",
+  "description": "Same real BlueROV2 hardware as auv_vulnerable_bluerov2 -- the only difference is this vehicle's GCS-link security config (MAV_GCS_SYSID/MAV_OPTIONS=1). source_system stays the ArduPilot/attacker default (255) here on purpose -- see mass_resilient_blueboat/target.json for the same reasoning. Boot via tools/run_vehicle.sh vehicle_twins/auv_resilient_bluerov2_hardened up.",
+  "domain": "underwater",
+  "authorized": true,
+  "mavlink": {
+    "connection": "udpin:127.0.0.1:14554",
+    "source_system": 255
+  },
+  "attacks": {
+    "gps_spoof": {
+      "enabled": false,
+      "reason": "N/A while submerged -- see docs/TARGET_TESTING.md"
+    },
+    "ais_spoof": {
+      "enabled": false,
+      "reason": "N/A -- submerged, no AIS"
+    },
+    "c2_replay": {
+      "enabled": true,
+      "target_mode_for_injection": "ALT_HOLD",
+      "allow_arm_and_actuate": true,
+      "rc_throttle_pwm": 1700,
+      "rc_steering_pwm": 1500,
+      "duration_s": 8.0
+    }
+  },
+  "timing": {
+    "settle_s": 5.0,
+    "window_s": 20.0
+  }
+}

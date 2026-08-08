@@ -32,12 +32,13 @@ else:
         constants.MAVLINK_DASHBOARD_PORT,
         constants.MAVLINK_AUTO_MISSION_PORT,
         constants.MAVLINK_C2_REPLAY_PORT,
+        constants.MAVLINK_TEST_TARGET_PORT,
     ]
 
 
 def main():
-    print(f"[mav_bridge] connecting to {MASTER_ADDR} ...", flush=True)
-    master = mavutil.mavlink_connection(MASTER_ADDR, source_system=255)
+    print(f"[mav_bridge] connecting to {MASTER_ADDR} (as GCS id {constants.GCS_SOURCE_SYSTEM}) ...", flush=True)
+    master = mavutil.mavlink_connection(MASTER_ADDR, source_system=constants.GCS_SOURCE_SYSTEM)
     if master.wait_heartbeat(timeout=30) is None:
         print("[mav_bridge] ERROR: no heartbeat from ArduPilot within 30s", flush=True)
         sys.exit(1)

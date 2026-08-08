@@ -199,13 +199,14 @@ One HTML page, compiled from every target's latest run:
   evidence itself stays correctly isolated under `target_runs/`; only the
   shared CSV needs periodic trimming back to its legitimate row count if
   you run `fdm_relay` tests repeatedly.
-- **C2 RC-override is gated to INCONCLUSIVE for `domain: "underwater"`.**
-  The channel/servo mapping the check uses (chan1/chan3 throttle/steering,
-  watching `servo3`) is Rover-specific and unvalidated against ArduSub's
-  different thruster layout -- confirmed empirically against BlueROV2 (the
-  override registered in `RC_CHANNELS` but the watched servo never moved,
-  which would have produced a false RESILIENT without the gate). Extending
-  this to a real ArduSub-aware check is a follow-up, not yet done.
+- **ArduSub can auto-disarm within ~1s of arming** (a GCS/RC-failsafe race,
+  reproduced independently of any attack -- confirmed live against BlueROV2
+  2026-08-08). The C2 RC-override check now runs a short stabilization pass
+  (require 2 consecutive armed heartbeats, re-arming meanwhile) before
+  spending its measurement window, and keeps re-arming throughout that
+  window too -- but on an unusually flaky target this could still cost a
+  test run an INCONCLUSIVE with `armed_during_injection: false` rather than
+  a real verdict. Re-running is the correct response, not a config change.
 - **`gps_input` needs `GPS_TYPE`/`GPS1_TYPE=14` set on the target already.**
   This tool can't set that param remotely for an external target it doesn't
   control the boot of -- if both raw and fused GPS stay flat through the

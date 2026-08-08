@@ -453,6 +453,421 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-08 (real-hull rebuild, Phase C-fallback + Phase D): **REMUS-100
+  (real US Navy shallow-water mine-countermeasures AUV) fully built on the
+  proven ArduSub 6-thruster architecture, live-verified end to end,
+  hardening re-confirmed with exact parity to BlueROV2's own result.**
+  Follows directly from the prior entry's decisive ArduPlane-underwater
+  spike failure and the user's explicit "go ahead with the REMUS-100
+  fallback" instruction.
+  - **Hull/mass/inertia/drag**: sourced from Thor I. Fossen's MIT-licensed
+    `PythonVehicleSimulator` (`vehicles/remus100.py`) — L=1.6m, diameter
+    0.19m, mass 31.9kg, prolate-spheroid-derived inertia/drag. Actuation is
+    a disclosed simplification (6-thruster vectored frame, same proven
+    architecture as BlueROV2, repositioned/rescaled for REMUS's slimmer
+    hull) since no ArduPilot firmware supports the real fin-steered scheme
+    — see `sim_config/models/remus100/model.sdf`'s header for the full
+    citation trail (GitHub issue #21568, Blue Robotics community thread,
+    the ArduPlane dead-end from the prior entry).
+  - **Buoyancy trim took three live-tested iterations, each a genuine,
+    distinct finding, not one bug fixed three times**: (1) an `<ellipsoid>`
+    collision shape sank steadily (~0.44 m/s) despite staying level —
+    `gz-sim-buoyancy-system` doesn't compute displaced volume correctly for
+    ellipsoids in this Gazebo version, consistent with the same class of
+    issue already worked around for every other vehicle's box geometry.
+    Switched to a box. (2) The box, volume-matched to the spheroid mass
+    calc, STILL sank at nearly the same rate — root-caused to a rho=1026
+    (spheroid calc) vs the world's actual 1025 kg/m³ mismatch, reconciled
+    everywhere in the file. (3) Even after that fix, a slower but real
+    ~0.2-0.35 m/s sink persisted — traced to the 6 thruster links (0.05kg
+    each, 0.3kg total) having mass but no `<collision>` geometry of their
+    own, so the buoyancy plugin (which sums displaced volume per-link)
+    silently never accounted for their weight; true system mass is 32.2kg,
+    not 31.9kg. Final box: `1.6 x 0.14013 x 0.14013` m, solved for the
+    WHOLE assembly's mass against the world's real density, erring ~4g
+    positive (float, not sink, on any residual rounding) — live-confirmed
+    stable, level, gently rising at the hand-calculated terminal velocity
+    (~0.02 m/s asymptotic, matching the quadratic-drag prediction almost
+    exactly).
+  - **Full SITL boot, arm, and 6-thruster response confirmed live**:
+    `tools/run_vehicle.sh vehicle_twins/auv_vulnerable_remus100 up` passes
+    every health gate; EKF3 healthy (small variances, valid position);
+    armed in MANUAL; RC-override on the Throttle channel visibly moved the
+    two vertical thrusters (SERVO5/6: 1500->1300) while horizontal
+    thrusters stayed neutral — correct, channel-selective response.
+  - **A real ArduSub arm-flake, already known and already solved by this
+    project's own tooling, re-encountered and correctly NOT mistaken for a
+    new REMUS-100 bug**: ad hoc hand-test scripts saw intermittent
+    "Arming motors" immediately followed by "Disarming motors". Root cause:
+    ArduSub's `FS_PILOT_INPUT` failsafe (default `FS_PILOT_INPUT_DISARM`,
+    3s timeout) disarms if no RC-override/pilot-input activity is received
+    quickly enough after arming — a script that pauses or reads
+    STATUSTEXT for a few seconds between arming and its first override
+    trips it. `tools/test_target.py` (`run_c2_rc_override_test`) already
+    documents this exact behavior (found live against BlueROV2, same date)
+    and already handles it correctly (re-send arm every ~1s, require 2
+    consecutive ARMED heartbeats, keep re-arming through the whole
+    injection window) — so the real verification path was simply to run
+    the actual tool, not keep hand-debugging an ad hoc script.
+  - **Fixed a real, generic (not REMUS-specific) bug found along the way**:
+    `attacks/acoustic_spoof.py`'s `ODOM_TOPIC` was hardcoded to
+    `/model/bluerov2/odometry`, meaning the underwater acoustic-positioning
+    feed (what gives ANY submerged ArduSub vehicle a valid EKF position,
+    per that file's own docstring) silently only worked for BlueROV2.
+    Added `constants.MODEL_NAME` (mirrors `run_sim.sh`'s own
+    `world.model_name` read, defaults to the profile name — backward
+    compatible, confirmed `bluerov2`'s profile resolves to the same value
+    as before) and derived `ODOM_TOPIC` from it. Live-confirmed against
+    REMUS-100: `acoustic_spoof.py` connects, finds `/model/remus100/`
+    odometry, and the vehicle's `LOCAL_POSITION_NED` tracks real Gazebo
+    ground truth continuously.
+  - **`tools/test_target.py` full run, both new AUV twins — clean pass,
+    verdict shape and evidence matching BlueROV2's own proven pattern
+    exactly**:
+    - `auv_vulnerable_remus100`: `mode_change: VULNERABLE`,
+      `rc_override: VULNERABLE` (`armed_confirmed=true`,
+      `peak_servo5_during_injection=1300`), detectability 1.0
+      (precision/recall 1.0). Evidence:
+      `target_runs/auv_vulnerable_remus100/20260808T232733/verdicts.json`.
+    - `auv_resilient_remus100_hardened` (own trimmed `hardened.parm` —
+      NOT the BlueROV2 DAVE file verbatim, deliberately stripped of
+      BlueROV2-hardware-specific junk: joystick BTN* mapping, that unit's
+      COMPASS_OFS/INS_ACC calibration offsets, camera MNT_*/SERVO8,
+      RNGFND1_* rangefinder REMUS's model doesn't have — kept only what's
+      load-bearing for this SDF/EKF setup plus `MAV_GCS_SYSID 77`/
+      `MAV_OPTIONS 1` carried over unchanged in value): `mode_change:
+      RESILIENT` (forged mode from sysid 255 refused), `rc_override:
+      INCONCLUSIVE` (attacker can't even arm under `MAV_OPTIONS=1` --
+      correctly INCONCLUSIVE per the tool's own `preconditions_met` gate,
+      not RESILIENT). Exact verdict-shape and evidence parity with
+      `auv_resilient_bluerov2_hardened`'s own result. Evidence:
+      `target_runs/auv_resilient_remus100_hardened/20260808T232839/verdicts.json`.
+  - Both twins' `README.md`s updated with these live-verified result
+    tables (previously placeholder "PENDING LIVE VERIFICATION" rows).
+    Torn down clean both times (`ps`/`ss` empty after teardown).
+  - **Next**: Phase E (documentation pass — top-level `README.md`,
+    `docs/ARCHITECTURE.md`'s vehicle-schema note re: `MODEL_NAME`,
+    `docs/TARGET_TESTING.md`, `docs/TWIN_DEMO_GUIDE.md`,
+    `docs/NEW_AUV_QUICKSTART.md`, the plain-language docx).
+
+- 2026-08-08 (real-hull rebuild, Phase B spike): **ArduPlane-underwater
+  spike — genuine, positive core result, plus one real, distinct
+  complication found beyond what the plan anticipated.** Built a
+  throwaway `sim_config/models/plane_spike/` (crude 48kg torpedo-shaped
+  cylinder, single aft propeller, no fins) + `sim_config/plane_spike_world.sdf`
+  (clone of `underwater_world.sdf`'s buoyancy setup), boot-orchestrated
+  manually (gz sim + FDM relay + `arduplane --model JSON`, same FIFO-stdin
+  pattern `run_sim.sh` uses) rather than touching `run_sim.sh` itself yet.
+  - **B0 (build + standalone boot): PASS.** `./waf plane` builds clean.
+    Standalone `arduplane --model plane` (no Gazebo) is healthy. One real
+    gotcha found along the way: launching it via plain `nohup ... &`
+    (stdin inherited as effectively closed) causes it to die silently
+    within seconds with zero error logged — `run_sim.sh`'s own comment
+    already explains why (SITL treats stdin EOF as a kill signal) and its
+    FIFO-keepalive-writer trick fixes it; several confusing "random
+    crashes" during this spike traced back to skipping that trick in ad
+    hoc test launches, not to ArduPlane itself.
+  - **B1 core question (does the EKF/arming survive underwater via the
+    same Gazebo JSON-FDM path every other vehicle here uses): PASS,
+    cleanly, confirmed twice independently.** 55+ continuous seconds
+    armed, zero disarm events, EKF flags stable at 895 (a fully healthy
+    state: attitude/velocity/position all good, dead-reckoning-fallback
+    bit correctly NOT set) the entire window. No GCS/RC-failsafe race like
+    ArduSub has. This is a genuinely new result — not documented anywhere
+    found in research (the Blue Robotics community's own assessment was
+    "no autopilot firmware currently supports this" — that claim was about
+    fin/actuation support specifically, and remains true, but the
+    EKF-survives-underwater question itself has a clean answer now).
+  - **Same class of bug as CUSV's, caught the same way**: the first
+    version of this spike model (no CG offset, same as CUSV's first
+    version) sank to the seabed and tumbled with no stable orientation.
+    Fixed identically (CG well below the geometric centroid) — also
+    genuinely realistic for a torpedo AUV, not just a simulator workaround
+    (real ones put the battery pack low for exactly this reason).
+  - **A separate, real, ArduPlane-specific complication, found only after
+    fixing the above**: even armed and stable, commanded throttle via
+    `RC_CHANNELS_OVERRIDE` never reached the propeller — `SERVO_OUTPUT_RAW`
+    stayed pinned at 1100 regardless of the override value sent. Traced to
+    source: `ArduPlane/reverse_thrust.cpp`'s `get_throttle_input()` returns
+    0 outright if `!rc().has_valid_input()`, and ArduPlane's own override
+    (`RC_Channels_Plane::has_valid_input()`,
+    `ArduPlane/RC_Channel_Plane.cpp:25`) additionally gates on RC-failsafe/
+    throttle-failsafe-counter state — `RC_CHANNELS_OVERRIDE` alone,
+    without genuine periodic `RC_CHANNELS` frames, doesn't satisfy this in
+    MANUAL mode. This is a real architectural difference from ArduRover
+    (whose throttle path has no equivalent gate — confirmed working
+    identically for WAM-V and CUSV via this exact same override mechanism
+    this project's whole C2 attack methodology depends on). Not yet
+    investigated: whether GUIDED mode (velocity/attitude setpoints via
+    MAVLink, bypassing RC entirely) or an `RC_OPTIONS`-style parameter
+    sidesteps this — stopped here to report back rather than open-endedly
+    continue past the point of a quick check, per the project's own
+    established pattern of checking in at real decision points rather than
+    silently pushing on.
+  - **Follow-up (same session, user asked to investigate GUIDED mode as a
+    bypass for the RC-validity gate): decisive, negative result.** GUIDED
+    mode does use `does_auto_throttle()=true`, so it doesn't hit the same
+    `has_valid_input()` gate MANUAL mode does -- sent a
+    `SET_POSITION_TARGET_LOCAL_NED` velocity setpoint (3 m/s forward,
+    bypassing RC/override entirely, arguably a more realistic C2 hijack
+    surface than raw RC override anyway). Result: **ArduPilot crashed
+    outright with `ERROR: Floating point exception -- aborting` (SIGFPE,
+    core dumped)**, moments after "Detected physics reset" repeated in the
+    SITL log. This lines up exactly with the risk flagged before this
+    spike even started: GUIDED mode's auto-throttle runs through TECS
+    (Total Energy Control System), which is built around true-airspeed-
+    and air-density-based energy calculations -- with no real airflow
+    underwater and no airspeed field in the JSON FDM message at all, some
+    TECS computation almost certainly divided by (or otherwise operated
+    on) a zero/undefined airspeed-derived value. This is a firmware-level
+    numerical bug surfaced by operating Plane outside its designed
+    envelope, not a configuration mistake -- fixing it would mean patching
+    ArduPilot's own TECS source, well outside this spike's scope.
+  - **Verdict: ArduPlane-underwater spike stops here.** Two real,
+    independent blockers found in one session (MANUAL mode's RC-validity
+    gate silently drops throttle; GUIDED mode's TECS path crashes
+    outright) -- not instability or bad luck, but Plane's control loops
+    genuinely not built for zero-airspeed operation, exactly as the risk
+    register anticipated. The EKF/arming result (B1's actual core
+    question) stands as a real, positive, novel finding worth keeping
+    documented on its own merits. Proceeding to Phase C-fallback per the
+    plan's pre-agreed rule: real REMUS-100 physics on the proven,
+    unmodified ArduSub 6-thruster architecture, with the actuator mismatch
+    disclosed prominently, not silently.
+  - Torn down clean (verified via `pgrep`/`ss`, no processes/ports held --
+    took two passes, two `gz sim` instances and a relay pair survived the
+    first `pkill` attempt and needed direct `kill -9` by PID).
+    `sim_config/models/plane_spike/` and `sim_config/plane_spike_world.sdf`
+    left in place (marked THROWAWAY in their own headers) as a record of
+    what was tried.
+
+- 2026-08-08 (real-hull rebuild, Phase A): **CUSV (Textron Fleet-class,
+  real active-duty Navy mine-countermeasures USV) fully built, live-
+  verified, replaces WAM-V/BlueBoat as the MASS reference pair.** User
+  asked for all 4 twins to be copies of specific, named, real Navy/
+  research vehicles, not generic hobbyist platforms — landed on REMUS-100
+  (AUV, real Navy MCM AUV + the most-cited AUV in academic hydrodynamics
+  literature) and Textron Fleet-class CUSV (MASS, real active Navy MCM/ASW
+  USV). This entry covers the CUSV half (Phase A of the rebuild plan);
+  REMUS-100 is Phase B/C, a much bigger ArduPlane-firmware R&D spike,
+  logged separately once resolved.
+  - **Two real bugs found and fixed via live iteration, not caught by
+    review**: (1) a symmetric buoyancy/collision box with CG at its own
+    geometric centroid floats stably CAPSIZED as often as upright — no
+    keel/ballast asymmetry to break the tie. Confirmed via ArduPilot's own
+    live ATTITUDE report (roll=180°, not a Gazebo frame-convention
+    artifact — cross-checked against the raw world-frame quaternion too,
+    both agreed). Fixed by moving CG well below the box's geometric
+    center, mimicking a real hull's low keel/ballast. (2) A shallow-draft
+    box (~24% submerged) turned out to be a numerically sensitive edge
+    case for `gz-sim-buoyancy-system`'s box-submersion approximation —
+    produced a stable-but-wrong 38.5° pitch tilt even after roll was
+    fixed. Fixed by shrinking the footprint and increasing height so ~55%
+    of the box is submerged at equilibrium (closer to the real 7.7 m³
+    displacement volume), which brought pitch down to a modest, plausible
+    ~7.2° static trim — not chased to exactly 0.0° since the residual
+    didn't trace to an identifiable single cause and real vessels commonly
+    carry a few degrees of trim anyway.
+  - **A third apparent bug turned out to be a test-methodology gap, not a
+    vehicle bug**: a hand-written RC-override probe (sending
+    `RC_CHANNELS_OVERRIDE` at ~2Hz via a blocking-poll loop) showed flat
+    servo output on CUSV — and, when used as a control, on the
+    already-known-working WAM-V too. `tools/test_target.py`'s own
+    `run_c2_rc_override_test` sends the same message at ~10Hz with full
+    non-blocking queue drain per cycle; re-run through the real tool, both
+    CUSV and WAM-V showed correct servo movement. Lesson: don't trust an
+    ad-hoc reimplementation of an already-verified attack path over the
+    real one, even for a quick sanity check.
+  - **Live-verified result matches WAM-V/BlueBoat's exact shape**:
+    `mass_vulnerable_cusv` — mode_change/rc_override/gps_spoof all
+    VULNERABLE, ais_spoof N/A, detectability 1.0 across all three attack
+    families. `mass_resilient_cusv` — mode_change RESILIENT, rc_override
+    INCONCLUSIVE (can't arm), gps_spoof/ais_spoof N/A. The two hardening
+    mechanisms (`GPS1_TYPE=14`, `MAV_GCS_SYSID`+`MAV_OPTIONS`) carried over
+    from BlueBoat's `hardened.parm` unmodified in value and produced an
+    identical result on a hull ~250x heavier — confirms they're genuinely
+    ArduPilot-parameter-level, not hull-specific, as the theory predicted.
+  - No public CUSV propulsion data exists (Textron hasn't published engine/
+    thruster count) — disclosed explicitly in `sim_config/models/cusv/
+    model.sdf`'s header comment as a stated assumption (twin differential
+    thrust), not silently invented. Similarly disclosed: this simulation's
+    simple drag model has no planing-lift term, so it does not attempt to
+    reproduce the real vehicle's 35kn top speed — tuned instead for
+    stable, controllable low-speed maneuvering sufficient for the attack
+    tests.
+  - Full teardown confirmed clean after every boot cycle in this phase.
+
+- 2026-08-08 (dry run): **Full pre-presentation rehearsal of
+  `docs/TWIN_DEMO_GUIDE.md`, two real bugs found and fixed, all 4 twins
+  re-verified.** User asked to dry-run everything before presenting. Ran the
+  guide exactly as written, twin by twin -- this caught two bugs the
+  previous same-day verification missed because it never exercised the CLI
+  tester and the dashboard *concurrently against the same boot*:
+  - **Bug 1 (real, fixed): `tools/test_target.py` hung forever against any
+    vehicle_twins target booted via `run_demo.sh`.** Root cause: ArduPilot
+    SITL only exposes 3 raw MAVLink TCP ports (5760/5762/5763); the
+    dashboard's `detector_thread` grabs 5763 unconditionally from boot, and
+    a 2nd simultaneous TCP client on the same SITL serial port never gets a
+    heartbeat (confirmed empirically, not assumed). All 4
+    `vehicle_twins/*/target.json` hardcoded `tcp:127.0.0.1:5763`, inherited
+    from the original (pre-dashboard) `targets/*.json` design where
+    test_target.py always had the port to itself. Fixed by giving
+    test_target.py its own fan-out port through the existing
+    `tools/mav_bridge.py` mechanism instead of a raw port: added
+    `constants.MAVLINK_TEST_TARGET_PORT` (`.get()` with a computed default,
+    so no existing `profile.json` needed editing), added it to
+    `mav_bridge.py`'s `OUT_PORTS`, changed all 4 twins' `target.json`
+    `mavlink.connection` to `udpin:127.0.0.1:14554`. Verified live: CLI test
+    now runs to completion with the dashboard up, same verdicts as headless.
+  - **Bug 2 (real, mitigated): AIS detectability silently reported a false
+    0.0 recall under the same concurrent-boot scenario.** Root cause:
+    `test_target.py`'s own AIS tap and the dashboard's `ais_thread` both
+    bind UDP :10110 exclusively; the loser's bind fails, its thread died
+    silently, and the run finished looking normal but reported "the
+    detector caught nothing" for an attack that was never actually fed to
+    it -- a wrong, presentation-damaging finding, not a crash. Confirmed via
+    a same-target rerun without the conflict (recall 1.0) vs. with it
+    (recall 0.0). `SO_REUSEPORT` doesn't fix this -- for unicast UDP it
+    load-balances to ONE socket, it doesn't duplicate delivery, so true
+    fan-out would need a relay (out of scope for a same-day fix). Landed the
+    safe half instead: `_ais_tap_loop` now reports a bind failure instead of
+    dying silently, `run_target_test` prints a loud `WARNING` and stamps
+    `results["warnings"]` in `verdicts.json` so a bad number is never
+    silently trusted again. `docs/TWIN_DEMO_GUIDE.md` updated to recommend
+    running the CLI tester against a **headless** boot (`run_vehicle.sh`)
+    for a fully accurate report, and to explain the dashboard-concurrent
+    case is now self-diagnosing rather than silently wrong.
+  - **Re-verified end to end after both fixes**: all 4 twins' CLI verdicts
+    (headless) match the previously-documented table exactly; live dashboard
+    click-through re-confirmed for both `mass_vulnerable_wamv` (C2 inject
+    actually armed + seized the vehicle, alert fired, detected in 6.58s) and
+    `mass_resilient_blueboat` (same C2 inject: mode stayed MANUAL, stayed
+    disarmed, speed 0.00 -- visibly failed on the dashboard UI itself, a
+    good live moment); PDF export re-confirmed (44KB, 1 page); auto-stop-on-
+    disconnect re-confirmed via dashboard.log (`last client disconnected --
+    stopping any active attacks`); base (non-twin) `wamv` profile re-booted
+    clean to confirm the shared-file changes (`constants.py`,
+    `tools/mav_bridge.py`) didn't regress the original reference vehicles.
+    Full teardown confirmed (`ps`/`ss` clean) before finishing.
+  - **Everything else in the previous entry below stands unchanged** -- this
+    was a verification + 2-bug-fix pass on top of that work, not a redesign.
+
+- 2026-08-08 (late): **4 self-contained vehicle_twins/ built, real
+  vulnerable/resilient split, live-verified end to end.** User asked for 2
+  MASS + 2 AUV real digital twins (1 vulnerable, 1 resilient each), a
+  folder-based boot workflow, a single-vehicle dashboard with manual-only
+  attacks and auto-stop-on-close, and PDF report export. Explicitly
+  rejected placeholder verdicts -- everything below is real ArduPilot
+  behavior, verified live, not asserted.
+  - **Two dead ends found and abandoned before landing on what works**
+    (both root-caused via ArduPilot's own C++ source in `~/ardupilot`, not
+    assumed from docs): `SYSID_MYGCS` alone does nothing -- confirmed
+    unused/deprecated in this ArduPilot version's own source; `EK3_GLITCH_RAD`
+    /`EK3_POS_I_GATE` had zero measurable effect against an `fdm_relay`
+    spoof (makes sense in hindsight: fdm_relay corrupts the same ground
+    truth every sensor including IMU derives from, so there's nothing for
+    innovation gating to cross-check against). Both checked in with the
+    user before spending more time (AskUserQuestion) rather than silently
+    building on an unverified mechanism a second time.
+  - **What actually works, verified live**: (1) GPS resilience --
+    `GPS1_TYPE=14` (external GPS_INPUT driver) makes GPS just another fused
+    sensor instead of embedded in the shared FDM truth, so the EKF's real
+    IMU cross-check catches a spoof (`gps_input` method only, not
+    `fdm_relay`) -- confirmed: fused delta 0.00m while raw ingestion
+    confirmed the forged value reached the wire at the full 50m offset. (2)
+    C2 resilience -- `MAV_GCS_SYSID` + `MAV_OPTIONS=1` (`GCS_SYSID_ENFORCE`
+    bit 0), the modern non-deprecated replacement for SYSID_MYGCS -- traced
+    to `GCS_Common.cpp`'s `accept_packet()`, confirmed it fails OPEN by
+    default (any sysid accepted) unless the enforce bit is set. Verified:
+    attacker sysid 255 can't even arm; legitimate sysid 77 arms and
+    controls normally.
+  - **Combining both mechanisms on one vehicle produced a real, honest
+    interaction** worth knowing about: `GCS_SYSID_ENFORCE` also blocks the
+    attacker's `GPS_INPUT` traffic and arm attempts outright, so
+    `gps_spoof` reads N/A (never showed ingestion) and `rc_override` reads
+    INCONCLUSIVE (never confirmed armed) rather than a clean RESILIENT --
+    `mode_change` alone comes back a clean RESILIENT. This is the tool's
+    existing conservative-verdict design working as intended (never claim
+    more than observed), not a new bug -- documented in both resilient
+    twins' READMEs and `docs/TWIN_DEMO_GUIDE.md`.
+  - **Code changes**: `constants.GCS_SOURCE_SYSTEM` (new, profile-driven,
+    default 255) -- `tools/mav_bridge.py` and `dashboard_server.py`'s
+    `goto()`/`detector_thread()` now use it (legitimate-operator paths);
+    `dashboard_server.py`'s `cmd_conn()` deliberately stays at plain 255
+    (it simulates the attacker -- comment updated to explain why, so it
+    doesn't get "fixed" by a future reader). `tools/run_sim.sh` gained a
+    per-profile `ardu_defaults` override (was hardcoded per-domain).
+    `tools/run_vehicle.sh` (new) and `tools/run_demo.sh` (extended) both
+    accept a `vehicle_twins/<name>` folder path directly, symlinking its
+    `profile.json` into `profiles/` for discovery -- no changes needed to
+    `constants.py`'s loader.
+  - **Dashboard**: removed the cross-vehicle switch dropdown and
+    `/cmd/vehicle` route entirely (`index.html` + `dashboard_server.py`) --
+    the dashboard now only ever reflects the profile it was booted with.
+    Added a connected-client counter + `disconnect` handler that calls the
+    existing `stop_attacks()` when the last browser tab disconnects.
+  - **New**: `/cmd/report/pdf` route renders the same report data (factored
+    out into `_report_table_html()`, shared with the existing
+    `/cmd/report`) to a downloadable PDF via headless Chromium (Playwright,
+    already a project dependency) -- verified live (44KB valid
+    `application/pdf` response).
+  - **Live-verified all 4 twins** via `tools/test_target.py`, each booted
+    fresh through `tools/run_vehicle.sh`: `mass_vulnerable_wamv` and
+    `auv_vulnerable_bluerov2` both VULNERABLE/VULNERABLE on C2 (matching
+    every reference vehicle tested so far this project); `mass_resilient_blueboat`
+    and `auv_resilient_bluerov2_hardened` both RESILIENT (mode-change) /
+    INCONCLUSIVE (rc-override, correctly, per above) -- reproduced 3x
+    manually before landing in the twins to rule out flakiness. Also
+    live-verified the dashboard changes against a booted twin: single-vehicle
+    header confirmed, 0 automatic alerts, closing the tab triggered
+    `[dashboard] last client disconnected -- stopping any active attacks`
+    in the server log, PDF download returned a valid 44KB PDF.
+  - Docs: `docs/TWIN_DEMO_GUIDE.md` (new) -- the terminal step-by-step
+    handoff doc, includes the verified result table and the one real
+    dashboard limitation for the resilient twins (their GPS panel needs
+    `test_target.py`'s own feed to show anything, since GPS1_TYPE=14 has no
+    ambient position source otherwise).
+- 2026-08-08: **`docs/NEW_AUV_QUICKSTART.md` added** -- self-serve guide for
+  building a new AUV digital twin (clone+retune an existing model, world,
+  profile, `targets/<name>_local.json`) and running the full resilience-test
+  pipeline without needing an assistant present (for live presentation
+  prep). Every step was actually executed end-to-end while writing it
+  (clone -> retune mass/buoyancy/inertia -> validate_vehicle PASS -> boot
+  -> arm/thrust smoke test -> test_target.py -> VULNERABLE verdict ->
+  generate_target_report.py -> teardown) against a real clone
+  (`myauv_test`, deleted after verification, not committed) -- this caught
+  two real gaps in the first draft: the thruster `<cmd_topic>` SDF entries
+  also need renaming (easy to miss, silently breaks thrust if skipped), and
+  a single-attempt arm check in the smoke-test script gives a false
+  negative against the known ArduSub auto-disarm race (see the entry
+  below) -- both fixed in the guide before handoff.
+- 2026-08-08: **Underwater C2 RC-override fixed (previously INCONCLUSIVE by
+  design).** Root-caused live against a fresh BlueROV2 boot with an
+  empirical RC-channel sweep (all 8 channels, one at a time, watching all 8
+  SERVO_OUTPUT_RAW channels): chan3 (RCMAP_THROTTLE) already correctly
+  drove ArduSub's vertical thrust -- this project's own WO-19 finding
+  (+8.25m true depth) proves the SEND side was never broken -- but the
+  check was reading back `servo3` for verification, and ArduSub's vectored
+  frame actually outputs vertical thrust on servo5/servo6, not servo3.
+  `run_c2_rc_override_test` (`tools/test_target.py`) now watches servo5 for
+  underwater targets, keeping servo3 for surface/Rover. Along the way, also
+  found and fixed a second, independent bug: ArduSub can arm then
+  auto-disarm again within ~1s (a GCS/RC-failsafe race, reproduced with
+  nothing but repeated arm commands and no override at all) -- the check
+  now requires 2 consecutive armed heartbeats before spending its
+  measurement window, keeps re-arming throughout that window, and fully
+  drains the message queue each loop iteration (a single-message-per-tick
+  drain was starving the rarer 1Hz HEARTBEAT out against the busier 10Hz
+  SERVO_OUTPUT_RAW stream, producing a false INCONCLUSIVE despite the servo
+  visibly moving). Verified live: 3 consecutive clean `VULNERABLE` verdicts
+  against bluerov2_local, no regression against wamv_local (still
+  VULNERABLE as before). `bluerov2_local`'s deployment verdict is now a
+  fully-substantiated "NOT READY TO DEPLOY" (2 vulnerable findings, 0
+  inconclusive) instead of the old 1-vulnerable-1-inconclusive hedge.
+  `docs/TARGET_TESTING.md`'s "Known limitations" updated to match --
+  now documents the ArduSub auto-disarm race (mitigated, not eliminated;
+  an unusually flaky target can still cost one INCONCLUSIVE run) instead of
+  the old "channel mapping unvalidated" gap.
 - 2026-08-07 (night): **Resilience-tester pivot Phases 1-4 COMPLETE + docs
   landed (Phase 5).** The vehicle-agnostic testing tool described in the PIVOT
   entry below is now fully built and evidenced. Summary for a fresh session:

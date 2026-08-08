@@ -1,0 +1,4 @@
+{"t": 1786151670.3993685, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1786151673.421824, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1786151676.4465523, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1786151678.3977282, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 1691 m/s (> 15) -- implausible"}
