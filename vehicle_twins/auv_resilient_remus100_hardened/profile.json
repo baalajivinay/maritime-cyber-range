@@ -1,0 +1,38 @@
+{
+  "name": "auv_resilient_remus100_hardened",
+  "domain": "underwater",
+  "ardupilot_vehicle_type": "Sub",
+  "home": {
+    "lat": -33.724223,
+    "lon": 150.679736
+  },
+  "attacks": [
+    "acoustic_spoof",
+    "c2_replay"
+  ],
+  "ais": null,
+  "ports": {
+    "fdm_relay_bind": [
+      "127.0.0.1",
+      9002
+    ],
+    "fdm_gazebo_addr": [
+      "127.0.0.1",
+      9100
+    ],
+    "mavlink": {
+      "dashboard": 14551,
+      "auto_mission": 14552,
+      "c2_replay": 14553
+    }
+  },
+  "model_sdf": "sim_config/models/remus100/model.sdf",
+  "world": {
+    "method": "gz",
+    "sdf": "sim_config/remus100_world.sdf",
+    "model_name": "remus100",
+    "world_name": "underwater_harbor_remus"
+  },
+  "ardu_defaults": "vehicle_twins/auv_resilient_remus100_hardened/hardened.parm",
+  "gcs_source_system": 77
+}

@@ -1,0 +1,23 @@
+# Real, current (non-deprecated) ArduPilot hardening -- the exact same
+# two mechanisms already verified live against BlueBoat (see
+# vehicle_twins/mass_resilient_blueboat/hardened.parm for the full
+# verification notes). Carried over unmodified in value: both mechanisms
+# are ArduPilot-parameter-level (GCS-link enforcement, EKF/GPS fusion
+# behavior), not hull-specific, so they should transfer to CUSV's much
+# larger hull unchanged -- but this is re-verified live against CUSV
+# specifically in vehicle_twins/mass_resilient_cusv/README.md, not assumed
+# just because it worked on a 30kg boat.
+#
+# GPS1_TYPE 14: switches the GPS driver to AP_GPS_MAV (external MAVLink
+# GPS_INPUT), so GPS becomes just another sensor the EKF fuses and
+# cross-checks against the real Gazebo-physics-derived IMU -- rather than
+# GPS being embedded in the same JSON FDM feed the IMU is also derived
+# from.
+#
+# MAV_GCS_SYSID 77 + MAV_OPTIONS 1 (bit 0 = GCS_SYSID_ENFORCE): only
+# accepts GCS-privileged commands (arm, mode-change, RC-override) from
+# sender id 77. An attacker using ArduPilot's plain default (255) gets
+# rejected outright.
+GPS1_TYPE 14
+MAV_GCS_SYSID 77
+MAV_OPTIONS 1

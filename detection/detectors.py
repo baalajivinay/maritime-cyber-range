@@ -83,8 +83,21 @@ class AisConflictDetector:
     """Surface: three signatures.
     (a) Impersonation of OUR vessel -- an AIS report under the own-vessel MMSI
         whose position disagrees with the vessel's own telemetry (believed
-        position from MAVLink). This is a cross-feed check and is robust even
-        when the legitimate emulator is between its (sparse) position broadcasts.
+        position from MAVLink) at every point across a recent lookback window,
+        not just the single latest sample. This is a cross-feed check and is
+        robust even when the legitimate emulator is between its (sparse)
+        position broadcasts -- ITU-R M.1371's own Class-A reporting schedule
+        (implemented in nodes/ais_emulator/ais_emulator.py's
+        get_report_interval()) drops to one report every 180s for any vessel
+        under 3 knots, so a single-latest-sample comparison against a slow or
+        stationary vessel produces persistent false "impersonation" alerts
+        during completely normal operation (confirmed live 2026-08-08: 12
+        false positives / 64% precision over one dashboard session with no
+        ais_spoof attack running, purely from the WAM-V holding under ~2 m/s).
+        `stale_tolerance_s` bounds the lookback to the spec's own worst-case
+        interval (plus slack), so a genuinely forged position -- which won't
+        match the vessel's true track at ANY point in that window -- is still
+        reliably caught.
     (b) Duplicate-MMSI conflicting position -- any MMSI reporting two positions a
         hull couldn't traverse in the elapsed time.
     (c) Ghost vessel -- a report from a MMSI outside the valid ship MID range
@@ -95,12 +108,13 @@ class AisConflictDetector:
     Knowing the own-vessel MMSI is operational fleet knowledge (the vessel
     broadcasts it openly), NOT attack ground truth -- so it does not violate the
     detector isolation rule."""
-    def __init__(self, known_mmsi=None, max_speed_mps=25.0, mismatch_m=100.0):
+    def __init__(self, known_mmsi=None, max_speed_mps=25.0, mismatch_m=100.0, stale_tolerance_s=200.0):
         self.known = str(known_mmsi) if known_mmsi is not None else None
         self.max_speed = max_speed_mps
         self.mismatch_m = mismatch_m
-        self.last = {}          # mmsi -> (t, lat, lon)
-        self.believed = None    # (lat, lon) of our own vessel, from MAVLink
+        self.stale_tolerance_s = stale_tolerance_s
+        self.last = {}               # mmsi -> (t, lat, lon)
+        self.believed_history = []   # [(t, lat, lon), ...], trimmed to stale_tolerance_s
 
     @staticmethod
     def _valid_ship_mmsi(mmsi):
@@ -114,7 +128,10 @@ class AisConflictDetector:
         et = e.get("type")
         if et == "believed_pos":
             if not (e["lat"] == 0 and e["lon"] == 0):
-                self.believed = (e["lat"], e["lon"])
+                self.believed_history.append((e["t"], e["lat"], e["lon"]))
+                cutoff = e["t"] - self.stale_tolerance_s
+                while self.believed_history and self.believed_history[0][0] < cutoff:
+                    self.believed_history.pop(0)
             return None
         if et != "ais":
             return None
@@ -122,13 +139,14 @@ class AisConflictDetector:
         smmsi = str(int(mmsi)) if str(mmsi).isdigit() else str(mmsi)
 
         # (a) impersonation of our own vessel: AIS says we're somewhere our own
-        #     telemetry says we're not.
-        if self.known is not None and smmsi == self.known and self.believed is not None:
-            d = _horiz_m(self.believed[0], self.believed[1], lat, lon)
+        #     telemetry never showed us, across the whole lookback window --
+        #     not just right now.
+        if self.known is not None and smmsi == self.known and self.believed_history:
+            d = min(_horiz_m(bl, bo, lat, lon) for _, bl, bo in self.believed_history)
             if d > self.mismatch_m:
                 return Alert(t, "AisConflictDetector", "ais_spoof", "surface",
                              f"own MMSI {mmsi} broadcast {d:.0f} m from the vessel's own telemetry "
-                             f"position -- impersonation")
+                             f"position (closest match in the last {self.stale_tolerance_s:.0f}s) -- impersonation")
 
         # (c) ghost: fabricated identity (but never our whitelisted own MMSI)
         if smmsi != self.known and not self._valid_ship_mmsi(mmsi):

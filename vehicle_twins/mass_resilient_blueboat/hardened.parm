@@ -1,0 +1,27 @@
+# Real, current (non-deprecated) ArduPilot hardening -- verified live
+# 2026-08-08 against this exact vehicle, both mechanisms independently:
+#
+# GPS1_TYPE 14: switches the GPS driver to AP_GPS_MAV (external MAVLink
+# GPS_INPUT), so GPS becomes just another sensor the EKF fuses and
+# cross-checks against the real Gazebo-physics-derived IMU -- rather than
+# GPS being embedded in the same JSON FDM feed the IMU is also derived
+# from (which is why a vehicle WITHOUT this set has no independent signal
+# to catch a spoof against at all). Verified: a step GPS_INPUT spoof after
+# this is set results in the fused belief moving 0.00m while raw ingestion
+# confirms the forged value reached the wire at the full offset -- the EKF
+# is seeing and rejecting it, not simply not receiving it.
+#
+# MAV_GCS_SYSID 77 + MAV_OPTIONS 1 (bit 0 = GCS_SYSID_ENFORCE): the modern
+# replacement for the deprecated SYSID_MYGCS mechanism (confirmed in this
+# ArduPilot source tree: SYSID_MYGCS is commented "unused" in this version).
+# With enforcement OFF (the default on every unhardened vehicle in this
+# project), ArduPilot's accept_packet() fails OPEN -- any sender is
+# accepted regardless of MAV_GCS_SYSID. Only with MAV_OPTIONS bit 0 set
+# does it actually reject senders that don't match MAV_GCS_SYSID. Verified
+# live: source_system=255 (this project's attacker-simulation default,
+# also ArduPilot's own out-of-the-box default) gets rejected outright --
+# can't even arm -- while source_system=77 (this project's own legitimate
+# tooling, see constants.GCS_SOURCE_SYSTEM) arms and controls normally.
+GPS1_TYPE 14
+MAV_GCS_SYSID 77
+MAV_OPTIONS 1

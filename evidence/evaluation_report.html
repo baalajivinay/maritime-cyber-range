@@ -38,7 +38,7 @@
 </head>
 <body>
   <h1>Autonomous Maritime Cyber Range</h1>
-  <div class="meta">Scenario evaluation report &middot; generated 2026-08-07 03:35:54 IST</div>
+  <div class="meta">Scenario evaluation report &middot; generated 2026-08-08 02:16:19 IST</div>
 
   <div class="methodology">
     <h2>Methodology</h2>
@@ -89,12 +89,12 @@
           <td>wamv</td>
           <td>surface</td>
           <td>100%</td>
-          <td>100%</td>
+          <td>50%</td>
           <td>0%</td>
+          <td>0.02s</td>
           <td>0.04s</td>
-          <td>0.08s</td>
-          <td>n/a</td>
-          <td>n/a</td>
+          <td>2.84%</td>
+          <td>48.46 MB</td>
         </tr>
       </tbody>
     </table>
@@ -147,8 +147,8 @@
     <section class="profile">
       <h2>wamv <span class="domain">(surface)</span></h2>
       <p class="src">Scored from <code>evidence/detector_alerts_wamv.jsonl</code>,
-         window 13:39:00
-         &ndash; 13:41:29.</p>
+         window 02:14:01
+         &ndash; 02:16:29.</p>
       <table class="detail">
         <thead>
           <tr>
@@ -163,9 +163,9 @@
           <td>10</td>
           <td>0</td>
           <td>0%</td>
-          <td>1/1</td>
+          <td>1/2</td>
           <td>100%</td>
-          <td>100%</td>
+          <td>50%</td>
           <td>0.00s</td>
           <td>0.00s</td>
           <td>0.00s</td>
@@ -176,9 +176,9 @@
           <td>3</td>
           <td>0</td>
           <td>0%</td>
-          <td>1/1</td>
+          <td>1/2</td>
           <td>100%</td>
-          <td>100%</td>
+          <td>50%</td>
           <td>0.04s</td>
           <td>0.04s</td>
           <td>0.04s</td>
@@ -189,17 +189,26 @@
           <td>2</td>
           <td>0</td>
           <td>0%</td>
-          <td>1/1</td>
+          <td>1/2</td>
           <td>100%</td>
-          <td>100%</td>
-          <td>0.09s</td>
-          <td>0.09s</td>
-          <td>0.09s</td>
+          <td>50%</td>
+          <td>0.01s</td>
+          <td>0.01s</td>
+          <td>0.01s</td>
         </tr>
         </tbody>
       </table>
       <h3>System performance overhead</h3>
-      <p class="missing">No system-overhead sample for this profile yet -- run <code>detection/run_detectors.py</code> live to collect one.</p>
+      
+    <table class="kv">
+      <tr><th>Wall-clock sampled</th><td>60.72s</td></tr>
+      <tr><th>CPU time (user+sys)</th><td>1.73s (2.84% of wall)</td></tr>
+      <tr><th>Peak resident memory</th><td>48.46 MB</td></tr>
+      <tr><th>Events processed</th><td>1347 (22.18/s)</td></tr>
+      <tr><th>Alerts emitted</th><td>15</td></tr>
+      <tr><th>Per-event processing time</th>
+          <td>mean 8.66us / p95 23.26us / max 415.34us</td></tr>
+    </table>
     </section>
 
   <footer>

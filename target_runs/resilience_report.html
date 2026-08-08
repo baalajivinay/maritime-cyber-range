@@ -46,7 +46,7 @@
 </head>
 <body>
   <h1>Autonomous Maritime Cyber Range</h1>
-  <div class="meta">Resilience report &middot; generated 2026-08-07 21:20:18 IST</div>
+  <div class="meta">Resilience report &middot; generated 2026-08-09 02:54:07 IST</div>
 
   <div class="methodology">
     <h2>Methodology</h2>
@@ -77,20 +77,52 @@
       </thead>
       <tbody>
         <tr>
+          <td>auv_resilient_bluerov2_hardened</td>
+          <td>underwater</td>
+          <td class="v-conditional"><b>CONDITIONALLY READY -- retest needed</b></td>
+          <td>0</td>
+          <td>1</td>
+          <td>0%</td>
+        </tr>
+        <tr>
+          <td>auv_resilient_remus100_hardened</td>
+          <td>underwater</td>
+          <td class="v-conditional"><b>CONDITIONALLY READY -- retest needed</b></td>
+          <td>0</td>
+          <td>1</td>
+          <td>0%</td>
+        </tr>
+        <tr>
+          <td>auv_vulnerable_bluerov2</td>
+          <td>underwater</td>
+          <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
+          <td>2</td>
+          <td>0</td>
+          <td>100%</td>
+        </tr>
+        <tr>
+          <td>auv_vulnerable_remus100</td>
+          <td>underwater</td>
+          <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
+          <td>2</td>
+          <td>0</td>
+          <td>100%</td>
+        </tr>
+        <tr>
           <td>blueboat_local</td>
           <td>surface</td>
           <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
-          <td>3</td>
+          <td>2</td>
           <td>0</td>
-          <td>75%</td>
+          <td>50%</td>
         </tr>
         <tr>
           <td>bluerov2_local</td>
           <td>underwater</td>
           <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
-          <td>1</td>
-          <td>1</td>
-          <td>0%</td>
+          <td>2</td>
+          <td>0</td>
+          <td>50%</td>
         </tr>
         <tr>
           <td>gps_test_converged</td>
@@ -109,6 +141,38 @@
           <td>100%</td>
         </tr>
         <tr>
+          <td>mass_resilient_blueboat</td>
+          <td>surface</td>
+          <td class="v-conditional"><b>CONDITIONALLY READY -- retest needed</b></td>
+          <td>0</td>
+          <td>1</td>
+          <td>33%</td>
+        </tr>
+        <tr>
+          <td>mass_resilient_cusv</td>
+          <td>surface</td>
+          <td class="v-conditional"><b>CONDITIONALLY READY -- retest needed</b></td>
+          <td>0</td>
+          <td>1</td>
+          <td>33%</td>
+        </tr>
+        <tr>
+          <td>mass_vulnerable_cusv</td>
+          <td>surface</td>
+          <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
+          <td>3</td>
+          <td>0</td>
+          <td>100%</td>
+        </tr>
+        <tr>
+          <td>mass_vulnerable_wamv</td>
+          <td>surface</td>
+          <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
+          <td>3</td>
+          <td>0</td>
+          <td>100%</td>
+        </tr>
+        <tr>
           <td>standalone_test</td>
           <td>surface</td>
           <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
@@ -120,17 +184,213 @@
           <td>wamv_local</td>
           <td>surface</td>
           <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
-          <td>3</td>
+          <td>2</td>
           <td>0</td>
-          <td>75%</td>
+          <td>100%</td>
         </tr></tbody>
     </table>
 
   
     <section class="profile">
+      <h2>auv_resilient_bluerov2_hardened <span class="domain">(underwater)</span></h2>
+      <p class="src">Run 20260809T024516, from
+         <code>target_runs/auv_resilient_bluerov2_hardened/20260809T024516/verdicts.json</code>.</p>
+      <div class="headline v-conditional">CONDITIONALLY READY -- retest needed</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-good"><b>RESILIENT</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=ALT_HOLD, post_mode=MANUAL, heartbeats_seen_after=5</td>
+          <td class="rec"></td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-warn"><b>INCONCLUSIVE</b></td>
+          <td class="ev">armed_confirmed=False, armed_during_injection=False, watched_channel=servo5, pre_servo5=1500, peak_servo5_during_injection=1500, forged_throttle_pwm=1700<br><i>target did not confirm ARMED after the arm sequence -- preconditions not met</i></td>
+          <td class="rec"></td>
+        </tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>0</td>
+          <td>0</td>
+          <td>n/a</td>
+          <td>0/2</td>
+          <td>n/a</td>
+          <td>0%</td>
+          <td>n/a</td>
+          <td>n/a</td>
+          <td>n/a</td>
+        </tr></tbody>
+      </table>
+      <div class="gaps"><h4>Detectability gaps</h4><ul><li><b>c2_replay</b> (recall 0%): The current rule-based monitor (detection/detectors.py&#x27;s C2OverrideDetector) only watches for RC-override signatures -- it does not catch mode-change forgery at all. If mode-change hijacking matters for this vehicle&#x27;s operating profile, that&#x27;s a real, separate monitoring gap to close.</li></ul></div>
+    </section>
+    <section class="profile">
+      <h2>auv_resilient_remus100_hardened <span class="domain">(underwater)</span></h2>
+      <p class="src">Run 20260809T023955, from
+         <code>target_runs/auv_resilient_remus100_hardened/20260809T023955/verdicts.json</code>.</p>
+      <div class="headline v-conditional">CONDITIONALLY READY -- retest needed</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-good"><b>RESILIENT</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=ALT_HOLD, post_mode=MANUAL, heartbeats_seen_after=5</td>
+          <td class="rec"></td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-warn"><b>INCONCLUSIVE</b></td>
+          <td class="ev">armed_confirmed=False, armed_during_injection=False, watched_channel=servo5, pre_servo5=1500, peak_servo5_during_injection=1500, forged_throttle_pwm=1700<br><i>target did not confirm ARMED after the arm sequence -- preconditions not met</i></td>
+          <td class="rec"></td>
+        </tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>0</td>
+          <td>0</td>
+          <td>n/a</td>
+          <td>0/2</td>
+          <td>n/a</td>
+          <td>0%</td>
+          <td>n/a</td>
+          <td>n/a</td>
+          <td>n/a</td>
+        </tr></tbody>
+      </table>
+      <div class="gaps"><h4>Detectability gaps</h4><ul><li><b>c2_replay</b> (recall 0%): The current rule-based monitor (detection/detectors.py&#x27;s C2OverrideDetector) only watches for RC-override signatures -- it does not catch mode-change forgery at all. If mode-change hijacking matters for this vehicle&#x27;s operating profile, that&#x27;s a real, separate monitoring gap to close.</li></ul></div>
+    </section>
+    <section class="profile">
+      <h2>auv_vulnerable_bluerov2 <span class="domain">(underwater)</span></h2>
+      <p class="src">Run 20260809T024237, from
+         <code>target_runs/auv_vulnerable_bluerov2/20260809T024237/verdicts.json</code>.</p>
+      <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=ALT_HOLD, post_mode=ALT_HOLD, heartbeats_seen_after=6</td>
+          <td class="rec">Enable MAVLink2 message signing (the SIGNING_KEY parameter) so an unsigned forged mode-change command is rejected outright. SYSID_MYGCS filtering alone is not sufficient -- it&#x27;s a plain, unauthenticated header field, trivially spoofed by anyone who knows (or guesses) the expected system ID.</td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">armed_confirmed=True, armed_during_injection=True, watched_channel=servo5, pre_servo5=1500, peak_servo5_during_injection=1300, forged_throttle_pwm=1700</td>
+          <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
+        </tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>3</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>2/2</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>9.70s</td>
+          <td>11.05s</td>
+          <td>11.20s</td>
+        </tr></tbody>
+      </table>
+      
+    </section>
+    <section class="profile">
+      <h2>auv_vulnerable_remus100 <span class="domain">(underwater)</span></h2>
+      <p class="src">Run 20260809T023907, from
+         <code>target_runs/auv_vulnerable_remus100/20260809T023907/verdicts.json</code>.</p>
+      <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=ALT_HOLD, post_mode=ALT_HOLD, heartbeats_seen_after=6</td>
+          <td class="rec">Enable MAVLink2 message signing (the SIGNING_KEY parameter) so an unsigned forged mode-change command is rejected outright. SYSID_MYGCS filtering alone is not sufficient -- it&#x27;s a plain, unauthenticated header field, trivially spoofed by anyone who knows (or guesses) the expected system ID.</td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">armed_confirmed=True, armed_during_injection=True, watched_channel=servo5, pre_servo5=1500, peak_servo5_during_injection=1300, forged_throttle_pwm=1700</td>
+          <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
+        </tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>3</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>2/2</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>9.59s</td>
+          <td>10.93s</td>
+          <td>11.07s</td>
+        </tr></tbody>
+      </table>
+      
+    </section>
+    <section class="profile">
       <h2>blueboat_local <span class="domain">(surface)</span></h2>
-      <p class="src">Run 20260807T211341, from
-         <code>target_runs/blueboat_local/20260807T211341/verdicts.json</code>.</p>
+      <p class="src">Run 20260808T002722, from
+         <code>target_runs/blueboat_local/20260808T002722/verdicts.json</code>.</p>
       <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
       <h3>Vulnerability</h3>
       
@@ -150,20 +410,6 @@
           <td class="v-bad"><b>VULNERABLE</b></td>
           <td class="ev">armed_confirmed=True, pre_servo3=1500, peak_servo3_during_injection=1612, forged_throttle_pwm=1700</td>
           <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
-        </tr>
-        <tr>
-          <td>gps_spoof</td>
-          <td>vulnerability</td>
-          <td class="v-bad"><b>VULNERABLE</b></td>
-          <td class="ev">pre_lat=-33.7242229, pre_lon=150.6797359, method=fdm_relay, peak_delta_m=9.22, expected_offset_m=10.0</td>
-          <td class="rec">The autopilot&#x27;s position estimate followed the forged input with no apparent rejection. Consider multi-GPS blending (GPS_BLEND) or an independent EKF innovation/consistency check (cross-referencing against IMU-based dead reckoning) so a sudden implausible jump is flagged and gated rather than trusted outright.</td>
-        </tr>
-        <tr>
-          <td>ais_spoof</td>
-          <td>vulnerability</td>
-          <td class="v-na"><b>N/A</b></td>
-          <td class="ev">modes_run=[&#x27;ghost&#x27;, &#x27;impersonate&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
-          <td class="rec"></td>
         </tr></tbody>
     </table>
       <h3>Detectability</h3>
@@ -176,19 +422,6 @@
         </thead>
         <tbody>
         <tr>
-          <td>ais_spoof</td>
-          <td>19</td>
-          <td>0</td>
-          <td>0%</td>
-          <td>1/1</td>
-          <td>100%</td>
-          <td>100%</td>
-          <td>0.00s</td>
-          <td>0.00s</td>
-          <td>0.00s</td>
-        </tr>
-
-        <tr>
           <td>c2_replay</td>
           <td>2</td>
           <td>0</td>
@@ -199,27 +432,14 @@
           <td>11.21s</td>
           <td>11.21s</td>
           <td>11.21s</td>
-        </tr>
-
-        <tr>
-          <td>gps_spoof</td>
-          <td>75</td>
-          <td>0</td>
-          <td>0%</td>
-          <td>1/1</td>
-          <td>100%</td>
-          <td>100%</td>
-          <td>0.00s</td>
-          <td>0.00s</td>
-          <td>0.00s</td>
         </tr></tbody>
       </table>
       <div class="gaps"><h4>Detectability gaps</h4><ul><li><b>c2_replay</b> (recall 50%): The current rule-based monitor (detection/detectors.py&#x27;s C2OverrideDetector) only watches for RC-override signatures -- it does not catch mode-change forgery at all. If mode-change hijacking matters for this vehicle&#x27;s operating profile, that&#x27;s a real, separate monitoring gap to close.</li></ul></div>
     </section>
     <section class="profile">
       <h2>bluerov2_local <span class="domain">(underwater)</span></h2>
-      <p class="src">Run 20260807T211853, from
-         <code>target_runs/bluerov2_local/20260807T211853/verdicts.json</code>.</p>
+      <p class="src">Run 20260808T024201, from
+         <code>target_runs/bluerov2_local/20260808T024201/verdicts.json</code>.</p>
       <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
       <h3>Vulnerability</h3>
       
@@ -236,9 +456,9 @@
         <tr>
           <td>c2_replay</td>
           <td>rc_override</td>
-          <td class="v-warn"><b>INCONCLUSIVE</b></td>
-          <td class="ev"><br><i>this check&#x27;s channel/servo mapping (chan1/chan3, servo3) is validated for Rover-style vehicles only -- ArduSub&#x27;s thruster layout is different and unvalidated here, so a RESILIENT/VULNERABLE verdict would not be trustworthy. Needs a validated ArduSub channel mapping before this sub-check is meaningful for underwater targets.</i></td>
-          <td class="rec"></td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">armed_confirmed=True, armed_during_injection=True, watched_channel=servo5, pre_servo5=1500, peak_servo5_during_injection=1300, forged_throttle_pwm=1700</td>
+          <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
         </tr></tbody>
     </table>
       <h3>Detectability</h3>
@@ -252,18 +472,18 @@
         <tbody>
         <tr>
           <td>c2_replay</td>
+          <td>3</td>
           <td>0</td>
-          <td>0</td>
-          <td>n/a</td>
-          <td>0/1</td>
-          <td>n/a</td>
           <td>0%</td>
-          <td>n/a</td>
-          <td>n/a</td>
-          <td>n/a</td>
+          <td>1/2</td>
+          <td>100%</td>
+          <td>50%</td>
+          <td>8.10s</td>
+          <td>8.10s</td>
+          <td>8.10s</td>
         </tr></tbody>
       </table>
-      <div class="gaps"><h4>Detectability gaps</h4><ul><li><b>c2_replay</b> (recall 0%): The current rule-based monitor (detection/detectors.py&#x27;s C2OverrideDetector) only watches for RC-override signatures -- it does not catch mode-change forgery at all. If mode-change hijacking matters for this vehicle&#x27;s operating profile, that&#x27;s a real, separate monitoring gap to close.</li></ul></div>
+      <div class="gaps"><h4>Detectability gaps</h4><ul><li><b>c2_replay</b> (recall 50%): The current rule-based monitor (detection/detectors.py&#x27;s C2OverrideDetector) only watches for RC-override signatures -- it does not catch mode-change forgery at all. If mode-change hijacking matters for this vehicle&#x27;s operating profile, that&#x27;s a real, separate monitoring gap to close.</li></ul></div>
     </section>
     <section class="profile">
       <h2>gps_test_converged <span class="domain">(surface)</span></h2>
@@ -350,6 +570,336 @@
       
     </section>
     <section class="profile">
+      <h2>mass_resilient_blueboat <span class="domain">(surface)</span></h2>
+      <p class="src">Run 20260809T024349, from
+         <code>target_runs/mass_resilient_blueboat/20260809T024349/verdicts.json</code>.</p>
+      <div class="headline v-conditional">CONDITIONALLY READY -- retest needed</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-good"><b>RESILIENT</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=HOLD, post_mode=MANUAL, heartbeats_seen_after=5</td>
+          <td class="rec"></td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-warn"><b>INCONCLUSIVE</b></td>
+          <td class="ev">armed_confirmed=False, armed_during_injection=False, watched_channel=servo3, pre_servo3=1500, peak_servo3_during_injection=1500, forged_throttle_pwm=1700<br><i>target did not confirm ARMED after the arm sequence -- preconditions not met</i></td>
+          <td class="rec"></td>
+        </tr>
+        <tr>
+          <td>gps_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-na"><b>N/A</b></td>
+          <td class="ev">method=gps_input, gps_id=0, expected_offset_m=1.0<br><i>target never showed any sign of ingesting the forged position at all -- not a demonstrated security property, this attack vector may not apply to this target as configured.</i></td>
+          <td class="rec"></td>
+        </tr>
+        <tr>
+          <td>ais_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-na"><b>N/A</b></td>
+          <td class="ev">modes_run=[&#x27;ghost&#x27;, &#x27;impersonate&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
+          <td class="rec"></td>
+        </tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>ais_spoof</td>
+          <td>19</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+        </tr>
+
+        <tr>
+          <td>c2_replay</td>
+          <td>0</td>
+          <td>0</td>
+          <td>n/a</td>
+          <td>0/2</td>
+          <td>n/a</td>
+          <td>0%</td>
+          <td>n/a</td>
+          <td>n/a</td>
+          <td>n/a</td>
+        </tr></tbody>
+      </table>
+      <div class="gaps"><h4>Detectability gaps</h4><ul><li><b>c2_replay</b> (recall 0%): The current rule-based monitor (detection/detectors.py&#x27;s C2OverrideDetector) only watches for RC-override signatures -- it does not catch mode-change forgery at all. If mode-change hijacking matters for this vehicle&#x27;s operating profile, that&#x27;s a real, separate monitoring gap to close.</li></ul></div>
+    </section>
+    <section class="profile">
+      <h2>mass_resilient_cusv <span class="domain">(surface)</span></h2>
+      <p class="src">Run 20260808T233845, from
+         <code>target_runs/mass_resilient_cusv/20260808T233845/verdicts.json</code>.</p>
+      <div class="headline v-conditional">CONDITIONALLY READY -- retest needed</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-good"><b>RESILIENT</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=HOLD, post_mode=MANUAL, heartbeats_seen_after=5</td>
+          <td class="rec"></td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-warn"><b>INCONCLUSIVE</b></td>
+          <td class="ev">armed_confirmed=False, armed_during_injection=False, watched_channel=servo3, pre_servo3=1500, peak_servo3_during_injection=1500, forged_throttle_pwm=1700<br><i>target did not confirm ARMED after the arm sequence -- preconditions not met</i></td>
+          <td class="rec"></td>
+        </tr>
+        <tr>
+          <td>gps_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-na"><b>N/A</b></td>
+          <td class="ev">method=gps_input, gps_id=0, expected_offset_m=1.0<br><i>target never showed any sign of ingesting the forged position at all -- not a demonstrated security property, this attack vector may not apply to this target as configured.</i></td>
+          <td class="rec"></td>
+        </tr>
+        <tr>
+          <td>ais_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-na"><b>N/A</b></td>
+          <td class="ev">modes_run=[&#x27;ghost&#x27;, &#x27;impersonate&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
+          <td class="rec"></td>
+        </tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>ais_spoof</td>
+          <td>19</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+        </tr>
+
+        <tr>
+          <td>c2_replay</td>
+          <td>0</td>
+          <td>0</td>
+          <td>n/a</td>
+          <td>0/2</td>
+          <td>n/a</td>
+          <td>0%</td>
+          <td>n/a</td>
+          <td>n/a</td>
+          <td>n/a</td>
+        </tr></tbody>
+      </table>
+      <div class="gaps"><h4>Detectability gaps</h4><ul><li><b>c2_replay</b> (recall 0%): The current rule-based monitor (detection/detectors.py&#x27;s C2OverrideDetector) only watches for RC-override signatures -- it does not catch mode-change forgery at all. If mode-change hijacking matters for this vehicle&#x27;s operating profile, that&#x27;s a real, separate monitoring gap to close.</li></ul></div>
+    </section>
+    <section class="profile">
+      <h2>mass_vulnerable_cusv <span class="domain">(surface)</span></h2>
+      <p class="src">Run 20260808T233658, from
+         <code>target_runs/mass_vulnerable_cusv/20260808T233658/verdicts.json</code>.</p>
+      <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=HOLD, post_mode=HOLD, heartbeats_seen_after=6</td>
+          <td class="rec">Enable MAVLink2 message signing (the SIGNING_KEY parameter) so an unsigned forged mode-change command is rejected outright. SYSID_MYGCS filtering alone is not sufficient -- it&#x27;s a plain, unauthenticated header field, trivially spoofed by anyone who knows (or guesses) the expected system ID.</td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">armed_confirmed=True, armed_during_injection=True, watched_channel=servo3, pre_servo3=1500, peak_servo3_during_injection=1680, forged_throttle_pwm=1700</td>
+          <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
+        </tr>
+        <tr>
+          <td>gps_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">pre_lat=-33.7242215, pre_lon=150.6797436, method=fdm_relay, peak_delta_m=51.87, expected_offset_m=50.0</td>
+          <td class="rec">The autopilot&#x27;s position estimate followed the forged input with no apparent rejection. Consider multi-GPS blending (GPS_BLEND) or an independent EKF innovation/consistency check (cross-referencing against IMU-based dead reckoning) so a sudden implausible jump is flagged and gated rather than trusted outright.</td>
+        </tr>
+        <tr>
+          <td>ais_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-na"><b>N/A</b></td>
+          <td class="ev">modes_run=[&#x27;ghost&#x27;, &#x27;impersonate&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
+          <td class="rec"></td>
+        </tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>ais_spoof</td>
+          <td>19</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+        </tr>
+
+        <tr>
+          <td>c2_replay</td>
+          <td>3</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>2/2</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>9.60s</td>
+          <td>10.86s</td>
+          <td>11.00s</td>
+        </tr>
+
+        <tr>
+          <td>gps_spoof</td>
+          <td>1</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.03s</td>
+          <td>0.03s</td>
+          <td>0.03s</td>
+        </tr></tbody>
+      </table>
+      
+    </section>
+    <section class="profile">
+      <h2>mass_vulnerable_wamv <span class="domain">(surface)</span></h2>
+      <p class="src">Run 20260809T024108, from
+         <code>target_runs/mass_vulnerable_wamv/20260809T024108/verdicts.json</code>.</p>
+      <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=HOLD, post_mode=HOLD, heartbeats_seen_after=6</td>
+          <td class="rec">Enable MAVLink2 message signing (the SIGNING_KEY parameter) so an unsigned forged mode-change command is rejected outright. SYSID_MYGCS filtering alone is not sufficient -- it&#x27;s a plain, unauthenticated header field, trivially spoofed by anyone who knows (or guesses) the expected system ID.</td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">armed_confirmed=True, armed_during_injection=True, watched_channel=servo3, pre_servo3=1500, peak_servo3_during_injection=1680, forged_throttle_pwm=1700</td>
+          <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
+        </tr>
+        <tr>
+          <td>gps_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">pre_lat=-33.7227065, pre_lon=150.6739532, method=fdm_relay, peak_delta_m=49.86, expected_offset_m=50.0</td>
+          <td class="rec">The autopilot&#x27;s position estimate followed the forged input with no apparent rejection. Consider multi-GPS blending (GPS_BLEND) or an independent EKF innovation/consistency check (cross-referencing against IMU-based dead reckoning) so a sudden implausible jump is flagged and gated rather than trusted outright.</td>
+        </tr>
+        <tr>
+          <td>ais_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-na"><b>N/A</b></td>
+          <td class="ev">modes_run=[&#x27;ghost&#x27;, &#x27;impersonate&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
+          <td class="rec"></td>
+        </tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>ais_spoof</td>
+          <td>19</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+        </tr>
+
+        <tr>
+          <td>c2_replay</td>
+          <td>3</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>2/2</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>9.50s</td>
+          <td>10.76s</td>
+          <td>10.90s</td>
+        </tr>
+
+        <tr>
+          <td>gps_spoof</td>
+          <td>1</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.01s</td>
+          <td>0.01s</td>
+          <td>0.01s</td>
+        </tr></tbody>
+      </table>
+      
+    </section>
+    <section class="profile">
       <h2>standalone_test <span class="domain">(surface)</span></h2>
       <p class="src">Run 20260807T063057, from
          <code>target_runs/standalone_test/20260807T063057/verdicts.json</code>.</p>
@@ -420,8 +970,8 @@
     </section>
     <section class="profile">
       <h2>wamv_local <span class="domain">(surface)</span></h2>
-      <p class="src">Run 20260807T211112, from
-         <code>target_runs/wamv_local/20260807T211112/verdicts.json</code>.</p>
+      <p class="src">Run 20260808T024308, from
+         <code>target_runs/wamv_local/20260808T024308/verdicts.json</code>.</p>
       <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
       <h3>Vulnerability</h3>
       
@@ -439,22 +989,8 @@
           <td>c2_replay</td>
           <td>rc_override</td>
           <td class="v-bad"><b>VULNERABLE</b></td>
-          <td class="ev">armed_confirmed=True, pre_servo3=1500, peak_servo3_during_injection=1612, forged_throttle_pwm=1700</td>
+          <td class="ev">armed_confirmed=True, armed_during_injection=True, watched_channel=servo3, pre_servo3=1500, peak_servo3_during_injection=1680, forged_throttle_pwm=1700</td>
           <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
-        </tr>
-        <tr>
-          <td>gps_spoof</td>
-          <td>vulnerability</td>
-          <td class="v-bad"><b>VULNERABLE</b></td>
-          <td class="ev">pre_lat=-33.7227677, pre_lon=150.6739892, method=fdm_relay, peak_delta_m=7.6, expected_offset_m=10.0</td>
-          <td class="rec">The autopilot&#x27;s position estimate followed the forged input with no apparent rejection. Consider multi-GPS blending (GPS_BLEND) or an independent EKF innovation/consistency check (cross-referencing against IMU-based dead reckoning) so a sudden implausible jump is flagged and gated rather than trusted outright.</td>
-        </tr>
-        <tr>
-          <td>ais_spoof</td>
-          <td>vulnerability</td>
-          <td class="v-na"><b>N/A</b></td>
-          <td class="ev">modes_run=[&#x27;ghost&#x27;, &#x27;impersonate&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
-          <td class="rec"></td>
         </tr></tbody>
     </table>
       <h3>Detectability</h3>
@@ -467,45 +1003,19 @@
         </thead>
         <tbody>
         <tr>
-          <td>ais_spoof</td>
-          <td>19</td>
-          <td>0</td>
-          <td>0%</td>
-          <td>1/1</td>
-          <td>100%</td>
-          <td>100%</td>
-          <td>0.00s</td>
-          <td>0.00s</td>
-          <td>0.00s</td>
-        </tr>
-
-        <tr>
           <td>c2_replay</td>
-          <td>2</td>
+          <td>3</td>
           <td>0</td>
           <td>0%</td>
-          <td>1/2</td>
-          <td>100%</td>
-          <td>50%</td>
-          <td>11.41s</td>
-          <td>11.41s</td>
-          <td>11.41s</td>
-        </tr>
-
-        <tr>
-          <td>gps_spoof</td>
-          <td>76</td>
-          <td>0</td>
-          <td>0%</td>
-          <td>1/1</td>
+          <td>2/2</td>
           <td>100%</td>
           <td>100%</td>
-          <td>0.00s</td>
-          <td>0.00s</td>
-          <td>0.00s</td>
+          <td>9.55s</td>
+          <td>10.86s</td>
+          <td>11.01s</td>
         </tr></tbody>
       </table>
-      <div class="gaps"><h4>Detectability gaps</h4><ul><li><b>c2_replay</b> (recall 50%): The current rule-based monitor (detection/detectors.py&#x27;s C2OverrideDetector) only watches for RC-override signatures -- it does not catch mode-change forgery at all. If mode-change hijacking matters for this vehicle&#x27;s operating profile, that&#x27;s a real, separate monitoring gap to close.</li></ul></div>
+      
     </section>
 
   <footer>

@@ -1,0 +1,81 @@
+# REMUS-100 ArduSub defaults (Phase C-fallback, 2026-08-08).
+#
+# Provenance: NOT the DAVE BlueROV2 config (vehicle_twins/auv_vulnerable_bluerov2's
+# defaults come from ~/auv_ws/src/dave/models/dave_robot_models/config/bluerov2/
+# ardusub.parm), which the project's own plan explicitly flags as loaded with
+# BlueROV2-hardware-specific junk (camera mount, joystick buttons, that
+# specific unit's compass/accelerometer calibration offsets, a rangefinder
+# REMUS's model doesn't have) that would misrepresent a REMUS-100 twin if
+# carried over unedited. Every line below is either (a) kept because it's
+# load-bearing for THIS vehicle's own SDF/EKF setup, confirmed by reading
+# this project's own attacks/acoustic_spoof.py and the SERVO_FUNCTION <->
+# model.sdf channel wiring directly, or (b) an ArduSub firmware default
+# (from ardupilot/Tools/autotest/default_params/sub.parm) reasonable to
+# inherit as a starting point. Dropped entirely, not carried over: BTN*
+# (joystick button mapping -- REMUS isn't joystick-driven), COMPASS_OFS*/
+# INS_ACC*OFFS/INS_ACC*SCAL (that specific BlueROV2 unit's sensor
+# calibration bias), MNT_* (camera gimbal -- no camera mount on this
+# model), RNGFND1_* (rangefinder -- no such sensor on this model; leaving
+# it enabled with no backing sensor risks a bogus EKF/failsafe reading),
+# SERVO8_* (camera tilt output -- no 8th channel on this model),
+# BARO_EXT_BUS (physical I2C wiring, meaningless in SITL).
+
+# Thruster output mapping: motor1..motor6 -> SERVO1..SERVO6, matching
+# model.sdf's ArduPilotPlugin <control channel="0..5"> -> thruster1_joint.."
+# .."thruster6_joint wiring exactly (same channel order BlueROV2 uses,
+# confirmed directly against both SDFs).
+SERVO1_FUNCTION 33
+SERVO2_FUNCTION 34
+SERVO3_FUNCTION 35
+SERVO4_FUNCTION 36
+SERVO5_FUNCTION 37
+SERVO6_FUNCTION 38
+
+BATT_MONITOR     4
+FS_OPTIONS       0
+
+# Use EK3 (ArduSub's modern default estimator).
+EK2_ENABLE 0
+EK3_ENABLE 1
+AHRS_EKF_TYPE 3
+
+# Underwater position source: REMUS-100, like BlueROV2, gets no GPS (RF
+# doesn't penetrate water) -- its horizontal position comes from an
+# acoustic positioning system (USBL/LBL/DVL), modeled here the same way
+# this project already models it for BlueROV2: fed to ArduPilot as
+# VISION_POSITION_ESTIMATE by attacks/acoustic_spoof.py (which now derives
+# its Gazebo odometry topic from constants.MODEL_NAME instead of a
+# hardcoded "bluerov2", so it works unmodified for this vehicle too).
+# GPS_TYPE/SIM_GPS_* kept enabled for parity with BlueROV2's own baseline
+# (harmless if EK3 doesn't end up using GPS as a source).
+GPS_TYPE 1
+SIM_GPS_DISABLE 0
+SIM_GPS_LOCK 1
+VISO_TYPE 1
+EK3_SRC1_POSXY 6
+EK3_SRC1_VELXY 6
+EK3_SRC1_POSZ 1
+EK3_SRC1_VELZ 6
+EK3_SRC1_YAW 6
+COMPASS_USE 0
+COMPASS_USE2 0
+COMPASS_USE3 0
+SIM_BARO_RND 0.01
+
+# Depth-hold (ALT_HOLD) position-controller gains: inherited starting
+# point from the DAVE BlueROV2 config (ardupilot's own generic sub.parm
+# uses renamed equivalents in a newer parameter tree not present in this
+# project's built SITL binary -- confirmed these DAVE-style names are the
+# ones this binary actually accepts, since they're what the already-
+# working BlueROV2 twin uses). NOT re-tuned for REMUS-100's different
+# mass/thrust ratio -- live-verify ALT_HOLD behavior before trusting depth
+# control precision; retune here if it proves unstable.
+PSC_ACCZ_P   2
+PSC_ACCZ_I   4
+PSC_ACCZ_FF  0.75
+PSC_VELZ_P   8
+PSC_POSZ_P   3
+PSC_POSXY_P 2.5
+PSC_VELXY_D 0.8
+PSC_VELXY_I 0.5
+PSC_VELXY_P 5.0

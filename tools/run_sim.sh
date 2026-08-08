@@ -50,12 +50,18 @@ print(w.get("model_name", constants.PROFILE_NAME))
 print(w.get("sdf", ""))
 print(w.get("world", ""))
 print(w.get("urdf", ""))
+# optional per-vehicle ArduPilot SITL defaults (.parm) -- e.g. a hardened
+# SYSID_MYGCS -- overrides the domain's usual default when set. Path is
+# relative to the repo root, so a self-contained vehicle folder can ship
+# its own alongside its model.sdf.
+print(prof.get("ardu_defaults", ""))
 PY
 }
 mapfile -t PF < <(read_profile) || { echo "FATAL: cannot load profile '$PROFILE'"; exit 1; }
 DOMAIN="${PF[0]}"; VTYPE="${PF[1]}"; HOME_LAT="${PF[2]}"; HOME_LON="${PF[3]}"
 RELAY_PORT="${PF[4]}"; HB_PORT="${PF[5]}"
 WORLD_METHOD="${PF[6]}"; MODEL_NAME="${PF[7]}"; WORLD_SDF="${PF[8]}"; WORLD_NAME="${PF[9]}"; WORLD_URDF="${PF[10]}"
+PROFILE_ARDU_DEFAULTS="${PF[11]:-}"
 
 # --- Gazebo environment ------------------------------------------------------
 export GZ_SIM_SYSTEM_PLUGIN_PATH="$HOME/ardupilot_gazebo/build:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
@@ -67,6 +73,14 @@ if [[ "$VTYPE" == "Sub" ]]; then
   ARDU_PARAMS="$HOME/auv_ws/src/dave/models/dave_robot_models/config/bluerov2/ardusub.parm"
 else
   SITL_BIN="$HOME/ardupilot/build/sitl/bin/ardurover"
+fi
+# A profile's own "ardu_defaults" (e.g. a hardened SYSID_MYGCS for a
+# resilient digital twin) overrides the domain's usual default entirely --
+# SITL only accepts one --defaults file, so a vehicle that needs BOTH the
+# Sub-domain buoyancy/EKF params AND its own security hardening must ship
+# a defaults file that includes both (see vehicle_twins/*/ardusub.parm).
+if [[ -n "$PROFILE_ARDU_DEFAULTS" ]]; then
+  ARDU_PARAMS="$REPO/$PROFILE_ARDU_DEFAULTS"
 fi
 
 log()  { echo "[run_sim:$PROFILE] $*"; }

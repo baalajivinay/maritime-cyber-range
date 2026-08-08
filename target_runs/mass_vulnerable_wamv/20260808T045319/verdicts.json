@@ -1,0 +1,132 @@
+{
+  "target": "mass_vulnerable_wamv",
+  "domain": "surface",
+  "run_ts": "20260808T045319",
+  "baseline": {
+    "lat": -33.7226985,
+    "lon": 150.6739438,
+    "mode": "MANUAL",
+    "armed": true,
+    "servo1": 1500,
+    "servo3": 1500,
+    "servo5": 0,
+    "heartbeats": 4
+  },
+  "attacks": {
+    "c2_replay": {
+      "mode_change": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "HOLD",
+          "post_mode": "HOLD",
+          "heartbeats_seen_after": 6
+        }
+      },
+      "rc_override": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "armed_confirmed": true,
+          "armed_during_injection": true,
+          "watched_channel": "servo3",
+          "pre_servo3": 1500,
+          "peak_servo3_during_injection": 1680,
+          "forged_throttle_pwm": 1700
+        }
+      }
+    },
+    "gps_spoof": {
+      "vulnerability": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_lat": -33.7227625,
+          "pre_lon": 150.6739395,
+          "method": "fdm_relay",
+          "peak_delta_m": 52.62,
+          "expected_offset_m": 50.0
+        }
+      }
+    },
+    "ais_spoof": {
+      "vulnerability": {
+        "verdict": "N/A",
+        "evidence": {
+          "reason": "ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.",
+          "modes_run": [
+            "ghost",
+            "impersonate"
+          ]
+        }
+      }
+    }
+  },
+  "detectability": {
+    "min_ts": 1786144954.4888308,
+    "max_ts": 1786145082.3403246,
+    "families": {
+      "ais_spoof": {
+        "tp": 0,
+        "fp": 0,
+        "windows": 1,
+        "detected": 0,
+        "precision": NaN,
+        "recall": 0.0,
+        "latency": {
+          "n": 0,
+          "mean_s": null,
+          "median_s": null,
+          "p95_s": null,
+          "max_s": null
+        }
+      },
+      "c2_replay": {
+        "tp": 3,
+        "fp": 0,
+        "windows": 2,
+        "detected": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "latency": {
+          "n": 2,
+          "mean_s": 9.071,
+          "median_s": 9.071,
+          "p95_s": 9.851,
+          "max_s": 9.937
+        }
+      },
+      "gps_spoof": {
+        "tp": 1,
+        "fp": 0,
+        "windows": 1,
+        "detected": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "latency": {
+          "n": 1,
+          "mean_s": 0.027,
+          "median_s": 0.027,
+          "p95_s": 0.027,
+          "max_s": 0.027
+        }
+      }
+    },
+    "overall": {
+      "tp": 4,
+      "fp": 0,
+      "windows": 4,
+      "detected": 3,
+      "precision": 1.0,
+      "recall": 0.75,
+      "latency": {
+        "n": 3,
+        "mean_s": 6.056,
+        "median_s": 8.204,
+        "p95_s": 9.764,
+        "max_s": 9.937
+      }
+    }
+  },
+  "warnings": [
+    "AIS detectability tap could not bind udp ('127.0.0.1', 10110) ([Errno 98] Address already in use) -- ais_spoof recall below is not a real measurement, another process (likely the dashboard) already owned that port."
+  ]
+}

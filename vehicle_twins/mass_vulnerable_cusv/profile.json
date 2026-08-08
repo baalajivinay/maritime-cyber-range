@@ -1,0 +1,44 @@
+{
+  "name": "mass_vulnerable_cusv",
+  "domain": "surface",
+  "ardupilot_vehicle_type": "Rover",
+  "home": {
+    "lat": -33.724223,
+    "lon": 150.679736
+  },
+  "attacks": [
+    "gps_spoof",
+    "ais_spoof",
+    "c2_replay"
+  ],
+  "ais": {
+    "mmsi": "367999555",
+    "vessel_name": "CUSV-CYBER",
+    "udp_addr": [
+      "127.0.0.1",
+      10110
+    ]
+  },
+  "ports": {
+    "fdm_relay_bind": [
+      "127.0.0.1",
+      9002
+    ],
+    "fdm_gazebo_addr": [
+      "127.0.0.1",
+      9100
+    ],
+    "mavlink": {
+      "dashboard": 14551,
+      "auto_mission": 14552,
+      "c2_replay": 14553
+    }
+  },
+  "model_sdf": "sim_config/models/cusv/model.sdf",
+  "world": {
+    "method": "gz",
+    "sdf": "sim_config/cusv_world.sdf",
+    "model_name": "cusv",
+    "world_name": "cusv_harbor"
+  }
+}

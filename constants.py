@@ -110,3 +110,38 @@ FDM_GAZEBO_ADDR = tuple(_profile["ports"]["fdm_gazebo_addr"])
 MAVLINK_DASHBOARD_PORT = _profile["ports"]["mavlink"]["dashboard"]
 MAVLINK_AUTO_MISSION_PORT = _profile["ports"]["mavlink"]["auto_mission"]
 MAVLINK_C2_REPLAY_PORT = _profile["ports"]["mavlink"]["c2_replay"]
+# ArduPilot SITL only exposes 3 raw serial-emulated TCP ports (5760/5762/5763)
+# and won't heartbeat a 2nd simultaneous client on the same one, so
+# tools/test_target.py needs its own fan-out port to run concurrently with
+# the dashboard (which already holds 5762/5763). .get() so existing
+# profile.json files without this key keep working.
+MAVLINK_TEST_TARGET_PORT = _profile["ports"]["mavlink"].get("test_target", MAVLINK_C2_REPLAY_PORT + 1)
+
+# --- Legitimate-operator GCS identity -----------------------------------
+# The source_system this project's OWN legitimate control paths (MAVLink
+# fan-out bridge, the dashboard's live-telemetry tap, its "sail to this
+# point" navigation) should present as. Defaults to 255 (ArduPilot's
+# out-of-the-box SYSID_MYGCS/MAV_GCS_SYSID convention), matching every
+# vehicle's behavior before this field existed. A hardened vehicle profile
+# sets this to whatever its own MAV_GCS_SYSID/MAV_OPTIONS=1 (GCS_SYSID_ENFORCE)
+# defaults file configures as trusted (see vehicle_twins/*_resilient_*/), so
+# this project's own legitimate tooling keeps working against it.
+#
+# Deliberately NOT used by anything that simulates an attacker
+# (nodes/monitor/src/dashboard_server.py's cmd_conn(), tools/test_target.py's
+# target connection) -- those stay at the plain ArduPilot default (255) on
+# purpose, since that's what a real attacker without insider knowledge of a
+# hardened vehicle's real GCS id would use. Whether that default gets
+# accepted or rejected IS the security property being demonstrated.
+GCS_SOURCE_SYSTEM = _profile.get("gcs_source_system", 255)
+
+# --- Gazebo model name ---------------------------------------------------
+# The <model name="..."> in this vehicle's own model.sdf, i.e. the
+# "/model/<this>/..." prefix on its Gazebo topics. Mirrors run_sim.sh's own
+# world.model_name read (falls back to the profile name, true for every
+# vehicle so far since none renamed its Gazebo model away from its profile
+# name). Needed by anything that taps a vehicle-specific Gazebo topic
+# directly (e.g. attacks/acoustic_spoof.py's odometry read) instead of
+# going through MAVLink, so a second underwater vehicle doesn't have to
+# hardcode another vehicle's model name.
+MODEL_NAME = _profile.get("world", {}).get("model_name", PROFILE_NAME)

@@ -7,13 +7,28 @@
 #   tools/run_demo.sh <profile> down    # tear both down
 #   tools/run_demo.sh <profile> status
 #
-# <profile> = wamv | blueboat | bluerov2. The dashboard's true-position map
-# feed is richest for the VRX WAM-V (ROS GPS); other vehicles still show
-# believed position, AIS, alerts, and telemetry.
+# <profile> = a profiles/<name>.json name, OR (more usually) a path to a
+# self-contained vehicle_twins/<name>/ folder -- see tools/run_vehicle.sh's
+# header for that mechanism. The dashboard's true-position map feed is
+# richest for the VRX WAM-V (ROS GPS); other vehicles still show believed
+# position, AIS, alerts, and telemetry.
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROFILE="${1:?usage: run_demo.sh <profile> up|down|status}"
+PROFILE_ARG="${1:?usage: run_demo.sh <profile-name-or-vehicle_twins-folder> up|down|status}"
 ACTION="${2:-up}"
+
+# Accept either a plain profile name (wamv | blueboat | bluerov2, ...) or a
+# path to a self-contained vehicle_twins/<name>/ folder -- same trick as
+# tools/run_vehicle.sh: symlink that folder's profile.json into profiles/
+# so the rest of this script (and run_sim.sh underneath it) just sees an
+# ordinary profile name, unchanged.
+if [[ -f "$PROFILE_ARG/profile.json" ]]; then
+  PROFILE="$(python3 -c "import json; print(json.load(open('$PROFILE_ARG/profile.json'))['name'])")"
+  ln -sf "$(cd "$PROFILE_ARG" && pwd)/profile.json" "$REPO/profiles/$PROFILE.json"
+  echo "[run_demo] $PROFILE_ARG -> profile '$PROFILE'"
+else
+  PROFILE="$PROFILE_ARG"
+fi
 RUN_DIR="${MCR_RUN_DIR:-/tmp/mcr_run/$PROFILE}"; mkdir -p "$RUN_DIR"
 
 log(){ echo "[run_demo:$PROFILE] $*"; }
@@ -63,6 +78,11 @@ case "$ACTION" in
     start_dashboard
     log "DEMO UP.  Open  ->  http://localhost:8080"
     log "Fire attacks with tools/run_attack_suite.py --profile $PROFILE, or the relay FIFO $RUN_DIR/relay.fifo"
+    # Best-effort: open the dashboard automatically so the terminal command
+    # alone is enough. Silently does nothing if there's no desktop/browser
+    # available (e.g. a headless SSH session) -- the URL above still works
+    # if you open it yourself.
+    (xdg-open http://localhost:8080 >/dev/null 2>&1 &) || true
     ;;
   down)
     pkill -9 -f "dashboard_server.py" 2>/dev/null

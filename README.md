@@ -1,15 +1,23 @@
 # Autonomous Maritime Cyber Range
 
 Real-physics vehicle simulation (ArduPilot SITL + Gazebo) with GPS/AIS/C2
-attack modules and a live monitoring dashboard, for **both surface (MASS)
-and underwater (AUV) vehicles** -- dual-domain by design, not surface-only.
-The surface track (WAM-V/ArduRover) is verified end-to-end today; the
-underwater track (ArduSub) is in progress, see
-[`docs/ROADMAP.md`](docs/ROADMAP.md) for current status. See
+attack modules, a live monitoring dashboard, and a CLI resilience-testing
+tool, for **both surface (MASS) and underwater (AUV) vehicles** --
+dual-domain by design, not surface-only, both tracks verified end-to-end.
+
+Four self-contained digital twins under `vehicle_twins/` are ready to run
+today -- copies of real, individually-named Navy/research hardware (the
+Textron Fleet-class CUSV and the REMUS-100 AUV), one vulnerable and one
+GCS-link-hardened per pair -- see
+[`docs/TWIN_DEMO_GUIDE.md`](docs/TWIN_DEMO_GUIDE.md) for the full
+step-by-step (boot, attack, read the verdict, tear down) and
+[`docs/TARGET_TESTING.md`](docs/TARGET_TESTING.md) for `tools/test_target.py`,
+the vehicle-agnostic resilience tester this project's real deliverable is
+built around (point it at any ArduPilot SITL, not just these 4 twins). See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the component map, port
 topology, and running order, and
-[`docs/Maritime_Cyber_Range_Progress_Report.docx`](docs/Maritime_Cyber_Range_Progress_Report.docx)
-for project history/milestones.
+[`docs/EXECUTION_STATE.md`](docs/EXECUTION_STATE.md) for the dated,
+blow-by-blow build history (start there for full project context).
 
 ## Layout
 

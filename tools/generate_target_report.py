@@ -36,7 +36,7 @@ import time
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGET_RUNS = os.path.join(REPO, "target_runs")
 sys.path.insert(0, os.path.join(REPO, "tools"))
-from generate_report import render_family_table, _fmt, _pct  # noqa: E402
+from generate_report import render_family_table, _pct  # noqa: E402
 
 
 def discover_target_runs():

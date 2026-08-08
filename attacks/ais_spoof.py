@@ -96,52 +96,75 @@ def broadcast_ais_static(sock, mmsi, vessel_name, destination="UNKNOWN"):
 
 # --- Attack modes ----------------------------------------------------------
 
-def run_ghost_vessel(sock, stop_event, ghost_mmsi=999999001, interval_s=5.0):
+def _advance(lat, lon, heading_deg, speed_knots, dt_s):
+    """One straight-line physics step, the same relationship a real
+    transponder's own dead-reckoning would have to its own broadcast
+    course/speed -- so a receiver cross-checking consecutive fixes against
+    the claimed COG/SOG always finds them consistent, instead of a fixed
+    heading/speed pair that has nothing to do with how the dot actually
+    moves on the chart."""
+    dist_m = speed_knots * 0.514444 * dt_s  # knots -> m/s
+    bearing_rad = math.radians(heading_deg)
+    lat += (dist_m * math.cos(bearing_rad)) / constants.M_PER_DEG_LAT
+    lon += (dist_m * math.sin(bearing_rad)) / constants.m_per_deg_lon(lat)
+    return lat, lon
+
+
+def run_ghost_vessel(sock, stop_event, ghost_mmsi=999999001, interval_s=5.0,
+                      speed_knots=6.0, heading_deg=250.0):
     """Broadcasts a fully fabricated vessel that doesn't exist in the
-    simulation at all. Position drifts slowly near the home area to look
-    plausible on a chart."""
+    simulation at all. Holds a straight-line course at a fixed
+    speed/heading, like a real vessel underway -- the broadcast COG/SOG
+    always match its own actual track between fixes."""
     print(f"Ghost vessel MMSI {ghost_mmsi} broadcasting every {interval_s}s...")
-    t0 = time.time()
     broadcast_ais_static(sock, ghost_mmsi, "PHANTOM", "NOWHERE")
+    lat, lon = HOME_LAT + 0.0015, HOME_LON + 0.0015
+    last_t = time.time()
     while not stop_event.is_set():
-        elapsed = time.time() - t0
-        # slow fake drift, arbitrary plausible-looking track
-        lat = HOME_LAT + 0.001 * math.sin(elapsed / 60.0)
-        lon = HOME_LON + 0.001 + 0.0005 * elapsed / 60.0
-        broadcast_ais_position(sock, ghost_mmsi, lat, lon, sog_knots=4.0, cog_deg=270.0)
+        now = time.time()
+        lat, lon = _advance(lat, lon, heading_deg, speed_knots, now - last_t)
+        last_t = now
+        broadcast_ais_position(sock, ghost_mmsi, lat, lon, sog_knots=speed_knots, cog_deg=heading_deg)
         log_attack_event(time.time(), "ghost", ghost_mmsi, lat, lon, "fabricated vessel")
         stop_event.wait(interval_s)
 
 
 def run_impersonation(sock, stop_event, real_position_fn, offset_m=200.0,
-                       bearing_deg=45.0, interval_s=2.0):
-    """Broadcasts forged position under the REAL vessel's own MMSI, at a
-    higher rate than a real vessel normally would, to try to dominate/
-    conflict with its genuine reports.
+                       bearing_deg=45.0, interval_s=2.0, speed_knots=6.0):
+    """Broadcasts forged position under the REAL vessel's own MMSI, so a
+    receiver sees two conflicting reports for the same identity.
+
+    Anchors near the real vessel's position ONCE, at attack start, then
+    moves under its own straight-line course/speed from there -- it does
+    NOT re-lock onto the real vessel's live position every tick (a real
+    attacker has no way to track that in real time either, and a fixed
+    offset that perfectly mirrors the real vessel's every move is an
+    obvious tell, not a believable second vessel).
 
     real_position_fn: a callable returning (lat, lon) for the real
-    vessel's current true position -- if you have a live feed (e.g. from
-    the dashboard's GPS subscription), pass a function that reads it.
-    If not available, this falls back to a fixed approximate position.
+    vessel's current true position, used once to anchor the forged track
+    near where the real vessel actually is. Falls back to a fixed
+    approximate position if unavailable.
     """
-    print(f"Impersonating MMSI {REAL_VESSEL_MMSI} with +{offset_m}m offset, "
-          f"broadcasting every {interval_s}s...")
+    try:
+        true_lat, true_lon = real_position_fn()
+    except Exception:
+        true_lat, true_lon = HOME_LAT, HOME_LON
+
+    bearing_rad = math.radians(bearing_deg)
+    lat = true_lat + (offset_m * math.cos(bearing_rad)) / constants.M_PER_DEG_LAT
+    lon = true_lon + (offset_m * math.sin(bearing_rad)) / constants.m_per_deg_lon(true_lat)
+
+    print(f"Impersonating MMSI {REAL_VESSEL_MMSI}, starting {offset_m}m off the true "
+          f"position, broadcasting every {interval_s}s...")
+    last_t = time.time()
     while not stop_event.is_set():
-        try:
-            true_lat, true_lon = real_position_fn()
-        except Exception:
-            true_lat, true_lon = HOME_LAT, HOME_LON
-
-        bearing_rad = math.radians(bearing_deg)
-        dlat = (offset_m * math.cos(bearing_rad)) / constants.M_PER_DEG_LAT
-        dlon = (offset_m * math.sin(bearing_rad)) / constants.m_per_deg_lon(true_lat)
-        forged_lat = true_lat + dlat
-        forged_lon = true_lon + dlon
-
-        broadcast_ais_position(sock, REAL_VESSEL_MMSI, forged_lat, forged_lon,
-                                sog_knots=6.0, cog_deg=bearing_deg)
-        log_attack_event(time.time(), "impersonate", REAL_VESSEL_MMSI,
-                          forged_lat, forged_lon, f"true=({true_lat:.6f},{true_lon:.6f})")
+        now = time.time()
+        lat, lon = _advance(lat, lon, bearing_deg, speed_knots, now - last_t)
+        last_t = now
+        broadcast_ais_position(sock, REAL_VESSEL_MMSI, lat, lon, sog_knots=speed_knots, cog_deg=bearing_deg)
+        log_attack_event(time.time(), "impersonate", REAL_VESSEL_MMSI, lat, lon,
+                          f"anchor_true=({true_lat:.6f},{true_lon:.6f})")
         stop_event.wait(interval_s)
 
 
