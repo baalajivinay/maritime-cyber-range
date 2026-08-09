@@ -33,6 +33,8 @@ else:
         constants.MAVLINK_AUTO_MISSION_PORT,
         constants.MAVLINK_C2_REPLAY_PORT,
         constants.MAVLINK_TEST_TARGET_PORT,
+        constants.MAVLINK_GPS_FEEDER_PORT,
+        constants.MAVLINK_VISION_FEEDER_PORT,
     ]
 
 

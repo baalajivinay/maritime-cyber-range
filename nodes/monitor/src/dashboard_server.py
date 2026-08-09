@@ -215,9 +215,24 @@ _last_true_pos = None  # (lat, lon), kept fresh by gz_pose_thread -- lets
                         # actually is instead of the world's fixed origin
 
 
+_TRUE_POS_EMIT_INTERVAL_S = 0.1  # cap the browser-facing feed to ~10Hz -- matches
+# the believed-position feed's natural MAVLink rate. /pose/info itself
+# publishes at Gazebo's physics-step rate (100+Hz, confirmed live
+# 2026-08-09: 2239 gps_true_update emits in 20s, vs 178 believed updates in
+# the same window) -- emitting every single one to the browser was firing
+# the map's trail/connector redraw over 100x/sec, which is what produced the
+# "many dots appear randomly while moving" symptom: at that update rate the
+# 80-point trail buffer represents under a second of travel, so consecutive
+# points sit only millimeters apart on a meters-scale map and render as a
+# scattered cluster rather than a line. _last_true_pos itself still updates
+# every message (goto()'s frame alignment and the acoustic-spoof feed read
+# it and need the freshest value) -- only the socket EMIT is throttled.
+_last_true_emit_t = 0.0
+
+
 def gz_pose_thread():
     """CLEAN true position from Gazebo ground truth (no GPS noise)."""
-    global _last_true_pos
+    global _last_true_pos, _last_true_emit_t
     topic = f"/world/{WORLD_NAME}/pose/info"
     while True:
         try:
@@ -249,10 +264,96 @@ def gz_pose_thread():
                         lat = constants.HOME_LAT + y / M_PER_DEG_LAT
                         lon = constants.HOME_LON + x / M_PER_DEG_LON
                         _last_true_pos = (lat, lon)
-                        socketio.emit('gps_true_update', {'lat': lat, 'lon': lon})
+                        now = time.time()
+                        if now - _last_true_emit_t >= _TRUE_POS_EMIT_INTERVAL_S:
+                            _last_true_emit_t = now
+                            socketio.emit('gps_true_update', {'lat': lat, 'lon': lon})
                         in_model = False
         except Exception as e:
             print(f"gz pose thread error: {e}; retry 3s"); time.sleep(3)
+
+
+def legit_gps_feeder():
+    """Continuously feeds the vehicle's own TRUE position as a legitimate
+    GPS_INPUT stream. Only matters for a hardened twin's GPS1_TYPE=14
+    param (external AP_GPS_MAV driver) -- confirmed live 2026-08-09 that
+    without this, a resilient twin has NO ambient GPS source at all
+    (GPS_RAW_INT.fix_type stuck at 1/no-fix, 0 satellites), so it can never
+    pass ArduPilot's arming checks: goto() would set AUTO + upload a
+    mission successfully, but the arm loop silently failed every time --
+    "mode shows AUTO, armed stays DISARMED, destination never gets closer"
+    is exactly what that looks like on the dashboard. A twin using the
+    default embedded/JSON-FDM GPS (GPS1_TYPE != 14) simply has no driver
+    listening for GPS_INPUT, so sending it here is a harmless no-op --
+    safe to run unconditionally for every surface twin rather than needing
+    to know which ones are hardened.
+    Uses its own dedicated port (MAVLINK_GPS_FEEDER_PORT), not one of the
+    transient per-click connections (goto()'s auto_mission port) -- sharing
+    would hit the same SO_REUSEADDR silent-port-stealing issue already
+    fixed once for concurrent goto() calls this session."""
+    if DOMAIN != "surface":
+        return  # underwater vehicles get position via acoustic feed, not GPS
+    import gps_input_inject
+    while True:
+        try:
+            c = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_GPS_FEEDER_PORT}',
+                                            source_system=constants.GCS_SOURCE_SYSTEM)
+            # MUST receive at least one message before sending -- a fresh
+            # udpin: listener doesn't know mav_bridge's ephemeral reply
+            # address until it has received something from it, so anything
+            # sent before this silently goes nowhere (confirmed live
+            # 2026-08-09: an identical send loop without this wait produced
+            # zero effect at the vehicle despite no errors on either side).
+            c.wait_heartbeat(timeout=15)
+            while True:
+                if _last_true_pos is not None:
+                    lat, lon = _last_true_pos
+                    gps_input_inject.send_gps_input(c, lat, lon, 0.0)
+                time.sleep(0.2)  # 5Hz -- plenty for a stable arming/EKF fix
+        except Exception as e:
+            print(f"legit GPS feeder error: {e}; retry 3s"); time.sleep(3)
+
+
+def legit_vision_feeder():
+    """Underwater analog of legit_gps_feeder -- both REMUS-100 twins
+    (vulnerable AND hardened, confirmed by reading both parm files) set
+    EK3_SRC1_POSXY=6 (ExternalNav), meaning they have NO horizontal position
+    source at all unless something feeds VISION_POSITION_ESTIMATE
+    continuously. That previously only happened inside
+    attacks/acoustic_spoof.py's run_feed(), started ONLY when the dashboard's
+    "Acoustic Spoof" button was clicked -- confirmed live 2026-08-09 that
+    without it, GLOBAL_POSITION_INT never leaves HOME and a goto() click
+    arms the vehicle but ArduSub silently refuses to enter AUTO (no visible
+    error -- it just stays in whatever mode it was already in), which reads
+    on the dashboard as "it armed but never moved."
+    Deliberately reuses attacks/acoustic_spoof.py's read_true_ned() (the
+    already-fixed Gazebo pose parser, same zero-omission bug class this
+    project has hit and fixed 3 times elsewhere) rather than re-deriving
+    pose parsing a 4th time -- but does NOT touch that module's shared
+    `state`/`_lock` (the attack's forged-offset toggle). This feeder always
+    sends the untouched true position; when the Acoustic Spoof attack is
+    later launched, ITS OWN separate run_feed() call (via cmd_conn(), a
+    different connection/port) starts sending true+offset concurrently --
+    the forged signal has to compete with this legitimate one still
+    running, exactly the more-credible test setup already used for GPS
+    (see legit_gps_feeder's docstring) rather than the attacker being the
+    only signal the vehicle ever sees."""
+    if DOMAIN != "underwater":
+        return
+    import acoustic_spoof
+    while True:
+        try:
+            c = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_VISION_FEEDER_PORT}',
+                                            source_system=constants.GCS_SOURCE_SYSTEM)
+            c.wait_heartbeat(timeout=15)  # see legit_gps_feeder -- same requirement
+            c.mav.set_gps_global_origin_send(
+                c.target_system, int(constants.HOME_LAT * 1e7), int(constants.HOME_LON * 1e7), 0)
+            holder = {}
+            for (n, e, d) in acoustic_spoof.read_true_ned(holder):
+                us = int(time.time() * 1e6)
+                c.mav.vision_position_estimate_send(us, n, e, d, 0.0, 0.0, 0.0)
+        except Exception as ex:
+            print(f"legit vision feeder error: {ex}; retry 3s"); time.sleep(3)
 
 
 def believed_thread():
@@ -451,7 +552,18 @@ def launch_attack(kind, opts=None):
                 for _ in range(5):
                     c.mav.command_long_send(c.target_system, c.target_component,
                         mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0); time.sleep(1)
-                thr = 1300 if command == "rc_stop" else 1900
+                # "stop" must be exact RC3_TRIM (1500), NOT some PWM below trim.
+                # Confirmed live 2026-08-09 against the CUSV skid-steer twin: this
+                # hull's throttle-vs-PWM curve is symmetric around trim (deviation
+                # in EITHER direction from 1500 drives throttle UP, not down --
+                # 1100 and 1900 both measured as 100% throttle, only 1500 measured
+                # as 0%). The previous rc_stop value of 1300 sat inside that
+                # "wrong half" and produced ~45% throttle instead of a stop, which
+                # is what made a live "Cut throttle" demo look like it silently
+                # failed. 1500 is a safe universal choice regardless of a given
+                # twin's specific curve, since it's what RC3_TRIM always means by
+                # definition.
+                thr = 1500 if command == "rc_stop" else 1900
                 c2_replay.inject_forged_rc_override(c, throttle_pwm=thr, steering_pwm=1500, duration_s=8.0)
         threading.Thread(target=_c2, daemon=True).start()
         return "C2 injection: " + labels.get(command, command)
@@ -555,7 +667,19 @@ def _goto_locked(lat, lon):
     c.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
     c.set_mode(c.mode_mapping().get('AUTO', 10)); time.sleep(1)
     armed = False
-    for _ in range(6):
+    # 90 attempts @ 1s, not 6 -- a resilient twin's freshly-appeared GPS/
+    # ExternalNav fix (legit_gps_feeder / legit_vision_feeder) needs time for
+    # ArduPilot's EKF to trust it enough to pass the arming health check
+    # (confirmed live 2026-08-09: needs anywhere from ~10s to several
+    # minutes depending on how soon after boot the click lands). The old
+    # 6-attempt/~6s window meant a click too soon after boot failed
+    # PERMANENTLY -- goto() doesn't self-retry, so the vehicle was stuck in
+    # AUTO/DISARMED until the user knew to click "Set Destination" again.
+    # A single click should just work regardless of timing; retrying for
+    # up to 90s (a fresh click loop bails out immediately once armed, so
+    # this costs nothing extra on an already-converged vehicle) removes
+    # that fragility instead of documenting around it.
+    for _ in range(90):
         c.mav.command_long_send(c.target_system, c.target_component,
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
         time.sleep(1)
@@ -735,6 +859,6 @@ def whoami():
 
 
 if __name__ == '__main__':
-    for fn in (gz_pose_thread, believed_thread, ais_thread, detector_thread, overhead_emitter):
+    for fn in (gz_pose_thread, legit_gps_feeder, legit_vision_feeder, believed_thread, ais_thread, detector_thread, overhead_emitter):
         threading.Thread(target=fn, daemon=True).start()
     socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)

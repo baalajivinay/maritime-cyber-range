@@ -1,0 +1,38 @@
+{
+  "name": "presentation_external_smoke",
+  "description": "Genuinely independent ArduPilot SITL instance, hand-launched with its own internal physics (ardurover --model rover, NOT the JSON/Gazebo FDM this repo's own twins use), on ports this repo does not own, with a throwaway home location (Mumbai coast) unrelated to the project's Sydney-harbor reference vehicles. Exists purely to prove tools/test_target.py works against a vehicle this repo did not build or boot -- the 'external twin' path. GPS1_TYPE=14 is baked into its own defaults file so gps_input is a fair test. connection port is from a throwaway instance -- update before reuse.",
+  "domain": "surface",
+  "authorized": true,
+  "mavlink": {
+    "connection": "tcp:127.0.0.1:5810",
+    "source_system": 255
+  },
+  "attacks": {
+    "gps_spoof": {
+      "enabled": true,
+      "method": "gps_input",
+      "gps_id": 0,
+      "profile": "step",
+      "step_offset_m": 50.0,
+      "direction_deg": 90.0,
+      "gps_home": {
+        "lat": -18.922,
+        "lon": 72.834
+      }
+    },
+    "ais_spoof": {
+      "enabled": true,
+      "udp_addr": ["127.0.0.1", 10199],
+      "modes": ["ghost", "impersonate"]
+    },
+    "c2_replay": {
+      "enabled": true,
+      "target_mode_for_injection": "HOLD",
+      "allow_arm_and_actuate": true,
+      "rc_throttle_pwm": 1700,
+      "rc_steering_pwm": 1500,
+      "duration_s": 8.0
+    }
+  },
+  "timing": { "settle_s": 5.0, "window_s": 15.0 }
+}

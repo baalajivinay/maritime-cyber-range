@@ -116,6 +116,29 @@ MAVLINK_C2_REPLAY_PORT = _profile["ports"]["mavlink"]["c2_replay"]
 # the dashboard (which already holds 5762/5763). .get() so existing
 # profile.json files without this key keep working.
 MAVLINK_TEST_TARGET_PORT = _profile["ports"]["mavlink"].get("test_target", MAVLINK_C2_REPLAY_PORT + 1)
+# Dedicated port for the dashboard's own always-on "legitimate GPS_INPUT
+# feeder" (see dashboard_server.py's legit_gps_feeder thread) -- a resilient
+# twin's GPS1_TYPE=14 hardening means it has NO ambient GPS source at all
+# unless something feeds it GPS_INPUT continuously, so without this it
+# can never get a fix and can never arm (confirmed live 2026-08-09:
+# GPS_RAW_INT.fix_type==1/no-fix, satellites_visible==0, on a freshly
+# booted mass_resilient_cusv with nothing else running). Needs its own
+# port, not a shared one -- reusing auto_mission's transient per-click
+# connection would hit the same SO_REUSEADDR silent-port-stealing issue
+# already root-caused and fixed once for goto() this session.
+MAVLINK_GPS_FEEDER_PORT = _profile["ports"]["mavlink"].get("gps_feeder", MAVLINK_TEST_TARGET_PORT + 1)
+# Same idea, underwater: EK3_SRC1_POSXY=6 (ExternalNav) on BOTH REMUS-100
+# twins (vulnerable and hardened alike -- confirmed by reading both parm
+# files, not assumed) means neither one has ANY ambient horizontal position
+# source unless something feeds VISION_POSITION_ESTIMATE continuously.
+# Previously that only happened when the dashboard's "Acoustic Spoof" button
+# was clicked (attacks/acoustic_spoof.py's run_feed()) -- confirmed live
+# 2026-08-09 that without it, GLOBAL_POSITION_INT never leaves HOME and
+# goto() silently fails to enter AUTO (ArduSub rejects the mode switch, then
+# arms into whatever mode it's actually in instead -- looks like "it armed
+# but never moved" on the dashboard). Own dedicated port for the same
+# SO_REUSEADDR reason as MAVLINK_GPS_FEEDER_PORT.
+MAVLINK_VISION_FEEDER_PORT = _profile["ports"]["mavlink"].get("vision_feeder", MAVLINK_GPS_FEEDER_PORT + 1)
 
 # --- Legitimate-operator GCS identity -----------------------------------
 # The source_system this project's OWN legitimate control paths (MAVLink

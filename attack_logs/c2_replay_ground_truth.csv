@@ -57,3 +57,15 @@ wall_ts,attack_type,description
 1786186245.8549676,inject_rc_override,"throttle=1900, steering=1500, 8.0s"
 1786223887.1042278,inject_rc_override,"throttle=1900, steering=1500, 8.0s"
 1786223993.7982602,inject_rc_override,"throttle=1900, steering=1500, 8.0s"
+1786288896.3579366,inject_rc_override,"throttle=1900, steering=1500, 8.0s"
+1786288912.412854,inject_rc_override,"throttle=1300, steering=1500, 8.0s"
+1786289865.3665655,inject_mode,forged mode change to HOLD
+1786289883.883315,inject_rc_override,"throttle=1300, steering=1500, 8.0s"
+1786289942.1556299,inject_mode,forged mode change to HOLD
+1786290108.4554658,inject_rc_override,"throttle=1300, steering=1500, 8.0s"
+1786290335.2893357,inject_rc_override,"throttle=1500, steering=1500, 8.0s"
+1786292181.6505508,inject_rc_override,"throttle=1900, steering=1500, 8.0s"
+1786292186.4066122,inject_mode,forged mode change to HOLD
+1786296463.318678,inject_rc_override,"throttle=1900, steering=1500, 8.0s"
+1786296464.9654067,inject_mode,forged mode change to HOLD
+1786296475.992117,inject_rc_override,"throttle=1900, steering=1500, 8.0s"
