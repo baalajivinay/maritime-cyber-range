@@ -232,14 +232,24 @@ def gz_pose_thread():
                 if in_model:
                     block += line
                     if line.strip() == "}" and "position" in block and "orientation" in block:
-                        mx = re.search(r"position\s*\{\s*x:\s*([-\d.e]+)", block)
-                        my = re.search(r"position\s*\{[^}]*y:\s*([-\d.e]+)", block, re.S)
-                        if mx and my:
-                            x, y = float(mx.group(1)), float(my.group(1))
-                            lat = constants.HOME_LAT + y / M_PER_DEG_LAT
-                            lon = constants.HOME_LON + x / M_PER_DEG_LON
-                            _last_true_pos = (lat, lon)
-                            socketio.emit('gps_true_update', {'lat': lat, 'lon': lon})
+                        # Gazebo's protobuf text format omits any field that
+                        # equals its default (0.0) -- a vehicle sitting
+                        # exactly on the world-frame y=0 line (true for
+                        # CUSV, confirmed live 2026-08-09) has its position
+                        # y field silently absent from the text, not a rare
+                        # edge case. Default a missing field to 0.0 (its
+                        # real protobuf value) instead of requiring both x
+                        # and y to literally appear, which previously froze
+                        # _last_true_pos/the true-position map for any
+                        # vehicle whose x or y ever landed on exactly 0.
+                        mx = re.search(r"position\s*\{\s*x:\s*([-+\d.e]+)", block)
+                        my = re.search(r"position\s*\{[^}]*y:\s*([-+\d.e]+)", block, re.S)
+                        x = float(mx.group(1)) if mx else 0.0
+                        y = float(my.group(1)) if my else 0.0
+                        lat = constants.HOME_LAT + y / M_PER_DEG_LAT
+                        lon = constants.HOME_LON + x / M_PER_DEG_LON
+                        _last_true_pos = (lat, lon)
+                        socketio.emit('gps_true_update', {'lat': lat, 'lon': lon})
                         in_model = False
         except Exception as e:
             print(f"gz pose thread error: {e}; retry 3s"); time.sleep(3)
@@ -345,10 +355,11 @@ def _gz_xy():
     out = None
     for b in p.stdout.split("pose {"):
         if f'name: "{MODEL_NAME}"' in b:
-            mx = re.search(r"position\s*\{\s*x:\s*([-\d.e]+)", b)
-            my = re.search(r"position\s*\{[^}]*y:\s*([-\d.e]+)", b, re.S)
-            if mx and my:
-                out = (float(mx.group(1)), float(my.group(1)))
+            # See gz_pose_thread()'s comment: a missing x/y means that field
+            # is exactly 0.0 (protobuf omits defaults), not "no data".
+            mx = re.search(r"position\s*\{\s*x:\s*([-+\d.e]+)", b)
+            my = re.search(r"position\s*\{[^}]*y:\s*([-+\d.e]+)", b, re.S)
+            out = (float(mx.group(1)) if mx else 0.0, float(my.group(1)) if my else 0.0)
     return out
 
 

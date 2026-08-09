@@ -112,21 +112,32 @@ class AISEmulator:
             if in_wamv:
                 current_block += line
                 if 'orientation {' in current_block and 'w:' in line: # End of wamv block roughly
-                    # Parse block
-                    px = re.search(r'position {\s*x:\s*([-\d\.e]+)', current_block)
-                    py = re.search(r'position {.*y:\s*([-\d\.e]+)', current_block.replace('\n', ''))
-                    
-                    ox = re.search(r'orientation {\s*x:\s*([-\d\.e]+)', current_block)
-                    oy = re.search(r'orientation {.*y:\s*([-\d\.e]+)', current_block.replace('\n', ''))
-                    oz = re.search(r'orientation {.*z:\s*([-\d\.e]+)', current_block.replace('\n', ''))
-                    ow = re.search(r'orientation {.*w:\s*([-\d\.e]+)', current_block.replace('\n', ''))
-                    
-                    if px and py and ox and oy and oz and ow:
-                        self.update_pose(
-                            float(px.group(1)), float(py.group(1)),
-                            float(ox.group(1)), float(oy.group(1)), float(oz.group(1)), float(ow.group(1))
-                        )
-                    
+                    # Parse block. Gazebo's protobuf text format OMITS any
+                    # field that equals its default (0.0) entirely -- a
+                    # level vessel doing a pure-yaw rotation has quaternion
+                    # x=0, z=0, which is the NORMAL resting case, not an
+                    # edge case. Requiring every field to literally appear
+                    # as text (confirmed bug, 2026-08-09) meant pose never
+                    # updated for CUSV at all (its x/z orientation fields
+                    # are omitted every single frame), silently freezing
+                    # its broadcast AIS position at start -- default each
+                    # missing field to 0.0 (protobuf's own semantics)
+                    # instead of requiring a textual match for all six.
+                    block_flat = current_block.replace('\n', '')
+
+                    def _field(pattern, text=block_flat):
+                        m = re.search(pattern, text)
+                        return float(m.group(1)) if m else 0.0
+
+                    px = _field(r'position {\s*x:\s*([-+\d\.e]+)', current_block)
+                    py = _field(r'position {.*?y:\s*([-+\d\.e]+)')
+                    ox = _field(r'orientation {\s*x:\s*([-+\d\.e]+)', current_block)
+                    oy = _field(r'orientation {.*?y:\s*([-+\d\.e]+)')
+                    oz = _field(r'orientation {.*?z:\s*([-+\d\.e]+)')
+                    ow = _field(r'orientation {.*?w:\s*([-+\d\.e]+)')
+
+                    self.update_pose(px, py, ox, oy, oz, ow)
+
                     in_wamv = False
                     current_block = ""
 

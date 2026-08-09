@@ -5,11 +5,20 @@ boot a vehicle, run cyber-attacks against it, and score rule-based detectors on
 how well they catch those attacks. This guide is the front door — how to run it,
 read results, and add your own vehicle.
 
+> This guide walks through the underlying, generic `profiles/*.json` +
+> `run_sim.sh`/`run_demo.sh <profile>` mechanism — still the right read if
+> you're adding a new vehicle from scratch (see "Adding your own vehicle"
+> below, and `docs/NEW_AUV_QUICKSTART.md` for a full worked AUV example).
+> For the current primary demo set — 4 self-contained `vehicle_twins/`
+> packages built on this same mechanism, real Navy/research hardware
+> (Textron CUSV, REMUS-100), plus the CLI resilience tester — see
+> `docs/TWIN_DEMO_GUIDE.md`.
+
 ## What's in the box
 
 | Layer | Where | What it does |
 |---|---|---|
-| Vehicles | `profiles/*.json` + `sim_config/**` | WAM-V (surface, ArduRover) and BlueROV2 (underwater, ArduSub), each a self-describing profile pointing at a Gazebo model. |
+| Vehicles | `profiles/*.json` + `sim_config/**` | WAM-V/BlueBoat (surface, ArduRover), BlueROV2 (underwater, ArduSub), plus the current primary demo twins (`vehicle_twins/`: Textron CUSV, REMUS-100) — each a self-describing profile pointing at a Gazebo model. |
 | One-command sim | `tools/run_sim.sh` | Boots a whole domain's stack with real health checks: Gazebo world → FDM relay → ArduPilot SITL → MAVLink bridge → (surface) AIS emulator. |
 | Attacks | `attacks/*.py` | `gps_spoof`, `ais_spoof` (ghost + impersonation), `c2_replay` (RC-override / command injection), `acoustic_spoof` (submerged position spoof). |
 | Attack runner | `tools/run_attack_suite.py` | Runs the profile's applicable attacks, verifies each vs true Gazebo pose, reports PASS/FAIL/SKIP/N-A. |

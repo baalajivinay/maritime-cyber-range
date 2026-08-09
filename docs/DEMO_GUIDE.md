@@ -1,5 +1,11 @@
 # Demo Guide — presenting the Maritime Cyber Range
 
+> This guide predates and still works with the original, generic
+> `profiles/{wamv,blueboat,bluerov2}.json` boot path used below. For the
+> current primary demo set — real, individually-named Navy/research
+> vehicles (Textron CUSV, REMUS-100), plus the CLI resilience tester and
+> cross-target report — see `docs/TWIN_DEMO_GUIDE.md` instead.
+
 A hybrid presentation: **Gazebo 3D** for physical immersion + the **live dashboard**
 for the cyber story. Each shows what the other can't.
 

@@ -58,6 +58,36 @@ os.makedirs(os.path.dirname(ATTACK_LOG_PATH), exist_ok=True)
 _log_lock = threading.Lock()
 
 
+# Ground truth is logged from run_relay()'s hot loop, which sees an FDM
+# packet every ~4ms while lockstep is running -- logging every single one
+# while spoofing is active grows the CSV by ~250 rows/sec of active spoof
+# time (confirmed live 2026-08-09: a session's worth of testing inflated
+# this file from ~3K to ~290K rows). score_detectors.py's window-clustering
+# only needs each activation's approximate start/end (its 12s pad tolerates
+# being off by far more than this), not every packet, so throttle to ~10Hz
+# -- the same resolution tools/test_target.py's own RC-override sender
+# already uses elsewhere in this project. The FIRST packet of each new
+# activation always logs immediately (unthrottled) so a window's start --
+# and therefore measured detection latency -- stays accurate to the actual
+# moment spoofing began, not up to one throttle interval late.
+_MIN_LOG_INTERVAL_S = 0.1
+_last_log = {"ts": None, "was_active": False}
+
+
+def _should_log(now, is_active):
+    """Call once per packet, in order, from the single relay thread only
+    (not thread-safe -- run_relay() is the only caller)."""
+    if not is_active:
+        _last_log["was_active"] = False
+        return False
+    just_activated = not _last_log["was_active"]
+    _last_log["was_active"] = True
+    if just_activated or _last_log["ts"] is None or (now - _last_log["ts"]) >= _MIN_LOG_INTERVAL_S:
+        _last_log["ts"] = now
+        return True
+    return False
+
+
 def log_attack_event(wall_ts, attack_type, true_n, true_e, forged_n, forged_e):
     with _log_lock:
         write_header = not os.path.exists(ATTACK_LOG_PATH)
@@ -162,9 +192,12 @@ def run_relay():
                     forged_e = true_e + off_e
                     payload["position"][0] = forged_n
                     payload["position"][1] = forged_e
-                    log_attack_event(time.time(), mode, true_n, true_e, forged_n, forged_e)
+                    now = time.time()
+                    if _should_log(now, True):
+                        log_attack_event(now, mode, true_n, true_e, forged_n, forged_e)
                     out_bytes = json.dumps(payload).encode("utf-8") + b"\n"
                 else:
+                    _should_log(0.0, False)  # reset activation-edge tracking
                     out_bytes = reply  # pass through unmodified, byte-identical
 
                 packet_count += 1

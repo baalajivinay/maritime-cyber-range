@@ -453,6 +453,29 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-09 (twin cleanup): **Removed the 4 original reference twins**
+  (`vehicle_twins/mass_vulnerable_wamv/`, `mass_resilient_blueboat/`,
+  `auv_vulnerable_bluerov2/`, `auv_resilient_bluerov2_hardened/`) plus
+  their `profiles/*.json` symlinks and their `target_runs/` evidence
+  (including the older `wamv_local`/`blueboat_local`/`bluerov2_local`
+  ad hoc runs) at the user's explicit request, now that CUSV/REMUS-100
+  are fully live-verified as the primary demo set — this project now
+  ships exactly 4 twins, not 8. Scope, confirmed with the user first:
+  twin *packages* only, not the underlying hull models -- `sim_config/
+  models/blueboat/`, `sim_config/models/bluerov2/`, the VRX-based WAM-V,
+  and their base `profiles/wamv.json`/`blueboat.json`/`bluerov2.json`
+  stay on disk (`docs/NEW_AUV_QUICKSTART.md`'s own tutorial still clones
+  BlueROV2 as a starting point for a brand-new AUV twin, independent of
+  whether BlueROV2 has its own `vehicle_twins/` package). Fixed the
+  handful of now-dead cross-references this left behind in the kept
+  twins' own files (`vehicle_twins/mass_resilient_cusv/{README.md,
+  hardened.parm}`, `vehicle_twins/auv_resilient_remus100_hardened/
+  {README.md,hardened.parm}` all cited the removed BlueBoat/BlueROV2
+  twins by path as provenance for their hardening mechanism -- reworded
+  to describe the same substance without a dead relative link) and
+  rewrote `docs/TWIN_DEMO_GUIDE.md`'s "8 folder paths (4 primary + 4
+  retained reference)" framing down to a plain 4.
+
 - 2026-08-08 (real-hull rebuild, Phase C-fallback + Phase D): **REMUS-100
   (real US Navy shallow-water mine-countermeasures AUV) fully built on the
   proven ArduSub 6-thruster architecture, live-verified end to end,
