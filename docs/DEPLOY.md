@@ -64,6 +64,18 @@ gunzip -c mcr-image.tar.gz | docker load
 > **natively on your GPU workstation** (the repo's `tools/run_demo.sh wamv up`),
 > where VRX works as designed. Making `wamv` boot headless in Docker (likely an
 > `xvfb`/offscreen-rendering setup for VRX) is a known follow-up.
+>
+> **The current primary demo twins** (`vehicle_twins/mass_vulnerable_cusv`,
+> `auv_vulnerable_remus100`, and their hardened pairs) use the same non-VRX
+> Gazebo boot path as `blueboat`/`bluerov2` respectively (not WAM-V's VRX
+> path), so they should be Docker-compatible in principle -- e.g.
+> `./launch.sh up vehicle_twins/mass_vulnerable_cusv` (the full folder path,
+> same argument `tools/run_vehicle.sh`/`run_demo.sh` take natively -- the
+> bare profile name alone won't resolve on a fresh container, since its
+> `profiles/*.json` symlink is only created the first time the folder path
+> is used). This has **not been explicitly verified in the container** yet
+> (only natively, see each twin's own `README.md`); treat it as
+> likely-to-work, not validated, until someone confirms it end to end.
 
 Then open **http://localhost:8080** — set a destination, launch GPS / AIS / C2 /
 acoustic attacks, watch true-vs-believed diverge and the live detector alerts,
