@@ -22,3 +22,15 @@
 GPS1_TYPE 14
 MAV_GCS_SYSID 77
 MAV_OPTIONS 1
+
+# CUSV skid-steer output mapping -- same fix, same reasoning as
+# vehicle_twins/mass_vulnerable_cusv/cusv.parm's own header comment
+# (found missing 2026-08-09). Without this, ArduRover's factory defaults
+# (SERVO1_FUNCTION=26 GroundSteering, SERVO3_FUNCTION=70 plain Throttle)
+# don't mix steering into CUSV's twin-thruster differential output at
+# all -- confirmed live, the boat drove in a straight line and never
+# turned toward its AUTO-mode waypoint. ardu_defaults files aren't
+# merged (SITL only accepts one), so this hardened twin needs its own
+# copy of the same two lines, not just a reference to the other file.
+SERVO1_FUNCTION 73
+SERVO3_FUNCTION 74

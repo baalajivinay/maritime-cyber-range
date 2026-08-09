@@ -40,5 +40,6 @@
     "sdf": "sim_config/cusv_world.sdf",
     "model_name": "cusv",
     "world_name": "cusv_harbor"
-  }
+  },
+  "ardu_defaults": "vehicle_twins/mass_vulnerable_cusv/cusv.parm"
 }

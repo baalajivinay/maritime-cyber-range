@@ -1,0 +1,3 @@
+wall_ts,attack_type,description
+1786286164.0696266,inject_mode,forged mode change to HOLD
+1786286174.8507915,inject_rc_override,"throttle=1700, steering=1500, 8.0s"
