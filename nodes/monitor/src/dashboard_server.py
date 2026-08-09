@@ -366,6 +366,18 @@ def _gz_xy():
 # --- attack + command execution ---------------------------------------------
 _attacks = {}     # type -> stop_event
 _last_goal = None  # (lat, lon) of the last destination, to resume after an attack
+# goto() opens a brand-new udpin: MAVLink connection every call (not a shared
+# singleton like cmd_conn()), and pymavlink sets SO_REUSEADDR on that socket
+# (confirmed live 2026-08-09) -- a second bind to the same port from a second
+# concurrent goto() call succeeds instead of raising, and the kernel can then
+# start delivering that port's incoming traffic to the NEW socket, silently
+# stealing replies (MISSION_REQUEST/HEARTBEAT/etc.) out from under the FIRST
+# call's still-in-flight mission upload. Redirecting to a new destination
+# before the previous goto() finishes (~8-10s, an entirely normal thing to
+# do) could therefore corrupt or orphan the earlier navigation command --
+# this lock serializes all goto() calls (including stop_attacks()'s own
+# resume-course call) so a second click waits its turn instead of racing.
+_goto_lock = threading.Lock()
 
 
 def _relay(cmd):
@@ -376,6 +388,26 @@ def _relay(cmd):
         print(f"relay write failed: {e}")
 
 
+def _stop_kind(kind):
+    """Stop a single previously-launched ais_spoof/acoustic_spoof instance,
+    if one is running -- same logic stop_attacks() uses for these two kinds,
+    factored out so launch_attack() can call it before starting a new one.
+    Without this, re-launching either attack while one is already active
+    orphans the old instance: a new threading.Event()/module reference
+    overwrites the old one in _attacks, so the OLD ghost/impersonation
+    threads (ais_spoof) or the OLD redundant run_feed thread+subprocess
+    (acoustic_spoof) keep running forever, unreachable by any future
+    Stop Attacks click (confirmed live 2026-08-09 while auditing the
+    dashboard for a reported navigation bug -- a related, real leak found
+    along the way, not the bug itself)."""
+    if kind == "ais_spoof" and "ais_spoof" in _attacks:
+        _attacks.pop("ais_spoof").set()
+    elif kind == "acoustic_spoof" and "acoustic_spoof" in _attacks:
+        A = _attacks.pop("acoustic_spoof")
+        with A._lock:
+            A.state.active = False
+
+
 def launch_attack(kind, opts=None):
     opts = opts or {}
     _attack_launch_t[kind] = time.time()
@@ -383,6 +415,7 @@ def launch_attack(kind, opts=None):
     if kind == "gps_spoof":
         _relay("step"); return "GPS spoof engaged (+50 m offset injected)"
     if kind == "ais_spoof":
+        _stop_kind("ais_spoof")
         import ais_spoof
         stop = threading.Event(); _attacks["ais_spoof"] = stop
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -423,6 +456,7 @@ def launch_attack(kind, opts=None):
         threading.Thread(target=_c2, daemon=True).start()
         return "C2 injection: " + labels.get(command, command)
     if kind == "acoustic_spoof":
+        _stop_kind("acoustic_spoof")
         import acoustic_spoof as A
         _attacks["acoustic_spoof"] = A
         def _ac():
@@ -439,12 +473,8 @@ def launch_attack(kind, opts=None):
 
 def stop_attacks():
     _relay("off")
-    if "ais_spoof" in _attacks:
-        _attacks.pop("ais_spoof").set()
-    if "acoustic_spoof" in _attacks:
-        A = _attacks.pop("acoustic_spoof")
-        with A._lock:
-            A.state.active = False
+    _stop_kind("ais_spoof")
+    _stop_kind("acoustic_spoof")
     # An attack may have left the boat in MANUAL (C2) or an EKF failsafe (GPS
     # spoof), so it stops. If a destination is set, put it back on course.
     if _last_goal is not None:
@@ -457,11 +487,20 @@ def stop_attacks():
 
 
 def goto(lat, lon):
+    """Serializes all navigation commands through _goto_lock -- see that
+    lock's own comment for why (concurrent goto() calls can corrupt each
+    other's in-flight mission upload via a shared, SO_REUSEADDR'd port)."""
+    with _goto_lock:
+        return _goto_locked(lat, lon)
+
+
+def _goto_locked(lat, lon):
     """Sail to a point via the proven AUTO-mission recipe -- verified to
     physically move the vehicle across the Gazebo water. Uses a fresh connection
     on the auto_mission port (the shared cmd conn / GUIDED target did not
     reliably drive it), uploads a 2-waypoint mission (current -> target),
-    switches to AUTO, and arms with confirmation."""
+    switches to AUTO, and arms with confirmation. Only ever called while
+    holding _goto_lock (via goto() above) -- do not call directly."""
     global _last_goal
     _last_goal = (lat, lon)
     c = mavutil.mavlink_connection(f'udpin:127.0.0.1:{constants.MAVLINK_AUTO_MISSION_PORT}',
