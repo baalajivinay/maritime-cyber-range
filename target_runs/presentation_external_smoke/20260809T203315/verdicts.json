@@ -1,0 +1,130 @@
+{
+  "target": "presentation_external_smoke",
+  "domain": "surface",
+  "run_ts": "20260809T203315",
+  "baseline": {
+    "lat": null,
+    "lon": null,
+    "mode": "MANUAL",
+    "armed": false,
+    "servo1": 1500,
+    "servo3": 1500,
+    "servo5": 0,
+    "heartbeats": 8
+  },
+  "attacks": {
+    "c2_replay": {
+      "mode_change": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "HOLD",
+          "post_mode": "HOLD",
+          "heartbeats_seen_after": 6
+        }
+      },
+      "rc_override": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "armed_confirmed": true,
+          "armed_during_injection": true,
+          "watched_channel": "servo3",
+          "pre_servo3": 1500,
+          "peak_servo3_during_injection": 1680,
+          "forged_throttle_pwm": 1700
+        }
+      }
+    },
+    "gps_spoof": {
+      "vulnerability": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "fused_lat0": -18.922,
+          "fused_lon0": 72.834,
+          "method": "gps_input",
+          "gps_id": 0,
+          "raw_peak_delta_m": 50.0,
+          "peak_delta_m": 50.64,
+          "expected_offset_m": 50.0
+        }
+      }
+    },
+    "ais_spoof": {
+      "vulnerability": {
+        "verdict": "N/A",
+        "evidence": {
+          "reason": "ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.",
+          "modes_run": [
+            "ghost"
+          ]
+        }
+      }
+    }
+  },
+  "detectability": {
+    "min_ts": 1786287752.2740529,
+    "max_ts": 1786287914.2793775,
+    "families": {
+      "ais_spoof": {
+        "tp": 7,
+        "fp": 0,
+        "windows": 1,
+        "detected": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "latency": {
+          "n": 1,
+          "mean_s": 2.001,
+          "median_s": 2.001,
+          "p95_s": 2.001,
+          "max_s": 2.001
+        }
+      },
+      "c2_replay": {
+        "tp": 3,
+        "fp": 0,
+        "windows": 2,
+        "detected": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "latency": {
+          "n": 2,
+          "mean_s": 9.513,
+          "median_s": 9.513,
+          "p95_s": 10.783,
+          "max_s": 10.924
+        }
+      },
+      "gps_spoof": {
+        "tp": 1,
+        "fp": 0,
+        "windows": 1,
+        "detected": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "latency": {
+          "n": 1,
+          "mean_s": 0.198,
+          "median_s": 0.198,
+          "p95_s": 0.198,
+          "max_s": 0.198
+        }
+      }
+    },
+    "overall": {
+      "tp": 11,
+      "fp": 0,
+      "windows": 4,
+      "detected": 4,
+      "precision": 1.0,
+      "recall": 1.0,
+      "latency": {
+        "n": 4,
+        "mean_s": 5.306,
+        "median_s": 5.052,
+        "p95_s": 10.501,
+        "max_s": 10.924
+      }
+    }
+  }
+}

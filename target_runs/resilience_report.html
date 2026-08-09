@@ -41,12 +41,23 @@
                background: rgba(120,120,120,0.1); display: inline-block; margin: 0.5rem 0 1rem; }
   .gaps { background: rgba(180,83,9,0.08); border-radius: 8px; padding: 0.8rem 1.1rem; font-size: 0.88rem; }
   .gaps h4 { margin-top: 0; }
+  .execsum { background: rgba(70,130,180,0.08); border-left: 3px solid #4682b4; border-radius: 4px;
+              padding: 0.7rem 1rem; margin: 0.6rem 0 1.2rem; font-size: 0.95rem; }
+  table.timeline td { text-align: left; font-size: 0.85rem; }
+  table.timeline td:first-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tr.tl-inject td:nth-child(2) { color: #b91c1c; font-weight: 600; }
+  tr.tl-detect td:nth-child(2) { color: #1d4ed8; font-weight: 600; }
+  @media (prefers-color-scheme: dark) {
+    .execsum { background: rgba(70,130,180,0.15) !important; }
+    tr.tl-inject td:nth-child(2) { color: #f87171 !important; }
+    tr.tl-detect td:nth-child(2) { color: #60a5fa !important; }
+  }
   footer { margin-top: 3rem; color: #888; font-size: 0.8rem; border-top: 1px solid #d0d3d8; padding-top: 1rem; }
 </style>
 </head>
 <body>
   <h1>Autonomous Maritime Cyber Range</h1>
-  <div class="meta">Resilience report &middot; generated 2026-08-09 07:51:24 IST</div>
+  <div class="meta">Resilience report &middot; generated 2026-08-09 21:38:15 IST</div>
 
   <div class="methodology">
     <h2>Methodology</h2>
@@ -64,6 +75,23 @@
     otherwise any INCONCLUSIVE finding means CONDITIONALLY READY (retest before trusting the
     result); only RESILIENT/N-A outcomes across the board means READY <i>against the attacks
     actually tested</i> -- not a general security clearance.</p>
+    <p><b>No machine learning is used anywhere in this pipeline.</b> Detection is a set of
+    hand-written rule-based state machines (<code>detection/detectors.py</code>) checking for
+    physically/protocol-implausible events -- e.g. a believed-position jump faster than any real
+    hull could move, or an <code>RC_CHANNELS_OVERRIDE</code> message appearing on the wire at
+    all. "Precision/recall/latency" here is <i>not</i> a classifier's confusion matrix over
+    labeled samples -- it's computed by <code>tools/score_detectors.py</code> matching each
+    detector alert's timestamp against padded ground-truth attack windows (when the attack
+    script itself logged an injection) that the detector never had access to while running, so
+    the score can't be inflated by the detector having privileged knowledge of the attack.</p>
+    <p><b>A mode-dependent caveat worth knowing before reading a RESILIENT verdict on
+    <code>rc_override</code>:</b> ArduPilot only reads <code>RC_CHANNELS_OVERRIDE</code>'s
+    throttle/steering as live control input in pilot-manual modes (MANUAL/ACRO/STEERING) --
+    in an autonomous mode (AUTO/GUIDED/HOLD) the navigation controller owns the actuators and a
+    throttle-seizing attack has no visible effect purely because of that mode, independent of
+    any actual hardening. This test suite's own <code>rc_override</code> check forces MANUAL
+    mode before injecting specifically to avoid this false negative -- confirmed live,
+    2026-08-09, against this project's own CUSV twin.</p>
   </div>
 
   <h2>Cross-target summary</h2>
@@ -125,6 +153,14 @@
           <td>100%</td>
         </tr>
         <tr>
+          <td>presentation_external_smoke</td>
+          <td>surface</td>
+          <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
+          <td>3</td>
+          <td>0</td>
+          <td>100%</td>
+        </tr>
+        <tr>
           <td>standalone_test</td>
           <td>surface</td>
           <td class="v-not-ready"><b>NOT READY TO DEPLOY</b></td>
@@ -137,9 +173,10 @@
   
     <section class="profile">
       <h2>auv_resilient_remus100_hardened <span class="domain">(underwater)</span></h2>
-      <p class="src">Run 20260809T023955, from
-         <code>target_runs/auv_resilient_remus100_hardened/20260809T023955/verdicts.json</code>.</p>
+      <p class="src">Run 20260809T203100, from
+         <code>target_runs/auv_resilient_remus100_hardened/20260809T203100/verdicts.json</code>.</p>
       <div class="headline v-conditional">CONDITIONALLY READY -- retest needed</div>
+      <div class="execsum"><b>auv_resilient_remus100_hardened</b> (underwater) was tested against every attack this tool supports and the result is <b class="v-conditional">CONDITIONALLY READY -- retest needed</b>. No attack in this test suite corrupted the vehicle's own reported state. command-and-control hijacking via seizing direct throttle/steering control could not be conclusively tested this run (see the evidence for why) -- treat as unproven, not as resilient, until retested. A blind rule-based monitor watching the same traffic caught 0 of 2 attack windows (recall 0%, precision n/a) -- this is independent of whether the attack itself succeeded.</div>
       <h3>Vulnerability</h3>
       
     <table class="detail">
@@ -159,6 +196,12 @@
           <td class="ev">armed_confirmed=False, armed_during_injection=False, watched_channel=servo5, pre_servo5=1500, peak_servo5_during_injection=1500, forged_throttle_pwm=1700<br><i>target did not confirm ARMED after the arm sequence -- preconditions not met</i></td>
           <td class="rec"></td>
         </tr></tbody>
+    </table>
+      
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody><tr class="tl-inject"><td>t+0.00s</td><td>INJECTED</td><td>inject_mode: forged mode change to ALT_HOLD</td></tr><tr class="tl-inject"><td>t+20.51s</td><td>INJECTED</td><td>inject_rc_override: throttle=1700, steering=1500, 8.0s</td></tr></tbody>
     </table>
       <h3>Detectability</h3>
       <table class="detail">
@@ -186,9 +229,10 @@
     </section>
     <section class="profile">
       <h2>auv_vulnerable_remus100 <span class="domain">(underwater)</span></h2>
-      <p class="src">Run 20260809T075045, from
-         <code>target_runs/auv_vulnerable_remus100/20260809T075045/verdicts.json</code>.</p>
+      <p class="src">Run 20260809T202951, from
+         <code>target_runs/auv_vulnerable_remus100/20260809T202951/verdicts.json</code>.</p>
       <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <div class="execsum"><b>auv_vulnerable_remus100</b> (underwater) was tested against every attack this tool supports and the result is <b class="v-not-ready">NOT READY TO DEPLOY</b>. An attacker on the same network could succeed at: command-and-control hijacking via forging a flight-mode change; command-and-control hijacking via seizing direct throttle/steering control. These are real, live-demonstrated findings, not theoretical -- see the timeline and raw evidence below for exactly what was sent and what the vehicle did in response. A blind rule-based monitor watching the same traffic caught 2 of 2 attack windows (recall 100%, precision 100%) -- this is independent of whether the attack itself succeeded.</div>
       <h3>Vulnerability</h3>
       
     <table class="detail">
@@ -209,6 +253,12 @@
           <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
         </tr></tbody>
     </table>
+      
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody><tr class="tl-inject"><td>t+0.00s</td><td>INJECTED</td><td>inject_mode: forged mode change to ALT_HOLD</td></tr><tr class="tl-inject"><td>t+11.00s</td><td>INJECTED</td><td>inject_rc_override: throttle=1700, steering=1500, 8.0s</td></tr><tr class="tl-detect"><td>t+11.21s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr><tr class="tl-detect"><td>t+14.27s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr><tr class="tl-detect"><td>t+17.31s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr></tbody>
+    </table>
       <h3>Detectability</h3>
       <table class="detail">
         <thead>
@@ -226,9 +276,9 @@
           <td>2/2</td>
           <td>100%</td>
           <td>100%</td>
-          <td>9.60s</td>
-          <td>10.94s</td>
-          <td>11.09s</td>
+          <td>9.70s</td>
+          <td>11.05s</td>
+          <td>11.21s</td>
         </tr></tbody>
       </table>
       
@@ -238,6 +288,7 @@
       <p class="src">Run 20260807T065455, from
          <code>target_runs/gps_test_converged/20260807T065455/verdicts.json</code>.</p>
       <div class="headline v-ready">READY (against the attacks tested)</div>
+      <div class="execsum"><b>gps_test_converged</b> (surface) was tested against every attack this tool supports and the result is <b class="v-ready">READY (against the attacks tested)</b>. No attack in this test suite corrupted the vehicle's own reported state. A blind rule-based monitor watching the same traffic caught 1 of 1 attack windows (recall 100%, precision 100%) -- this is independent of whether the attack itself succeeded.</div>
       <h3>Vulnerability</h3>
       
     <table class="detail">
@@ -250,6 +301,12 @@
           <td class="ev">fused_lat0=12.9716001, fused_lon0=77.5946001, method=gps_input, gps_id=0, raw_peak_delta_m=50.0, peak_delta_m=0.02, expected_offset_m=50.0</td>
           <td class="rec"></td>
         </tr></tbody>
+    </table>
+      
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody><tr class="tl-detect"><td>t+0.00s</td><td>DETECTED</td><td>GpsJumpDetector: believed position moved at 497 m/s (&gt; 15) -- implausible</td></tr><tr class="tl-inject"><td>t+4.98s</td><td>INJECTED</td><td>step: gps_input step gps_id=0</td></tr></tbody>
     </table>
       <h3>Detectability</h3>
       <table class="detail">
@@ -280,6 +337,7 @@
       <p class="src">Run 20260807T070249, from
          <code>target_runs/gps_test_fresh/20260807T070249/verdicts.json</code>.</p>
       <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <div class="execsum"><b>gps_test_fresh</b> (surface) was tested against every attack this tool supports and the result is <b class="v-not-ready">NOT READY TO DEPLOY</b>. An attacker on the same network could succeed at: GPS spoofing. These are real, live-demonstrated findings, not theoretical -- see the timeline and raw evidence below for exactly what was sent and what the vehicle did in response. A blind rule-based monitor watching the same traffic caught 1 of 1 attack windows (recall 100%, precision 100%) -- this is independent of whether the attack itself succeeded.</div>
       <h3>Vulnerability</h3>
       
     <table class="detail">
@@ -292,6 +350,12 @@
           <td class="ev">fused_lat0=12.9716, fused_lon0=77.5946, method=gps_input, gps_id=0, raw_peak_delta_m=50.0, peak_delta_m=50.0, expected_offset_m=50.0</td>
           <td class="rec">The autopilot&#x27;s position estimate followed the forged input with no apparent rejection. Consider multi-GPS blending (GPS_BLEND) or an independent EKF innovation/consistency check (cross-referencing against IMU-based dead reckoning) so a sudden implausible jump is flagged and gated rather than trusted outright.</td>
         </tr></tbody>
+    </table>
+      
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody><tr class="tl-inject"><td>t+0.00s</td><td>INJECTED</td><td>step: gps_input step gps_id=0</td></tr><tr class="tl-detect"><td>t+0.10s</td><td>DETECTED</td><td>GpsJumpDetector: believed position moved at 512 m/s (&gt; 15) -- implausible</td></tr></tbody>
     </table>
       <h3>Detectability</h3>
       <table class="detail">
@@ -319,9 +383,10 @@
     </section>
     <section class="profile">
       <h2>mass_resilient_cusv <span class="domain">(surface)</span></h2>
-      <p class="src">Run 20260808T233845, from
-         <code>target_runs/mass_resilient_cusv/20260808T233845/verdicts.json</code>.</p>
+      <p class="src">Run 20260809T202808, from
+         <code>target_runs/mass_resilient_cusv/20260809T202808/verdicts.json</code>.</p>
       <div class="headline v-conditional">CONDITIONALLY READY -- retest needed</div>
+      <div class="execsum"><b>mass_resilient_cusv</b> (surface) was tested against every attack this tool supports and the result is <b class="v-conditional">CONDITIONALLY READY -- retest needed</b>. No attack in this test suite corrupted the vehicle's own reported state. command-and-control hijacking via seizing direct throttle/steering control could not be conclusively tested this run (see the evidence for why) -- treat as unproven, not as resilient, until retested. A blind rule-based monitor watching the same traffic caught 1 of 3 attack windows (recall 33%, precision 100%) -- this is independent of whether the attack itself succeeded.</div>
       <h3>Vulnerability</h3>
       
     <table class="detail">
@@ -356,6 +421,12 @@
           <td class="rec"></td>
         </tr></tbody>
     </table>
+      
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody><tr class="tl-inject"><td>t+0.00s</td><td>INJECTED</td><td>inject_mode: forged mode change to HOLD</td></tr><tr class="tl-inject"><td>t+20.74s</td><td>INJECTED</td><td>inject_rc_override: throttle=1700, steering=1500, 8.0s</td></tr><tr class="tl-inject"><td>t+34.00s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+34.00s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+34.00s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+34.00s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+36.00s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+36.00s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+36.00s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+36.00s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+38.00s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+38.00s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+38.00s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+38.00s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+40.01s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+40.01s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+40.01s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+40.01s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+42.01s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+42.01s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+42.01s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+42.01s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+44.01s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+44.01s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+44.01s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+44.01s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+46.01s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+46.01s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+46.01s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+46.01s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+48.01s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+48.01s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+48.01s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+48.01s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+50.01s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+50.01s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+50.01s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+50.01s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+52.01s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+52.01s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+52.01s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+52.01s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 188 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr></tbody>
+    </table>
       <h3>Detectability</h3>
       <table class="detail">
         <thead>
@@ -367,7 +438,7 @@
         <tbody>
         <tr>
           <td>ais_spoof</td>
-          <td>19</td>
+          <td>20</td>
           <td>0</td>
           <td>0%</td>
           <td>1/1</td>
@@ -395,9 +466,10 @@
     </section>
     <section class="profile">
       <h2>mass_vulnerable_cusv <span class="domain">(surface)</span></h2>
-      <p class="src">Run 20260809T032028, from
-         <code>target_runs/mass_vulnerable_cusv/20260809T032028/verdicts.json</code>.</p>
+      <p class="src">Run 20260809T202610, from
+         <code>target_runs/mass_vulnerable_cusv/20260809T202610/verdicts.json</code>.</p>
       <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <div class="execsum"><b>mass_vulnerable_cusv</b> (surface) was tested against every attack this tool supports and the result is <b class="v-not-ready">NOT READY TO DEPLOY</b>. An attacker on the same network could succeed at: command-and-control hijacking via forging a flight-mode change; command-and-control hijacking via seizing direct throttle/steering control; GPS spoofing. These are real, live-demonstrated findings, not theoretical -- see the timeline and raw evidence below for exactly what was sent and what the vehicle did in response. A blind rule-based monitor watching the same traffic caught 4 of 4 attack windows (recall 100%, precision 100%) -- this is independent of whether the attack itself succeeded.</div>
       <h3>Vulnerability</h3>
       
     <table class="detail">
@@ -421,7 +493,7 @@
           <td>gps_spoof</td>
           <td>vulnerability</td>
           <td class="v-bad"><b>VULNERABLE</b></td>
-          <td class="ev">pre_lat=-33.7242216, pre_lon=150.6797432, method=fdm_relay, peak_delta_m=51.86, expected_offset_m=50.0</td>
+          <td class="ev">pre_lat=-33.7242229, pre_lon=150.6799145, method=fdm_relay, peak_delta_m=55.95, expected_offset_m=50.0</td>
           <td class="rec">The autopilot&#x27;s position estimate followed the forged input with no apparent rejection. Consider multi-GPS blending (GPS_BLEND) or an independent EKF innovation/consistency check (cross-referencing against IMU-based dead reckoning) so a sudden implausible jump is flagged and gated rather than trusted outright.</td>
         </tr>
         <tr>
@@ -431,6 +503,12 @@
           <td class="ev">modes_run=[&#x27;ghost&#x27;, &#x27;impersonate&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
           <td class="rec"></td>
         </tr></tbody>
+    </table>
+      
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody><tr class="tl-inject"><td>t+0.00s</td><td>INJECTED</td><td>inject_mode: forged mode change to HOLD</td></tr><tr class="tl-inject"><td>t+9.78s</td><td>INJECTED</td><td>inject_rc_override: throttle=1700, steering=1500, 8.0s</td></tr><tr class="tl-detect"><td>t+9.98s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr><tr class="tl-detect"><td>t+11.50s</td><td>DETECTED</td><td>GpsJumpDetector: believed position moved at 24 m/s (&gt; 15) -- implausible</td></tr><tr class="tl-detect"><td>t+13.02s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr><tr class="tl-detect"><td>t+16.06s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr><tr class="tl-inject"><td>t+17.88s</td><td>INJECTED</td><td>step: fdm_relay step</td></tr><tr class="tl-detect"><td>t+17.90s</td><td>DETECTED</td><td>GpsJumpDetector: believed position moved at 2601 m/s (&gt; 15) -- implausible</td></tr><tr class="tl-detect"><td>t+37.90s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+37.90s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+37.90s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+37.90s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+39.90s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+39.90s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+39.90s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-detect"><td>t+39.90s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+41.90s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+41.90s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-detect"><td>t+41.90s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+41.90s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+43.90s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+43.90s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+43.90s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-detect"><td>t+43.91s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+45.91s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+45.91s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+45.91s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+45.91s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+47.91s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+47.91s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-detect"><td>t+47.91s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+47.91s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+49.91s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+49.91s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-inject"><td>t+49.91s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+49.91s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+51.91s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+51.91s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+51.91s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-detect"><td>t+51.91s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+53.91s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-inject"><td>t+53.91s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+53.91s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-detect"><td>t+53.91s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+55.91s</td><td>INJECTED</td><td>impersonate: own_mmsi=367999555</td></tr><tr class="tl-detect"><td>t+55.91s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 367999555 broadcast 156 m from the vessel&#x27;s own telemetry position (closest match in the last 200s) -- impersonation</td></tr><tr class="tl-detect"><td>t+55.91s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+55.91s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr></tbody>
     </table>
       <h3>Detectability</h3>
       <table class="detail">
@@ -462,9 +540,105 @@
           <td>2/2</td>
           <td>100%</td>
           <td>100%</td>
-          <td>9.59s</td>
-          <td>10.84s</td>
-          <td>10.98s</td>
+          <td>9.09s</td>
+          <td>9.89s</td>
+          <td>9.98s</td>
+        </tr>
+
+        <tr>
+          <td>gps_spoof</td>
+          <td>2</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+          <td>0.00s</td>
+        </tr></tbody>
+      </table>
+      
+    </section>
+    <section class="profile">
+      <h2>presentation_external_smoke <span class="domain">(surface)</span></h2>
+      <p class="src">Run 20260809T203315, from
+         <code>target_runs/presentation_external_smoke/20260809T203315/verdicts.json</code>.</p>
+      <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <div class="execsum"><b>presentation_external_smoke</b> (surface) was tested against every attack this tool supports and the result is <b class="v-not-ready">NOT READY TO DEPLOY</b>. An attacker on the same network could succeed at: command-and-control hijacking via forging a flight-mode change; command-and-control hijacking via seizing direct throttle/steering control; GPS spoofing. These are real, live-demonstrated findings, not theoretical -- see the timeline and raw evidence below for exactly what was sent and what the vehicle did in response. A blind rule-based monitor watching the same traffic caught 4 of 4 attack windows (recall 100%, precision 100%) -- this is independent of whether the attack itself succeeded.</div>
+      <h3>Vulnerability</h3>
+      
+    <table class="detail">
+      <thead><tr><th>Attack</th><th>Sub-check</th><th>Verdict</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>c2_replay</td>
+          <td>mode_change</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">pre_mode=MANUAL, forged_mode=HOLD, post_mode=HOLD, heartbeats_seen_after=6</td>
+          <td class="rec">Enable MAVLink2 message signing (the SIGNING_KEY parameter) so an unsigned forged mode-change command is rejected outright. SYSID_MYGCS filtering alone is not sufficient -- it&#x27;s a plain, unauthenticated header field, trivially spoofed by anyone who knows (or guesses) the expected system ID.</td>
+        </tr>
+        <tr>
+          <td>c2_replay</td>
+          <td>rc_override</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">armed_confirmed=True, armed_during_injection=True, watched_channel=servo3, pre_servo3=1500, peak_servo3_during_injection=1680, forged_throttle_pwm=1700</td>
+          <td class="rec">Enable MAVLink2 message signing so an unsigned RC-override is rejected outright, not just filtered by sender system ID (confirmed in this project&#x27;s own testing: ArduPilot silently drops RC_CHANNELS_OVERRIDE from an unexpected SYSID_MYGCS with zero error -- a real but weak, spoofable control on its own).</td>
+        </tr>
+        <tr>
+          <td>gps_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-bad"><b>VULNERABLE</b></td>
+          <td class="ev">fused_lat0=-18.922, fused_lon0=72.834, method=gps_input, gps_id=0, raw_peak_delta_m=50.0, peak_delta_m=50.64, expected_offset_m=50.0</td>
+          <td class="rec">The autopilot&#x27;s position estimate followed the forged input with no apparent rejection. Consider multi-GPS blending (GPS_BLEND) or an independent EKF innovation/consistency check (cross-referencing against IMU-based dead reckoning) so a sudden implausible jump is flagged and gated rather than trusted outright.</td>
+        </tr>
+        <tr>
+          <td>ais_spoof</td>
+          <td>vulnerability</td>
+          <td class="v-na"><b>N/A</b></td>
+          <td class="ev">modes_run=[&#x27;ghost&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
+          <td class="rec"></td>
+        </tr></tbody>
+    </table>
+      
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody><tr class="tl-inject"><td>t+0.00s</td><td>INJECTED</td><td>inject_mode: forged mode change to HOLD</td></tr><tr class="tl-inject"><td>t+10.82s</td><td>INJECTED</td><td>inject_rc_override: throttle=1700, steering=1500, 8.0s</td></tr><tr class="tl-detect"><td>t+10.92s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr><tr class="tl-detect"><td>t+13.96s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr><tr class="tl-detect"><td>t+16.99s</td><td>DETECTED</td><td>C2OverrideDetector: RC_CHANNELS_OVERRIDE observed -- actuator command authority seized</td></tr><tr class="tl-inject"><td>t+23.92s</td><td>INJECTED</td><td>step: gps_input step gps_id=0</td></tr><tr class="tl-detect"><td>t+24.12s</td><td>DETECTED</td><td>GpsJumpDetector: believed position moved at 505 m/s (&gt; 15) -- implausible</td></tr><tr class="tl-inject"><td>t+38.93s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+40.93s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+40.93s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+42.93s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+42.93s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+44.93s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+44.93s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+46.93s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+46.93s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+48.93s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+48.93s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+50.93s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+50.93s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+52.93s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+52.93s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr></tbody>
+    </table>
+      <h3>Detectability</h3>
+      <table class="detail">
+        <thead>
+          <tr>
+            <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
+            <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td>ais_spoof</td>
+          <td>7</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>1/1</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>2.00s</td>
+          <td>2.00s</td>
+          <td>2.00s</td>
+        </tr>
+
+        <tr>
+          <td>c2_replay</td>
+          <td>3</td>
+          <td>0</td>
+          <td>0%</td>
+          <td>2/2</td>
+          <td>100%</td>
+          <td>100%</td>
+          <td>9.51s</td>
+          <td>10.78s</td>
+          <td>10.92s</td>
         </tr>
 
         <tr>
@@ -475,9 +649,9 @@
           <td>1/1</td>
           <td>100%</td>
           <td>100%</td>
-          <td>0.02s</td>
-          <td>0.02s</td>
-          <td>0.02s</td>
+          <td>0.20s</td>
+          <td>0.20s</td>
+          <td>0.20s</td>
         </tr></tbody>
       </table>
       
@@ -487,6 +661,7 @@
       <p class="src">Run 20260807T063057, from
          <code>target_runs/standalone_test/20260807T063057/verdicts.json</code>.</p>
       <div class="headline v-not-ready">NOT READY TO DEPLOY</div>
+      <div class="execsum"><b>standalone_test</b> (surface) was tested against every attack this tool supports and the result is <b class="v-not-ready">NOT READY TO DEPLOY</b>. An attacker on the same network could succeed at: command-and-control hijacking via forging a flight-mode change. These are real, live-demonstrated findings, not theoretical -- see the timeline and raw evidence below for exactly what was sent and what the vehicle did in response. A blind rule-based monitor watching the same traffic caught 1 of 3 attack windows (recall 33%, precision 100%) -- this is independent of whether the attack itself succeeded.</div>
       <h3>Vulnerability</h3>
       
     <table class="detail">
@@ -513,6 +688,12 @@
           <td class="ev">modes_run=[&#x27;ghost&#x27;, &#x27;impersonate&#x27;]<br><i>ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.</i></td>
           <td class="rec"></td>
         </tr></tbody>
+    </table>
+      
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody><tr class="tl-inject"><td>t+0.00s</td><td>INJECTED</td><td>inject_mode: forged mode change to HOLD</td></tr><tr class="tl-inject"><td>t+8.60s</td><td>INJECTED</td><td>inject_rc_override: throttle=1700, steering=1500, 8.0s</td></tr><tr class="tl-inject"><td>t+16.64s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+16.64s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 912345678 broadcast 8703036 m from the vessel&#x27;s own telemetry position -- impersonation</td></tr><tr class="tl-inject"><td>t+16.64s</td><td>INJECTED</td><td>impersonate: own_mmsi=912345678</td></tr><tr class="tl-inject"><td>t+18.64s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+18.64s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+18.64s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 912345678 broadcast 8703036 m from the vessel&#x27;s own telemetry position -- impersonation</td></tr><tr class="tl-inject"><td>t+18.64s</td><td>INJECTED</td><td>impersonate: own_mmsi=912345678</td></tr><tr class="tl-inject"><td>t+20.64s</td><td>INJECTED</td><td>impersonate: own_mmsi=912345678</td></tr><tr class="tl-inject"><td>t+20.64s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-detect"><td>t+20.64s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 912345678 broadcast 8703036 m from the vessel&#x27;s own telemetry position -- impersonation</td></tr><tr class="tl-detect"><td>t+20.64s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-inject"><td>t+22.64s</td><td>INJECTED</td><td>ghost: fabricated vessel</td></tr><tr class="tl-inject"><td>t+22.64s</td><td>INJECTED</td><td>impersonate: own_mmsi=912345678</td></tr><tr class="tl-detect"><td>t+22.64s</td><td>DETECTED</td><td>AisConflictDetector: position report from invalid/fabricated MMSI 999999001 (ghost vessel)</td></tr><tr class="tl-detect"><td>t+22.64s</td><td>DETECTED</td><td>AisConflictDetector: own MMSI 912345678 broadcast 8703036 m from the vessel&#x27;s own telemetry position -- impersonation</td></tr></tbody>
     </table>
       <h3>Detectability</h3>
       <table class="detail">

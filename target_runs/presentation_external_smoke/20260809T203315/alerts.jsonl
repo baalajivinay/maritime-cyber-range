@@ -1,0 +1,11 @@
+{"t": 1786287812.2740529, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1786287815.3079097, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1786287818.337185, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1786287825.4705777, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 505 m/s (> 15) -- implausible"}
+{"t": 1786287842.2758198, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
+{"t": 1786287844.276494, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
+{"t": 1786287846.2767127, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
+{"t": 1786287848.277345, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
+{"t": 1786287850.2779527, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
+{"t": 1786287852.2783914, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
+{"t": 1786287854.2793775, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}

@@ -1,0 +1,76 @@
+{
+  "target": "auv_resilient_remus100_hardened",
+  "domain": "underwater",
+  "run_ts": "20260809T203100",
+  "baseline": {
+    "lat": null,
+    "lon": null,
+    "mode": "MANUAL",
+    "armed": false,
+    "servo1": 1500,
+    "servo3": 1500,
+    "servo5": 1500,
+    "heartbeats": 5
+  },
+  "attacks": {
+    "c2_replay": {
+      "mode_change": {
+        "verdict": "RESILIENT",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "ALT_HOLD",
+          "post_mode": "MANUAL",
+          "heartbeats_seen_after": 5
+        }
+      },
+      "rc_override": {
+        "verdict": "INCONCLUSIVE",
+        "evidence": {
+          "armed_confirmed": false,
+          "armed_during_injection": false,
+          "watched_channel": "servo5",
+          "pre_servo5": 1500,
+          "peak_servo5_during_injection": 1500,
+          "forged_throttle_pwm": 1700,
+          "reason": "target did not confirm ARMED after the arm sequence -- preconditions not met"
+        }
+      }
+    }
+  },
+  "detectability": {
+    "min_ts": 0.0,
+    "max_ts": Infinity,
+    "families": {
+      "c2_replay": {
+        "tp": 0,
+        "fp": 0,
+        "windows": 2,
+        "detected": 0,
+        "precision": NaN,
+        "recall": 0.0,
+        "latency": {
+          "n": 0,
+          "mean_s": null,
+          "median_s": null,
+          "p95_s": null,
+          "max_s": null
+        }
+      }
+    },
+    "overall": {
+      "tp": 0,
+      "fp": 0,
+      "windows": 2,
+      "detected": 0,
+      "precision": NaN,
+      "recall": 0.0,
+      "latency": {
+        "n": 0,
+        "mean_s": null,
+        "median_s": null,
+        "p95_s": null,
+        "max_s": null
+      }
+    }
+  }
+}

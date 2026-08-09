@@ -26,6 +26,7 @@ isolated from attack_logs/ and evidence/ per tools/test_target.py's own
 isolation rule) -- never launches a test itself.
 """
 import argparse
+import csv
 import glob
 import html
 import json
@@ -149,6 +150,105 @@ def render_detectability_gaps(verdicts):
     return f'<div class="gaps"><h4>Detectability gaps</h4><ul>{"".join(notes)}</ul></div>'
 
 
+# --- timeline: merge each run's own injection log + detection alerts -------
+# Both already exist per-run (test_target.py writes *_ground_truth.csv via
+# _log_ground_truth, and alerts.jsonl via the same DetectorSuite tap used for
+# scoring) -- this reads them back, never recomputes anything, so a
+# regenerated report can never disagree with the verdict it's explaining.
+
+def _load_timeline(run_dir):
+    """Every (wall_ts, kind, text) event in a run directory, sorted. `kind`
+    is "inject" (from a *_ground_truth.csv) or "detect" (from alerts.jsonl)."""
+    events = []
+    for csv_path in glob.glob(os.path.join(run_dir, "*_ground_truth.csv")):
+        try:
+            with open(csv_path, newline="") as f:
+                for row in csv.DictReader(f):
+                    events.append((float(row["wall_ts"]), "inject",
+                                   f"{row.get('attack_type', '?')}: {row.get('description', '')}"))
+        except (OSError, ValueError, KeyError):
+            continue
+    alerts_path = os.path.join(run_dir, "alerts.jsonl")
+    if os.path.isfile(alerts_path):
+        with open(alerts_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    a = json.loads(line)
+                    events.append((float(a["t"]), "detect", f"{a.get('detector', '?')}: {a.get('detail', '')}"))
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue
+    events.sort(key=lambda e: e[0])
+    return events
+
+
+def render_timeline(run_dir):
+    events = _load_timeline(run_dir)
+    if not events:
+        return ""
+    t0 = events[0][0]
+    rows = []
+    for t, kind, text in events:
+        label = "INJECTED" if kind == "inject" else "DETECTED"
+        cls = "tl-inject" if kind == "inject" else "tl-detect"
+        rows.append(f'<tr class="{cls}"><td>t+{t - t0:.2f}s</td><td>{label}</td>'
+                     f'<td>{html.escape(text)}</td></tr>')
+    return f"""
+    <h3>Timeline (raw evidence)</h3>
+    <table class="detail timeline">
+      <thead><tr><th>Elapsed</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody>{"".join(rows)}</tbody>
+    </table>"""
+
+
+# --- executive summary: plain-language synthesis, no jargon ----------------
+
+_ATTACK_PLAIN = {
+    "gps_spoof": "GPS spoofing",
+    "ais_spoof": "AIS (vessel identity) spoofing",
+    "c2_replay": "command-and-control hijacking",
+}
+_SUBCHECK_PLAIN = {
+    "mode_change": "forging a flight-mode change",
+    "rc_override": "seizing direct throttle/steering control",
+    "vulnerability": "",
+}
+
+
+def _plain_finding(attack, subname):
+    a = _ATTACK_PLAIN.get(attack, attack)
+    s = _SUBCHECK_PLAIN.get(subname, subname)
+    return f"{a} via {s}" if s else a
+
+
+def render_executive_summary(target, verdicts):
+    headline, cls, vulnerable, inconclusive = _deployment_verdict(verdicts)
+    domain = verdicts.get("domain", "vehicle")
+    sentences = [f"<b>{html.escape(target)}</b> ({html.escape(domain)}) was tested against every "
+                 f"attack this tool supports and the result is <b class=\"v-{cls}\">{html.escape(headline)}</b>."]
+    if vulnerable:
+        plain = "; ".join(_plain_finding(a, s) for a, s in vulnerable)
+        sentences.append(f"An attacker on the same network could succeed at: {html.escape(plain)}. "
+                          f"These are real, live-demonstrated findings, not theoretical -- see the "
+                          f"timeline and raw evidence below for exactly what was sent and what the "
+                          f"vehicle did in response.")
+    else:
+        sentences.append("No attack in this test suite corrupted the vehicle's own reported state.")
+    if inconclusive:
+        plain = "; ".join(_plain_finding(a, s) for a, s in inconclusive)
+        sentences.append(f"{html.escape(plain)} could not be conclusively tested this run (see the "
+                          f"evidence for why) -- treat as unproven, not as resilient, until retested.")
+    det = verdicts.get("detectability", {}).get("overall", {})
+    if det.get("windows"):
+        sentences.append(f"A blind rule-based monitor watching the same traffic caught "
+                          f"{det.get('detected', 0)} of {det.get('windows', 0)} attack windows "
+                          f"(recall {_pct(det.get('recall'))}, precision {_pct(det.get('precision'))}) "
+                          f"-- this is independent of whether the attack itself succeeded.")
+    return f'<div class="execsum">{" ".join(sentences)}</div>'
+
+
 def build_report(target_paths):
     generated = time.strftime("%Y-%m-%d %H:%M:%S %Z")
     summary_rows = []
@@ -170,14 +270,17 @@ def build_report(target_paths):
           <td>{_pct(det.get('recall'))}</td>
         </tr>""")
 
+        run_dir = os.path.dirname(path)
         detail_sections.append(f"""
     <section class="profile">
       <h2>{html.escape(target)} <span class="domain">({html.escape(verdicts.get('domain', '?'))})</span></h2>
       <p class="src">Run {html.escape(verdicts.get('run_ts', '?'))}, from
          <code>{html.escape(os.path.relpath(path, REPO))}</code>.</p>
       <div class="headline v-{cls}">{html.escape(headline)}</div>
+      {render_executive_summary(target, verdicts)}
       <h3>Vulnerability</h3>
       {render_vulnerability_panel(verdicts)}
+      {render_timeline(run_dir)}
       <h3>Detectability</h3>
       <table class="detail">
         <thead>
@@ -245,6 +348,17 @@ def build_report(target_paths):
                background: rgba(120,120,120,0.1); display: inline-block; margin: 0.5rem 0 1rem; }}
   .gaps {{ background: rgba(180,83,9,0.08); border-radius: 8px; padding: 0.8rem 1.1rem; font-size: 0.88rem; }}
   .gaps h4 {{ margin-top: 0; }}
+  .execsum {{ background: rgba(70,130,180,0.08); border-left: 3px solid #4682b4; border-radius: 4px;
+              padding: 0.7rem 1rem; margin: 0.6rem 0 1.2rem; font-size: 0.95rem; }}
+  table.timeline td {{ text-align: left; font-size: 0.85rem; }}
+  table.timeline td:first-child {{ text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }}
+  tr.tl-inject td:nth-child(2) {{ color: #b91c1c; font-weight: 600; }}
+  tr.tl-detect td:nth-child(2) {{ color: #1d4ed8; font-weight: 600; }}
+  @media (prefers-color-scheme: dark) {{
+    .execsum {{ background: rgba(70,130,180,0.15) !important; }}
+    tr.tl-inject td:nth-child(2) {{ color: #f87171 !important; }}
+    tr.tl-detect td:nth-child(2) {{ color: #60a5fa !important; }}
+  }}
   footer {{ margin-top: 3rem; color: #888; font-size: 0.8rem; border-top: 1px solid #d0d3d8; padding-top: 1rem; }}
 </style>
 </head>
@@ -268,6 +382,23 @@ def build_report(target_paths):
     otherwise any INCONCLUSIVE finding means CONDITIONALLY READY (retest before trusting the
     result); only RESILIENT/N-A outcomes across the board means READY <i>against the attacks
     actually tested</i> -- not a general security clearance.</p>
+    <p><b>No machine learning is used anywhere in this pipeline.</b> Detection is a set of
+    hand-written rule-based state machines (<code>detection/detectors.py</code>) checking for
+    physically/protocol-implausible events -- e.g. a believed-position jump faster than any real
+    hull could move, or an <code>RC_CHANNELS_OVERRIDE</code> message appearing on the wire at
+    all. "Precision/recall/latency" here is <i>not</i> a classifier's confusion matrix over
+    labeled samples -- it's computed by <code>tools/score_detectors.py</code> matching each
+    detector alert's timestamp against padded ground-truth attack windows (when the attack
+    script itself logged an injection) that the detector never had access to while running, so
+    the score can't be inflated by the detector having privileged knowledge of the attack.</p>
+    <p><b>A mode-dependent caveat worth knowing before reading a RESILIENT verdict on
+    <code>rc_override</code>:</b> ArduPilot only reads <code>RC_CHANNELS_OVERRIDE</code>'s
+    throttle/steering as live control input in pilot-manual modes (MANUAL/ACRO/STEERING) --
+    in an autonomous mode (AUTO/GUIDED/HOLD) the navigation controller owns the actuators and a
+    throttle-seizing attack has no visible effect purely because of that mode, independent of
+    any actual hardening. This test suite's own <code>rc_override</code> check forces MANUAL
+    mode before injecting specifically to avoid this false negative -- confirmed live,
+    2026-08-09, against this project's own CUSV twin.</p>
   </div>
 
   <h2>Cross-target summary</h2>

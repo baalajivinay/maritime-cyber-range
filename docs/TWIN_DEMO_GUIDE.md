@@ -182,18 +182,40 @@ placeholders):
   This is the dashboard's own report (see the table in step 3 above) — it
   works live, right now, no terminal needed.
 
-**One real limitation to know about for the resilient twins specifically**:
-their `GPS1_TYPE=14` config means GPS position only exists while something
-is actively feeding `GPS_INPUT` — that's `tools/test_target.py`'s own job
-during a test run (step 2), not something the dashboard does in the
-background. So on the dashboard, the resilient twins' "GPS spoof" button
-and the true-vs-believed GPS panel won't show a live position the way the
-vulnerable twins' do. The GPS resilience result itself is real and
-verified (see each resilient twin's `README.md`) — it's just demonstrated
-through `test_target.py` + the report, not the dashboard's GPS panel. C2
-(mode-change / RC-override) demonstrates fully live on the dashboard for
-every twin, vulnerable and resilient alike — that's the one worth clicking
-through live on stage.
+**One real timing quirk to know about for the resilient twins specifically**
+(fixed 2026-08-09, was a real bug before this): their `GPS1_TYPE=14` config
+means they have no GPS position source at all unless something actively
+feeds `GPS_INPUT` — the dashboard now does this itself automatically
+(`legit_gps_feeder` in `dashboard_server.py`, feeding the vehicle's own true
+position at 5Hz the whole time it's up), so the GPS panel and "GPS spoof"
+button both work live for the resilient twins now, same as the vulnerable
+ones. The one thing to actually wait for: **give it ~30–60s after boot
+before clicking a destination.** ArduPilot's EKF needs a few seconds of
+*consistent* GPS readings before it trusts a freshly-appeared fix enough to
+arm — click too early and you'll see mode flip to AUTO but Armed stay
+DISARMED, with the destination distance never counting down (confirmed
+live: an attempt at ~10s post-boot silently failed all 6 of `goto()`'s arm
+retries; the identical click after the EKF had more settle time armed
+cleanly on the first retry and started moving). If a resilient twin looks
+stuck in AUTO/DISARMED right after boot, that's why — wait a bit and click
+again, don't assume something's broken. C2 (mode-change / RC-override)
+still demonstrates fully live on the dashboard for every twin regardless of
+this, since it doesn't depend on GPS.
+
+**The underwater twins had the exact same class of bug (also fixed
+2026-08-09).** Both REMUS-100 twins (vulnerable AND hardened) use
+`EK3_SRC1_POSXY=6` (ExternalNav) instead of GPS -- they need
+`VISION_POSITION_ESTIMATE` fed continuously, which previously only happened
+while the "Acoustic Spoof" button was actively running. Booting either AUV
+twin and immediately clicking "Set Destination" used to arm the vehicle but
+silently fail to enter AUTO (ArduSub just stays in whatever mode it was
+already in, no error shown) -- confirmed live, this is what "it says AUTO
+but never actually moves" looked like for these twins specifically. Fixed
+the same way as GPS: a `legit_vision_feeder` thread now feeds the vehicle's
+own true position via `VISION_POSITION_ESTIMATE` the whole time the
+dashboard is up. Unlike the surface fix, this one does NOT need the ~30-60s
+settle wait -- confirmed live, both AUV twins armed and started moving on
+`goto()`'s very first retry straight after boot.
 
 ## 5. Tear down
 

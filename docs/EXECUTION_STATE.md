@@ -453,6 +453,299 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-09 (5th real fix -- goto() arm retry was too short, presentation
+  eve): User came back after the GPS+vision feeder fixes still seeing
+  `mass_resilient_cusv` stuck AUTO/DISARMED ("i dont know what you fixed").
+  Found an actively-running session on this machine (started 22:34, AFTER
+  all the code fixes -- ruled out "stale process running old code" as the
+  explanation) and inspected it live rather than re-asserting the fix was
+  good: `GPS_RAW_INT` showed a clean `fix_type=3`/10 satellites (the feeder
+  IS working), and a direct manual arm attempt succeeded INSTANTLY. So the
+  vehicle COULD arm -- the bug was that `goto()`'s own arm-retry loop only
+  tries 6 times over ~6 seconds. `goto()` is fire-and-forget per click and
+  never self-retries, so any click landing before the EKF finished
+  trusting the fresh GPS fix (confirmed varies from ~10s up to several
+  minutes depending on exact boot timing) failed PERMANENTLY -- the
+  vehicle just sat there until the user knew to click "Set Destination"
+  again, which is not a reasonable thing to expect from someone at a demo.
+  **Fix**: extended the retry loop from 6 attempts to 90 (still 1s apart,
+  still bails out immediately once armed -- costs nothing on an
+  already-converged vehicle). **Verified properly this time**: full clean
+  teardown + fresh cold boot + a single goto() click fired at the
+  worst-case moment (immediately after boot, not after any settle wait)
+  for ALL FOUR twins back to back, watching continuously (not
+  spot-checking) until each one either armed+moved or the run gave out:
+  `mass_vulnerable_cusv` armed 7s/moving 13.5s (0.83 m/s), `mass_resilient_cusv`
+  armed 27s/moving confirmed 1.05 m/s, `auv_vulnerable_remus100` armed
+  7s/position genuinely changing by 12.5s, `auv_resilient_remus100_hardened`
+  armed 7s/position genuinely changing by 72.5s. All four self-recovered
+  from a single click with zero manual intervention. Full teardown clean
+  after every boot, confirmed via `ps`/`ss`.
+  - Lesson for next time this class of bug shows up: a `curl`
+    "ok:true"/"200" response from an async endpoint proves the request was
+    ACCEPTED, not that the underlying action SUCCEEDED -- `/cmd/goto`
+    always returns immediately since it launches a background thread.
+    Every verification in this session that only checked the HTTP response
+    without then watching live telemetry to confirm the actual outcome was
+    incomplete, and this was the second time that gap let a real bug
+    through undetected until the user found it live.
+
+- 2026-08-09 (full-fleet movement audit -- 4th real fix, underwater twins):
+  User pushed back after the GPS-feeder fix ("why the vehicle is not
+  moving... i want all the twins to work properly") and asked for a
+  thorough audit, not another point fix. Given the GPS bug's shape (no
+  ambient position source outside an explicit attack), the obvious next
+  question was whether the underwater twins had the same class of gap --
+  checked rather than assumed either way.
+  - **Confirmed live: yes, both REMUS-100 twins had it too, worse than the
+    surface case.** Both `auv_vulnerable_remus100/remus100.parm` and
+    `auv_resilient_remus100_hardened/hardened.parm` set
+    `EK3_SRC1_POSXY=6` (ExternalNav) -- position comes from
+    `VISION_POSITION_ESTIMATE`, and (per `attacks/acoustic_spoof.py`'s own
+    docstring, already known) "without an external-nav feed its
+    GLOBAL_POSITION_INT is 0,0." That feed previously only started inside
+    `launch_attack()`'s `acoustic_spoof` branch -- never as a baseline.
+    Live-verified the actual failure mode (worse than the GPS case, not
+    the same): `goto()` armed the vehicle fine, but ArduSub silently
+    refused to enter AUTO at all (stayed in MANUAL, no error) and
+    `GLOBAL_POSITION_INT` stayed frozen exactly at HOME the whole time --
+    "it armed but the destination distance never counted down."
+  - **Fix**: `legit_vision_feeder` in `dashboard_server.py`, the
+    underwater twin of `legit_gps_feeder` -- reuses
+    `attacks/acoustic_spoof.py`'s already-fixed `read_true_ned()` Gazebo
+    pose parser (deliberately did NOT write a 4th copy of that regex
+    parsing logic) rather than the attack module's `run_feed()` directly,
+    specifically to avoid sharing that module's `state`/`_lock` (the
+    forged-offset toggle) -- this feeder always sends the untouched true
+    position, so when Acoustic Spoof is later launched its own separate
+    `run_feed()` call has to compete with a still-running legitimate
+    signal, not be the only signal the vehicle ever sees (same design
+    intent as the GPS feeder). New `MAVLINK_VISION_FEEDER_PORT`
+    (`constants.py`, same computed-default pattern, added to
+    `tools/mav_bridge.py`'s fan-out). Gated on `DOMAIN == "underwater"`.
+  - **Verified live, both AUV twins, full `goto()` sequence**: arm +
+    AUTO entry + genuine position change (lat/lon actually moving, not
+    frozen) on the very first attempt post-boot for BOTH twins -- unlike
+    the surface GPS fix, this one needed no EKF settle-time wait at all.
+  - **Zero regression**: re-ran the full `test_target.py` CLI suite
+    (headless, `run_vehicle.sh`) against both AUV twins after the fix --
+    byte-identical verdict shapes to every prior run this session
+    (`auv_vulnerable_remus100`: VULNERABLE/VULNERABLE, detectability 1.0;
+    `auv_resilient_remus100_hardened`: RESILIENT/INCONCLUSIVE,
+    detectability 0.0) -- expected, since `legit_vision_feeder` only runs
+    inside `dashboard_server.py`'s process, which isn't alive during a
+    headless CLI run.
+  - `docs/TWIN_DEMO_GUIDE.md` updated with this finding alongside the GPS
+    one. **Net result: all 4 primary twins now genuinely navigate live on
+    the dashboard from a fresh boot** -- this was NOT true before today's
+    audit for 3 of the 4 (only `mass_vulnerable_cusv` worked out of the
+    box; the other 3 each had a distinct real bug blocking movement, found
+    only because each was actually clicked through live rather than
+    assumed working from a prior CLI-only pass).
+
+- 2026-08-09 (dashboard Q&A + 3 real fixes, incl. a resilient-twin arming
+  bug found from a live screenshot): After the fixes below were already
+  committed, user sent a screenshot of `mass_resilient_cusv` mid-use:
+  Mode=AUTO, Armed=DISARMED, Speed=0.00, "178.9m remaining -- en route"
+  frozen. Root-caused live (not assumed): `GPS_RAW_INT` showed
+  `fix_type=1`/0 satellites -- **the resilient twins have literally no
+  ambient GPS position source at all**, since `GPS1_TYPE=14` switches them
+  to the external `AP_GPS_MAV` driver and nothing was feeding it
+  `GPS_INPUT` outside of a `test_target.py` run. `goto()` could still set
+  AUTO and upload a mission, but its own arm-retry loop silently failed
+  every time -- exactly the frozen state in the screenshot. This was a
+  real, presentation-blocking gap beyond what `docs/TWIN_DEMO_GUIDE.md`
+  previously documented (it only warned the GPS *panel* would look empty,
+  not that the vehicle literally could never arm or move).
+  - **Fix**: new `legit_gps_feeder` thread in `dashboard_server.py`, always
+    running for surface twins, feeding the vehicle's own true Gazebo
+    position as legitimate `GPS_INPUT` at 5Hz for the whole time the
+    dashboard is up (reuses `attacks/gps_input_inject.py`'s
+    `send_gps_input`, the exact mechanism already proven for the attack
+    side). New dedicated `MAVLINK_GPS_FEEDER_PORT` (`constants.py`, same
+    `.get()`-with-computed-default pattern as `MAVLINK_TEST_TARGET_PORT`,
+    zero edits needed to existing `profile.json` files) added to
+    `tools/mav_bridge.py`'s fan-out list so the port actually carries
+    traffic. Harmless no-op for vulnerable twins (no `AP_GPS_MAV` driver
+    listening without `GPS1_TYPE=14`), so it's unconditional rather than
+    needing to know which twins are hardened.
+  - **A second, real bug found getting the fix working**: the first version
+    sent `GPS_INPUT` immediately after opening the connection and produced
+    zero effect with no errors anywhere. Root cause: a fresh `udpin:`
+    listener doesn't know `mav_bridge`'s ephemeral reply address until it
+    has received at least one message FROM it -- exactly the same
+    reason `goto()` already calls `wait_heartbeat()` before doing anything
+    else. Added the same `wait_heartbeat(timeout=15)` before the send loop
+    -- confirmed live (isolated python probe) that this alone was the
+    difference between `GPS_RAW_INT.fix_type` staying 1 forever vs.
+    becoming 3 with 10 satellites within ~1s.
+  - **A third, genuine (not a bug) finding while verifying the fix
+    end-to-end**: a `goto()` click sent ~10s after boot still failed to
+    arm even with a valid `fix_type=3` GPS_RAW_INT already present --
+    EKF3 needs a few seconds of *consistent* readings after a fix first
+    appears before it trusts it enough to satisfy arming's GPS-health
+    prearm check (the same phenomenon this project already characterized
+    and named via `targets/gps_test_fresh.json` vs
+    `targets/gps_test_converged.json`). The identical click retried after
+    more settle time armed cleanly on `goto()`'s very first retry and the
+    vehicle started moving (0.32->0.77 m/s). Documented in
+    `docs/TWIN_DEMO_GUIDE.md` as "wait ~30-60s after boot before clicking
+    a destination on a resilient twin" rather than attempting to code
+    around real EKF physics this close to a presentation.
+  - Does NOT affect `tools/test_target.py`'s CLI verification pass earlier
+    today -- `legit_gps_feeder` only exists inside `dashboard_server.py`'s
+    process, which isn't running during a headless `run_vehicle.sh` boot
+    (the documented/recommended way to run the CLI tester). Underwater
+    twins are unaffected too (`legit_gps_feeder` returns immediately for
+    `DOMAIN != "surface"` -- they already get position via the separate,
+    already-working acoustic/ExternalNav feed).
+  - `docs/TWIN_DEMO_GUIDE.md`'s old note ("resilient twins' GPS panel won't
+    show a live position on the dashboard, that's expected") is now WRONG
+    and was corrected in place -- the panel works live now, the only
+    remaining caveat is the EKF settle-time wait.
+
+- 2026-08-09 (dashboard Q&A + 2 real fixes): User asked 7 questions after the
+  full verification pass above, several of which led to live investigation
+  and found genuine, fixable issues (not just explanations):
+  - **Fix: `gps_true_update` socket emit was unthrottled.** `gz_pose_thread`
+    (`nodes/monitor/src/dashboard_server.py`) emitted on every single
+    `/pose/info` message with zero rate limiting -- measured live at
+    ~112 emits/sec (2239 in 20s) vs. the believed-position feed's sane
+    ~9/sec. This is what produced the user-reported "many dots appear
+    randomly while moving": at that rate the 80-point trail buffer covers
+    under a second of travel, so consecutive points sit millimeters apart
+    on a meters-scale map and render as a scattered cluster instead of a
+    line. Fixed with a `_TRUE_POS_EMIT_INTERVAL_S = 0.1` throttle on the
+    EMIT only (`_last_true_pos` itself still updates every message, since
+    `goto()`'s frame alignment needs the freshest value) -- measured live
+    after the fix: ~13.6/sec, an ~8x reduction. Matches the exact throttling
+    pattern already used for `attacks/gps_spoof.py`'s ground-truth CSV
+    logging earlier this session.
+  - **Fix: dashboard's live "Cut throttle -- stop" C2 command used the wrong
+    PWM value.** User reported a C2 "hold the throttle" test on a vulnerable
+    vehicle appearing not to work. Live investigation (direct MAVLink
+    telemetry, bypassing the browser) found TWO separate, real explanations,
+    only one of which was a bug:
+    1. Mode-CHANGE C2 attacks (Force HOLD/MANUAL) work correctly regardless
+       of current mode (confirmed AUTO->HOLD in <1s) -- not the issue.
+    2. RC-override-style C2 attacks (Seize/Cut throttle) only affect vehicle
+       modes where ArduPilot reads RC input directly (MANUAL/ACRO/STEERING)
+       -- in AUTO/GUIDED/HOLD the nav controller owns throttle. The
+       dashboard's own `_c2()` handler already knows this and force-switches
+       to MANUAL + re-arms before injecting (confirmed correct) -- but the
+       actual bug was the PWM value it then sent: `rc_stop` used 1300,
+       assumed to be "well below trim = low throttle." Live-measured against
+       the CUSV skid-steer twin, that assumption was wrong for this hull:
+       the throttle-vs-PWM curve is symmetric around RC3_TRIM (1500) --
+       deviation in EITHER direction drives throttle UP, not down (1100 and
+       1900 both measured 100% throttle; only exactly 1500 measured 0%).
+       1300 sat in the "wrong half," producing ~45% throttle instead of a
+       stop -- enough residual thrust to look like "the attack partially
+       worked" or "the vehicle is resilient," neither of which was true.
+       Fixed by using exact RC3_TRIM (1500) for `rc_stop`, which is safe
+       across any hull by definition (trim always means neutral). Re-verified
+       live: throttle pinned at 0% for the full 8s window, speed decaying
+       cleanly to a stop.
+  - **Report enhancement** (user explicitly asked for more detail, then
+    picked via AskUserQuestion: executive summary, per-attack timeline with
+    raw evidence, methodology depth -- NOT charts): `tools/generate_target_report.py`
+    gained `render_executive_summary()` (plain-language synthesis per
+    target, no jargon) and `render_timeline()` (merges each run's own
+    `*_ground_truth.csv` injection log + `alerts.jsonl` detection log into
+    one chronological, elapsed-time table -- zero new data collection, both
+    files already existed per run). Methodology section expanded with an
+    explicit "no ML anywhere, this is rule-based state machines + timestamp
+    matching against ground truth" paragraph and the mode-dependent
+    RC-override caveat above, generalized for any reader. Regenerated and
+    visually verified in-browser -- all three additions render correctly.
+  - All fixes are additive/isolated (dashboard UI-only code paths, a new
+    report-rendering function) -- no change to `tools/test_target.py`'s core
+    attack/verdict logic, so the full verification pass immediately above
+    this entry stays valid.
+
+- 2026-08-09 (pre-presentation full verification): **All 4 primary twins +
+  the external-target path re-verified live, end to end, with zero product
+  bugs found.** User asked for a thorough pre-presentation check ("i dont
+  want a single mistake to happen"), covering both the 4 owned twins and the
+  claim that the tool works against a vehicle it doesn't own.
+  - **Static validation**: `tools/validate_vehicle.py` clean PASS on all 4
+    twins (`mass_vulnerable_cusv`, `mass_resilient_cusv`,
+    `auv_vulnerable_remus100`, `auv_resilient_remus100_hardened`).
+  - **A real scare that turned out to be self-inflicted, not a regression**:
+    the first live `test_target.py` pass against `mass_vulnerable_cusv`
+    came back wrong (`gps_spoof: RESILIENT` with `peak_delta_m: 0.01`,
+    `rc_override: INCONCLUSIVE`) -- alarming since this is the *vulnerable*
+    twin and should read VULNERABLE/VULNERABLE/VULNERABLE. Root-caused
+    before treating it as a bug: an earlier failed attempt to background-boot
+    the stack (a `... & disown` inside one shell call, which this project's
+    own documented gotcha says doesn't survive the tool's call boundary) had
+    actually left orphaned children alive -- a `ps aux` check found TWO live
+    `gz sim` processes, TWO GPS-relay processes, TWO AIS emulators, all bound
+    to the same world/ports from a single boot attempt. The properly-booted
+    second attempt's spoof commands were evidently landing on the wrong
+    orphaned relay instance some of the time, producing a near-zero measured
+    offset despite the attack genuinely firing. Force-killed everything,
+    confirmed a clean 7-process single-instance boot, and reran: two
+    consecutive clean passes, deterministic
+    `VULNERABLE`/`VULNERABLE`/`VULNERABLE`, detectability 1.0/1.0/1.0 --
+    exact match to the documented result. **Lesson reconfirmed**: always
+    `ps aux` after a boot to confirm single-instance before trusting a test
+    result, especially after any nonstandard/manual process launch.
+  - **All 4 twins, clean live pass, exact match to each twin's documented
+    README table**: `mass_vulnerable_cusv`
+    (VULNERABLE/VULNERABLE/VULNERABLE, 1.0/1.0/1.0),
+    `mass_resilient_cusv` (RESILIENT/INCONCLUSIVE/N/A, matching the known
+    GCS_SYSID_ENFORCE-blocks-GPS_INPUT-too interaction),
+    `auv_vulnerable_remus100` (VULNERABLE/VULNERABLE, 1.0),
+    `auv_resilient_remus100_hardened` (RESILIENT/INCONCLUSIVE, parity with
+    `auv_resilient_bluerov2_hardened`'s own historical result). Every boot
+    confirmed single-instance and torn down clean before the next.
+  - **External-twin path re-proven, not just recalled from memory**:
+    hand-launched a genuinely independent `ardurover --model rover` SITL
+    instance (its own internal physics, not this repo's Gazebo/JSON-FDM
+    stack; a throwaway Mumbai-coast home location; ports this repo doesn't
+    own) using the project's own FIFO-stdin-keepalive trick so it survives
+    background launch. Wrote `targets/presentation_external_smoke.json`
+    exercising all 3 attacks (`gps_spoof` via the protocol-generic
+    `gps_input` method, not `fdm_relay`; `ais_spoof`; `c2_replay`).
+    `tools/validate_target.py` clean (1 expected warning: impersonate mode
+    has no `own_mmsi` to impersonate). Full `test_target.py` run:
+    VULNERABLE/VULNERABLE/VULNERABLE, detectability 1.0/1.0/1.0 -- proves
+    the tool's core claim ("point it at any ArduPilot SITL, ours or not")
+    still holds after all the CUSV/REMUS-100 work. Instance killed, config
+    kept in `targets/` for reuse.
+  - **Live dashboard click-through** (the surface the user's original
+    complaint came from): booted `mass_vulnerable_cusv` via `run_demo.sh`,
+    drove the real UI in the browser (not a bypassed HTTP probe) --
+    clicked "Set Destination" then the map: `/cmd/goto` fired, vehicle
+    armed, entered AUTO, and correctly closed distance on the destination
+    at 1.05 m/s (matching the physics-fix numbers from the prior CUSV
+    navigation entry, now re-confirmed through the actual click path, not
+    just telemetry). Clicked "GPS Spoof": position-integrity panel correctly
+    showed 49.9 m deviation ("believed position diverged from true"), alert
+    fired in 0.08s, vehicle's true motion continued unaffected (correct --
+    this is the vulnerable twin's *belief*, not its real state, being
+    fooled). Clicked "Stop Attacks": deviation returned to ~0.1 m, a brief
+    (~5s) MANUAL/DISARMED blip appeared then self-corrected back to
+    AUTO/ARMED while resuming course -- read as a transient MAVLink state
+    flicker during the abrupt spoof-to-real position snap-back, not a
+    persistent bug (confirmed by rechecking a few seconds later). "Report"
+    button fired `/cmd/report` 200 OK. Auto-stop-on-disconnect was NOT
+    independently re-exercised this pass (the sandboxed browser pane
+    auto-restores a phantom tab on close, so `_connected_clients` never hit
+    0 no matter how the test tab was closed) -- the code path is unchanged
+    since it was directly proven live in the 2026-08-08 dry run, so this is
+    a sandbox limitation, not a gap in what got checked.
+  - **Cross-target report regenerated clean**: `tools/generate_target_report.py`
+    -- 8 targets, no NaN/traceback, correctly picked up every fresh run
+    from this pass (confirmed by grepping the report for today's run-ts
+    directories). `evidence/`/`target_runs/` cleaned of the one contaminated
+    run directory from the orphaned-process incident above.
+  - **Net finding: zero real product bugs this pass.** The one alarming
+    result was fully traced to this session's own process-management
+    mistake, not the twins or the tool. All 4 twins + the external-target
+    path are presentation-ready as of this entry.
+
 - 2026-08-09 (CUSV navigation): **Two real, distinct physics/config bugs
   found and fixed** while investigating a user-reported "vehicle deviating
   from the goal / speed too slow" symptom -- neither was the dashboard's
