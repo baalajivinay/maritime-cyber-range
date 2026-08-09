@@ -27,6 +27,7 @@ blow-by-blow build history (start there for full project context).
 | [`docs/TARGET_TESTING.md`](docs/TARGET_TESTING.md) | `tools/test_target.py`, the vehicle-agnostic resilience tester -- point it at any ArduPilot SITL, not just this repo's own twins. |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Docker packaging (`./launch.sh`) -- no native ROS/Gazebo/ArduPilot install needed. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Component map, port topology, vehicle-profile schema. |
+| [`docs/VEHICLE_TWIN_CONTRACT.md`](docs/VEHICLE_TWIN_CONTRACT.md) | **Bring your own vehicle**: the `vehicle_twins/<name>/` folder contract (`profile.json`/`target.json` schemas, model.sdf requirements) and how to validate, boot, attack, and score it in this environment. |
 | [`docs/DESIGNER_GUIDE.md`](docs/DESIGNER_GUIDE.md) | Deeper reference: attacks, detection/scoring internals, adding a new vehicle. |
 | [`docs/NEW_AUV_QUICKSTART.md`](docs/NEW_AUV_QUICKSTART.md) | Full worked example: clone an existing AUV model into a genuinely new one. |
 | [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) | Presenting live (Gazebo 3D + dashboard together). |

@@ -16,3 +16,6 @@ protocol.log
 logs/
 LASTLOG.TXT
 evidence/live_session_alerts.jsonl
+
+# Personal/understanding-only docs -- not part of the shipped package
+*.docx
