@@ -1,0 +1,25 @@
+# CUSV ArduRover skid-steer output mapping (found missing, 2026-08-09, while
+# investigating a reported "vehicle deviating from the goal / speed too
+# slow" symptom).
+#
+# CUSV has twin differential thrusters (model.sdf's motor_port_joint /
+# motor_stbd_joint, control channels 0/2 -> SERVO1/SERVO3), but without
+# this file CUSV boots with ArduRover's plain factory defaults --
+# SERVO1_FUNCTION=26 (GroundSteering, for a car-style rudder) and
+# SERVO3_FUNCTION=70 (plain Throttle) -- neither of which is the
+# skid-steer mixing ArduRover actually needs to turn a twin-thruster hull.
+# Confirmed live: with the factory defaults, SERVO_OUTPUT_RAW's servo1 and
+# servo3 stayed pinned identically (e.g. both 1900) regardless of a
+# growing cross-track error -- the boat drove in a straight line and
+# never turned toward its waypoint at all, independent of and in addition
+# to a separate thrust-direction bug in model.sdf (also fixed the same
+# session). SERVO_FUNCTION 73/74 (ThrottleLeft/ThrottleRight) are
+# ArduRover's own skid-steer functions -- they make the motor library
+# mix steering + throttle into differential left/right output internally,
+# instead of expecting a single combined throttle plus a separate
+# steering-servo signal. This is the same fix
+# vehicle_twins/mass_resilient_cusv/hardened.parm needs (and gets,
+# separately, since ardu_defaults files aren't merged -- SITL only
+# accepts one).
+SERVO1_FUNCTION 73
+SERVO3_FUNCTION 74

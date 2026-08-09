@@ -453,6 +453,52 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-09 (CUSV navigation): **Two real, distinct physics/config bugs
+  found and fixed** while investigating a user-reported "vehicle deviating
+  from the goal / speed too slow" symptom -- neither was the dashboard's
+  goto()-race bug fixed earlier the same day (that one was real too, but
+  didn't fully explain the symptom on its own). Diagnosed by watching
+  live NAV_CONTROLLER_OUTPUT/VFR_HUD/SERVO_OUTPUT_RAW telemetry during an
+  actual AUTO-mode run, not by reading code alone:
+  1. **`sim_config/models/cusv/model.sdf`'s thruster links had no
+     rotation** (`0 0 0`) -- compared directly against BlueBoat's own
+     proven `motor_stbd_link`/`motor_port_link` poses
+     (`sim_config/models/blueboat/model.sdf`), which both apply
+     `-90 0 90` degrees. Without it, `gz-sim-thruster-system` generates
+     thrust along the joint's local -Z axis, which stayed literally
+     vertical (world frame) instead of being rotated into the hull's
+     forward/aft axis -- confirmed live: throttle correctly ramped to
+     100% chasing WP_SPEED but groundspeed stayed under 0.15 m/s. Fixed
+     by applying the same rotation CUSV's own build should have carried
+     over from BlueBoat originally.
+  2. **CUSV had no `ardu_defaults` file at all** (neither twin), so it
+     booted with ArduRover's factory defaults for a conventionally-
+     steered vehicle (SERVO1_FUNCTION=26 GroundSteering, SERVO3_FUNCTION=
+     70 plain Throttle) instead of skid-steer's differential mixing
+     functions (73/74, ThrottleLeft/ThrottleRight). Confirmed live:
+     SERVO_OUTPUT_RAW's servo1/servo3 stayed pinned identically
+     regardless of a growing cross-track error -- the boat drove dead
+     straight and never turned toward its waypoint at all. New
+     `vehicle_twins/mass_vulnerable_cusv/cusv.parm` (+ wired via
+     profile.json's `ardu_defaults`) and the same two lines added to
+     `vehicle_twins/mass_resilient_cusv/hardened.parm` (ardu_defaults
+     files aren't merged -- SITL only accepts one, so the hardened twin
+     needs its own copy, not a reference). **BlueBoat has this same gap**
+     (`profiles/blueboat.json` also has no `ardu_defaults`) -- not fixed
+     here since it's not one of the 4 primary twins, but flagged as a
+     likely-real, unverified issue there too.
+  Verified live, before/after, same due-East waypoint test: groundspeed
+  0.14 m/s (barely moving, throttle maxed) -> 1.05 m/s stable cruise;
+  heading frozen at a fixed value while target_bearing drifted away and
+  xtrack_error grew unboundedly -> heading locks onto target_bearing
+  exactly, xtrack_error stays ~0.00 the whole run. A second test with a
+  deliberate 90-degree-off target confirmed real differential steering
+  (servo1/servo3 diverging, heading actively turning toward the new
+  bearing). Then re-ran the full attack suite on both twins headless --
+  identical verdicts to before (VULNERABLE/VULNERABLE/VULNERABLE and
+  RESILIENT/INCONCLUSIVE respectively), confirming the navigation fixes
+  didn't regress anything else.
+
 - 2026-08-09 (twin cleanup): **Removed the 4 original reference twins**
   (`vehicle_twins/mass_vulnerable_wamv/`, `mass_resilient_blueboat/`,
   `auv_vulnerable_bluerov2/`, `auv_resilient_bluerov2_hardened/`) plus

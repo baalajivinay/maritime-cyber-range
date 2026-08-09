@@ -1,0 +1,115 @@
+{
+  "target": "mass_resilient_cusv",
+  "domain": "surface",
+  "run_ts": "20260809T200733",
+  "baseline": {
+    "lat": -33.7242229,
+    "lon": 150.6797359,
+    "mode": "MANUAL",
+    "armed": false,
+    "servo1": 1500,
+    "servo3": 1500,
+    "servo5": 0,
+    "heartbeats": 5
+  },
+  "attacks": {
+    "c2_replay": {
+      "mode_change": {
+        "verdict": "RESILIENT",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "HOLD",
+          "post_mode": "MANUAL",
+          "heartbeats_seen_after": 5
+        }
+      },
+      "rc_override": {
+        "verdict": "INCONCLUSIVE",
+        "evidence": {
+          "armed_confirmed": false,
+          "armed_during_injection": false,
+          "watched_channel": "servo3",
+          "pre_servo3": 1500,
+          "peak_servo3_during_injection": 1500,
+          "forged_throttle_pwm": 1700,
+          "reason": "target did not confirm ARMED after the arm sequence -- preconditions not met"
+        }
+      }
+    },
+    "gps_spoof": {
+      "vulnerability": {
+        "verdict": "N/A",
+        "evidence": {
+          "method": "gps_input",
+          "gps_id": 0,
+          "peak_delta_m": null,
+          "expected_offset_m": 1.0,
+          "reason": "target never showed any sign of ingesting the forged position at all -- not a demonstrated security property, this attack vector may not apply to this target as configured."
+        }
+      }
+    },
+    "ais_spoof": {
+      "vulnerability": {
+        "verdict": "N/A",
+        "evidence": {
+          "reason": "ArduPilot does not consume AIS in this architecture (transmit-only) -- there is no ingestion path for a vulnerability test. This is a platform fact, not a per-run measurement. See detectability for whether a monitor would catch this attack on the wire.",
+          "modes_run": [
+            "ghost",
+            "impersonate"
+          ]
+        }
+      }
+    }
+  },
+  "detectability": {
+    "min_ts": 1786286233.1049793,
+    "max_ts": 1786286371.1130648,
+    "families": {
+      "ais_spoof": {
+        "tp": 20,
+        "fp": 0,
+        "windows": 1,
+        "detected": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "latency": {
+          "n": 1,
+          "mean_s": 0.0,
+          "median_s": 0.0,
+          "p95_s": 0.0,
+          "max_s": 0.0
+        }
+      },
+      "c2_replay": {
+        "tp": 0,
+        "fp": 0,
+        "windows": 2,
+        "detected": 0,
+        "precision": NaN,
+        "recall": 0.0,
+        "latency": {
+          "n": 0,
+          "mean_s": null,
+          "median_s": null,
+          "p95_s": null,
+          "max_s": null
+        }
+      }
+    },
+    "overall": {
+      "tp": 20,
+      "fp": 0,
+      "windows": 3,
+      "detected": 1,
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "latency": {
+        "n": 1,
+        "mean_s": 0.0,
+        "median_s": 0.0,
+        "p95_s": 0.0,
+        "max_s": 0.0
+      }
+    }
+  }
+}

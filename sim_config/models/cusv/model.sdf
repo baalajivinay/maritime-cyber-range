@@ -145,7 +145,20 @@
     </link>
 
     <link name="motor_stbd_link">
-      <pose>-3.6 -1.3 -0.45 0 0 0</pose>
+      <!-- Rotation -90 0 90 (degrees) matches BlueBoat's own proven
+           motor_stbd_link pose exactly (sim_config/models/blueboat/model.sdf)
+           — REQUIRED, not cosmetic: gz-sim-thruster-system generates thrust
+           along the joint's own local -Z axis, so without this rotation the
+           thrust vector points straight down/up in the world frame instead
+           of along the hull's forward/aft axis. This was missing from
+           CUSV's original build (confirmed live 2026-08-09 while
+           investigating a reported "vehicle deviating from the goal /
+           speed too slow" symptom): AUTO nav showed the correct target
+           bearing the whole time, throttle correctly ramped toward 100%
+           chasing WP_SPEED, but groundspeed stayed near-zero and heading
+           drifted instead of converging — exactly what unrotated
+           (vertical) thrust looks like, not a navigation-math bug. -->
+      <pose degrees="true">-3.6 -1.3 -0.45 -90 0 90</pose>
       <inertial>
         <mass>15.0</mass>
         <inertia>
@@ -183,7 +196,8 @@
     </joint>
 
     <link name="motor_port_link">
-      <pose>-3.6 1.3 -0.45 0 0 0</pose>
+      <!-- Same fix, same reasoning as motor_stbd_link above. -->
+      <pose degrees="true">-3.6 1.3 -0.45 -90 0 90</pose>
       <inertial>
         <mass>15.0</mass>
         <inertia>
