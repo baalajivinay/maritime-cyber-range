@@ -107,13 +107,23 @@ def read_true_ned(proc_holder):
         if in_pose:
             block += line
             if line.strip() == "}" and "position" in block:
-                mx = re.search(r"x:\s*([-\d.e]+)", block)
-                my = re.search(r"y:\s*([-\d.e]+)", block)
-                mz = re.search(r"z:\s*([-\d.e]+)", block)
+                # Gazebo's protobuf text format omits any field equal to its
+                # default (0.0) -- requiring x/y/z to all literally appear as
+                # text silently dropped every pose where the AUV was exactly
+                # on one of those axes (same bug already found and fixed
+                # 2026-08-09 in ais_emulator.py, dashboard_server.py, and
+                # run_attack_suite.py -- missed here until now). Default a
+                # missing field to 0.0 (its real value) instead of requiring
+                # a match, and widen the exponent character class so a
+                # positive-exponent value ("1.23e+05") doesn't get truncated.
+                mx = re.search(r"x:\s*([-+\d.e]+)", block)
+                my = re.search(r"y:\s*([-+\d.e]+)", block)
+                mz = re.search(r"z:\s*([-+\d.e]+)", block)
                 in_pose = False
-                if mx and my and mz:
-                    gx, gy, gz = float(mx.group(1)), float(my.group(1)), float(mz.group(1))
-                    yield (gy, gx, -gz)  # N, E, D
+                gx = float(mx.group(1)) if mx else 0.0
+                gy = float(my.group(1)) if my else 0.0
+                gz = float(mz.group(1)) if mz else 0.0
+                yield (gy, gx, -gz)  # N, E, D
 
 
 # --- feed loop ---------------------------------------------------------------
