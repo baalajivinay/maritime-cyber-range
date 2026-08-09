@@ -4,8 +4,10 @@
 # BlueROV2 file -- see that file's header for the full explanation of what
 # was kept/dropped and why) plus the hardening block appended at the end.
 # SITL only accepts one --defaults file, so this vehicle needs both in one
-# file, same reason vehicle_twins/auv_resilient_bluerov2_hardened/
-# hardened.parm exists as its own file rather than a diff.
+# file, same reason this project's original hardened BlueROV2 twin's
+# hardened.parm (since removed in favor of this REMUS-100 pair -- see
+# docs/EXECUTION_STATE.md's dated removal entry) existed as its own file
+# rather than a diff.
 
 SERVO1_FUNCTION 33
 SERVO2_FUNCTION 34
@@ -45,9 +47,9 @@ PSC_VELXY_D 0.8
 PSC_VELXY_I 0.5
 PSC_VELXY_P 5.0
 
-# --- Hardening, value carried over unchanged from
-# vehicle_twins/auv_resilient_bluerov2_hardened/hardened.parm's own
-# live-verified 2026-08-08 result (MAV_GCS_SYSID + MAV_OPTIONS=1 is the
+# --- Hardening, value carried over unchanged from this project's original
+# hardened BlueROV2 twin's own live-verified 2026-08-08 result
+# (MAV_GCS_SYSID + MAV_OPTIONS=1 is the
 # modern, non-deprecated ArduPilot mechanism -- SYSID_MYGCS alone does
 # nothing, confirmed unused in this ArduPilot version's own source). With
 # this set, an attacker using the plain default sysid (255, what this

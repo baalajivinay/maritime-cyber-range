@@ -1,3 +1,0 @@
-{"t": 1786137139.0318375, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "underwater", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
-{"t": 1786137142.0709982, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "underwater", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
-{"t": 1786137145.1118402, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "underwater", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}

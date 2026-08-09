@@ -81,11 +81,18 @@ def true_pose():
     for b in p.stdout.split("pose {"):
         if f'name: "{MODEL}"' not in b:
             continue
-        mx = re.search(r"position\s*\{\s*x:\s*([-\d.e]+)", b)
-        my = re.search(r"position\s*\{[^}]*y:\s*([-\d.e]+)", b, re.S)
-        mz = re.search(r"position\s*\{[^}]*z:\s*([-\d.e]+)", b, re.S)
-        if mx and my and mz:
-            out = (float(mx.group(1)), float(my.group(1)), float(mz.group(1)))
+        # Gazebo's protobuf text format omits any field equal to its
+        # default (0.0) entirely -- requiring x/y/z to all literally
+        # appear as text silently dropped every pose where one of them
+        # was exactly on that axis (confirmed live 2026-08-09, same bug
+        # in nodes/ais_emulator/ais_emulator.py and dashboard_server.py).
+        # Default a missing field to 0.0 (its real value) instead.
+        mx = re.search(r"position\s*\{\s*x:\s*([-+\d.e]+)", b)
+        my = re.search(r"position\s*\{[^}]*y:\s*([-+\d.e]+)", b, re.S)
+        mz = re.search(r"position\s*\{[^}]*z:\s*([-+\d.e]+)", b, re.S)
+        out = (float(mx.group(1)) if mx else 0.0,
+               float(my.group(1)) if my else 0.0,
+               float(mz.group(1)) if mz else 0.0)
     return out
 
 

@@ -24,14 +24,15 @@ vehicle_twins/
   auv_resilient_remus100_hardened/   same real REMUS-100 hull, hardened GCS-link config
 ```
 
-Earlier reference twins (WAM-V, BlueBoat, BlueROV2) are retained, not
-deleted, under `vehicle_twins/mass_vulnerable_wamv/`,
-`mass_resilient_blueboat/`, `auv_vulnerable_bluerov2/`, and
-`auv_resilient_bluerov2_hardened/` — real, tested, and still bootable the
-same way, just superseded as the primary demo set by the two twins above
-that are copies of specifically-named, individually-citable Navy/research
-hardware. Everything below applies identically to either set; just swap
-the folder path.
+This project's original reference twins (WAM-V, BlueBoat, BlueROV2) were
+retired and removed once this real-vehicle set replaced them as the
+primary (and now only) demo set — see `docs/EXECUTION_STATE.md`'s dated
+removal entry. Their underlying hull models
+(`sim_config/models/blueboat/`, `sim_config/models/bluerov2/`, plus the
+VRX-based WAM-V) are still on disk and still boot via `profiles/wamv.json`
+/ `blueboat.json` / `bluerov2.json` directly — `docs/NEW_AUV_QUICKSTART.md`
+still uses BlueROV2 as a clone base for building a brand-new AUV twin from
+scratch — but they no longer have their own `vehicle_twins/` packages.
 
 Each folder contains everything specific to that twin: `profile.json` (+
 `hardened.parm` for the resilient ones), `target.json` (for the resilience
@@ -45,7 +46,7 @@ for GPS/EKF fusion plus `MAV_GCS_SYSID`+`MAV_OPTIONS=1` for GCS-link
 enforcement. On the underwater (AUV) twins GPS is structurally N/A (RF
 doesn't penetrate water, real physics, not a config choice) — only the
 GCS-link mechanism applies there. See
-`vehicle_twins/mass_resilient_blueboat/hardened.parm` for the full
+`vehicle_twins/mass_resilient_cusv/hardened.parm` for the full
 GPS1_TYPE=14 verification notes and
 `vehicle_twins/auv_resilient_remus100_hardened/hardened.parm` for the
 underwater-specific trim (deliberately NOT the BlueROV2 DAVE defaults file
@@ -90,8 +91,7 @@ attacks live — step 4 below):
 tools/run_demo.sh vehicle_twins/mass_vulnerable_cusv up
 ```
 
-Both accept any of the 8 folder paths (4 primary + 4 retained reference).
-Wait for `STACK UP` / `DEMO UP`
+Both accept any of the 4 folder paths above. Wait for `STACK UP` / `DEMO UP`
 before continuing — takes about 30-60s. The dashboard boot tries to open
 your web browser to `http://localhost:8080` automatically; if nothing pops
 up (e.g. no desktop available), open a browser yourself and go to that
@@ -209,7 +209,7 @@ stack can run at a time (they share ports).
 ## Reading the verdicts
 
 Four outcomes, not a binary pass/fail — see `docs/TARGET_TESTING.md` for
-the full methodology. What you'll actually see across the primary 4 twins:
+the full methodology. What you'll actually see across the 4 twins:
 
 | Twin | mode-change | RC-override | GPS spoof | AIS spoof | Deployment verdict |
 |---|---|---|---|---|---|
@@ -217,12 +217,6 @@ the full methodology. What you'll actually see across the primary 4 twins:
 | `mass_resilient_cusv` | RESILIENT | INCONCLUSIVE | N/A | N/A | **CONDITIONALLY READY** |
 | `auv_vulnerable_remus100` | VULNERABLE | VULNERABLE | N/A (real physics) | N/A | **NOT READY TO DEPLOY** |
 | `auv_resilient_remus100_hardened` | RESILIENT | INCONCLUSIVE | N/A (real physics) | N/A | **CONDITIONALLY READY** |
-
-The retained reference twins (`mass_vulnerable_wamv`,
-`mass_resilient_blueboat`, `auv_vulnerable_bluerov2`,
-`auv_resilient_bluerov2_hardened`) show the identical pattern — same
-mechanisms, different hulls, same result shape — see each one's own
-`README.md` for its exact numbers.
 
 The resilient twins' RC-override shows INCONCLUSIVE, not a clean
 RESILIENT — because the attacker can't even **arm** the hardened vehicle,

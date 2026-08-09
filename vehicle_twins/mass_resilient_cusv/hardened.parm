@@ -1,7 +1,8 @@
 # Real, current (non-deprecated) ArduPilot hardening -- the exact same
-# two mechanisms already verified live against BlueBoat (see
-# vehicle_twins/mass_resilient_blueboat/hardened.parm for the full
-# verification notes). Carried over unmodified in value: both mechanisms
+# two mechanisms already verified live against this project's original
+# reference twin (a BlueBoat hull, since removed in favor of CUSV/REMUS-100
+# as the primary demo set -- see docs/EXECUTION_STATE.md's dated removal
+# entry). Carried over unmodified in value: both mechanisms
 # are ArduPilot-parameter-level (GCS-link enforcement, EKF/GPS fusion
 # behavior), not hull-specific, so they should transfer to CUSV's much
 # larger hull unchanged -- but this is re-verified live against CUSV

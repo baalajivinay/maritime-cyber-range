@@ -1,6 +1,0 @@
-WO-15 attack suite -- profile=blueboat domain=surface
-run: 2026-07-30 00:44:06
-
-[PASS] gps_spoof: MAVLink position jumped 50.0 m; TRUE pose moved 0.00 m
-[PASS] ais_spoof: ghost 999999001: 6 msgs; impersonation of real MMSI 503999888: 5 msgs
-[PASS] c2_replay: forged RC override moved TRUE pose 2.18 m

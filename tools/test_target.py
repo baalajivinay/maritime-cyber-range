@@ -472,7 +472,7 @@ def _encode_and_send(sock, udp_addr, data):
         sock.sendto((s + "\r\n").encode("ascii"), udp_addr)
 
 
-def run_ais_spoof_test(target_cfg, out_dir, conn, det_suite, alerts):
+def run_ais_spoof_test(target_cfg, out_dir, conn, det_suite, alerts, baseline=None):
     """VULNERABILITY is structurally N/A, always, for a bare ArduPilot
     autopilot -- nothing in ArduPilot's own state consumes AIS in this
     architecture (transmit-only). Declared up front as a platform fact
@@ -490,11 +490,22 @@ def run_ais_spoof_test(target_cfg, out_dir, conn, det_suite, alerts):
     own_mmsi = acfg.get("own_mmsi")
     modes = acfg.get("modes", ["ghost"])
     window_s = target_cfg["timing"]["window_s"]
-    home_lat, home_lon = 0.0, 0.0
-    if conn is not None:
-        # best-effort: use the target's own last-seen believed position as
-        # the plausible area to place the ghost/impersonation track around
-        pass
+    # Anchor the ghost/impersonation track near the target's own real
+    # position (already sampled into `baseline` by snapshot_state() before
+    # this function is called), not (0,0) -- a bug found live 2026-08-09:
+    # this was a dead stub (home_lat/home_lon hardcoded 0.0, the "best-
+    # effort" comment below never actually implemented). It didn't produce
+    # a WRONG verdict -- AisConflictDetector's ghost check is position-
+    # independent, and its impersonation check compares against the
+    # target's REAL believed position (fed by this run's own MAVLink tap,
+    # not by this function), so a (0,0)-anchored impersonation broadcast is
+    # thousands of km off and gets flagged trivially easily. That inflates
+    # confidence in the detectability score by testing an unrealistically
+    # obvious forgery instead of a plausible one near the vessel's actual
+    # position -- a fidelity bug, not a correctness one, but worth fixing
+    # for every target this runs against, not just newly-added ones.
+    b_lat, b_lon = (baseline or {}).get("lat"), (baseline or {}).get("lon")
+    home_lat, home_lon = (b_lat, b_lon) if (b_lat is not None and b_lon is not None) else (0.0, 0.0)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     stop = threading.Event()
@@ -827,7 +838,7 @@ def run_target_test(target_name, requested_attacks=None):
 
     if "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
         print("[test_target] running ais_spoof (vulnerability N/A by design; scoring detectability) ...")
-        verdict, evidence = run_ais_spoof_test(target, out_dir, conn, det_suite, alerts)
+        verdict, evidence = run_ais_spoof_test(target, out_dir, conn, det_suite, alerts, baseline)
         results["attacks"]["ais_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}
         print(f"[test_target]   vulnerability: {verdict}")
 

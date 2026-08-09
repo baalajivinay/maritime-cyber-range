@@ -1,2 +1,0 @@
-{"t": 1786129059.2684774, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
-{"t": 1786129063.6799557, "detector": "C2OverrideDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}

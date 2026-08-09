@@ -23,7 +23,7 @@ carried over unmodified in value and re-verified live against this hull.
 | GPS spoof | vulnerability | **N/A** | `GCS_SYSID_ENFORCE` blocks the attacker's GPS_INPUT traffic before it ever reaches the wire — the same effect already documented for BlueBoat, re-confirmed live on this hull. |
 | AIS spoof | vulnerability | **N/A** | Platform fact — same on every twin in this set. |
 | C2 replay | mode-change | **RESILIENT** | Verified live: forged mode-change from the attacker's default sysid has no effect. |
-| C2 replay | RC-override | **INCONCLUSIVE** | Verified live: the attacker can't even arm the vehicle, so the check correctly declines to call the override itself RESILIENT (same conservative rule as every other hardened twin — see `vehicle_twins/mass_resilient_blueboat/README.md` for the full reasoning). |
+| C2 replay | RC-override | **INCONCLUSIVE** | Verified live: the attacker can't even arm the vehicle, so the check correctly declines to call the override itself RESILIENT — see `docs/TARGET_TESTING.md`'s verdict-outcomes section for the full reasoning (this is the tool's general rule, applied identically to every hardened twin). |
 
 **Net effect**: identical to BlueBoat's — `GCS_SYSID_ENFORCE` is thorough
 enough to block the attacker before GPS spoofing or RC-override can even be
