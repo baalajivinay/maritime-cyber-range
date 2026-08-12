@@ -1,5 +1,12 @@
 # Autonomous Maritime Cyber Range
 
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![ROS 2](https://img.shields.io/badge/ROS_2-Jazzy-22314E?style=flat-square&logo=ros&logoColor=white)](https://docs.ros.org/en/jazzy/)
+[![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic-F58113?style=flat-square)](https://gazebosim.org/)
+[![ArduPilot](https://img.shields.io/badge/ArduPilot-SITL%2FMAVLink-CC2936?style=flat-square)](https://ardupilot.org/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Flask-SocketIO](https://img.shields.io/badge/Flask--SocketIO-black?style=flat-square&logo=flask&logoColor=white)](https://flask-socketio.readthedocs.io/)
+
 Real-physics vehicle simulation (ArduPilot SITL + Gazebo) with GPS/AIS/C2
 attack modules, a live monitoring dashboard, and a CLI resilience-testing
 tool, for **both surface (MASS) and underwater (AUV) vehicles** --
