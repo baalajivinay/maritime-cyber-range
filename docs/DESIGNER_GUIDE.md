@@ -50,8 +50,8 @@ command / acoustic), watch true-vs-believed diverge, and hit **Report** for a
 full precision/recall/FP-rate/latency + system-overhead breakdown. A **Live
 detection metrics** card shows the detection layer's own CPU/RSS/throughput in
 real time, and a badge pops up with the measured detect-latency the moment an
-attack's first matching alert lands. See `docs/DEMO_GUIDE.md` for the full
-presentation runbook (including the boot-fresh pre-flight step).
+attack's first matching alert lands. See `docs/TWIN_DEMO_GUIDE.md` for the
+full walkthrough (including the boot-fresh pre-flight step).
 
 **For automated verification** (no dashboard), use the harness directly:
 

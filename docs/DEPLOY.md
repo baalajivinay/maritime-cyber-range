@@ -79,8 +79,8 @@ gunzip -c mcr-image.tar.gz | docker load
 
 Then open **http://localhost:8080** — set a destination, launch GPS / AIS / C2 /
 acoustic attacks, watch true-vs-believed diverge and the live detector alerts,
-and hit **Report** for precision/recall. (Full presentation script:
-`docs/DEMO_GUIDE.md`.)
+and hit **Report** for precision/recall. (Full walkthrough:
+`docs/TWIN_DEMO_GUIDE.md`.)
 
 ## The 3D GUI (X11)
 

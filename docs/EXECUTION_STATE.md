@@ -453,6 +453,226 @@ Legend: [x] done · [~] in progress · [ ] not started
 
 ## Running notes (append newest at top; keep terse)
 
+- 2026-08-12 (full repo doc audit + cleanup + new master context doc): User
+  asked to recheck every doc against current reality, update programs/docs,
+  delete unnecessary "old idea" docs, and write a universal pin-to-pin
+  context doc so a fresh session (human or AI) can get pitch-perfect on the
+  whole project without reconstructing it from git history. Read every
+  doc/program end to end before writing anything, rather than assuming
+  prior docs were still accurate.
+  - **Real accuracy gap found and fixed**: `docs/ARCHITECTURE.md` was
+    still describing the Phase-1 surface-only/WAM-V-only architecture --
+    no underwater domain, no `vehicle_twins/`/`targets/` config layers,
+    missing 3 of the project's 8 MAVLink ports (the `test_target`/
+    `gps_feeder`/`vision_feeder` ports added since), and it asserted the
+    `accel_body` arming bug as a live "known pre-existing issue" -- that
+    bug was fixed back at WO-09, over a hundred commits ago. Fully
+    rewritten to the current dual-domain state, verified against
+    `constants.py`'s actual port defaults and a `grep` for every relevant
+    function name before writing, not copied from the stale version.
+  - **Deleted** (superseded, recoverable via git history if ever needed):
+    `docs/DEMO_GUIDE.md` (legacy profile-based presentation script, already
+    self-flagged as superseded, fully covered by `docs/TWIN_DEMO_GUIDE.md`);
+    `docs/Maritime_Cyber_Range_Progress_Report.docx` (a snapshot from
+    2026-07-27 -- predates even the accel-sign arming fix -- fully
+    superseded by this file); three throwaway `targets/*.json` dev/
+    verification configs (`gps_test_converged`, `gps_test_fresh`,
+    `standalone_test`) plus their `target_runs/` evidence -- one-off
+    artifacts from early Phase 2 whose job (proving vehicle-agnosticism)
+    was already done and is already documented here; an untracked leftover
+    `target_runs/mass_vulnerable_wamv/` run; stray `__pycache__/` dirs
+    (never tracked, `.gitignore`'d already, just filesystem clutter).
+  - **Updated for accuracy**: `docs/ROADMAP.md` (added a header marking it
+    historical -- its own scope is 100% complete and it predates both the
+    resilience-tester pivot and the real-vehicle-twin rebuild, neither of
+    which it mentions); `docs/TWIN_DEMO_GUIDE.md` and both REMUS-100 twins'
+    `README.md` (added the AUV navigation-bug disclosure from the
+    2026-08-10 entry below at the exact point a reader would hit it --
+    previously only `EXECUTION_STATE.md` itself had this, so a reader
+    landing directly on a twin's own README or the demo guide wouldn't
+    have known); `README.md`, `docs/DEPLOY.md`, `docs/DESIGNER_GUIDE.md`
+    (fixed now-dangling references to the deleted `DEMO_GUIDE.md`).
+  - **`docs/Maritime_Cyber_Range_Plain_Language_Guide.docx` rewritten**
+    (still referenced the retired `mass_vulnerable_wamv`/
+    `mass_resilient_blueboat`/`auv_vulnerable_bluerov2`/
+    `auv_resilient_bluerov2_hardened` twin names throughout section 4's
+    table, section 8's commands, and section 10's results table -- edited
+    directly via the docx XML, same workflow as the earlier PPT build this
+    session, verified correct by re-rendering to PDF/JPG and reading every
+    changed page, not just trusting the XML edit). Also added the same
+    navigation-bug caveat as a new row in its plain-language troubleshooting
+    table, and refreshed its "prepared"/"most recently verified" dates.
+  - **`CYBER RANGE.docx`** (the original founding project brief -- Navy/
+    iDEX framing, Phase I scope, the two-student division of labor) moved
+    from the repo root into `docs/` for organization; content read and
+    confirmed still relevant as origin-story context, left otherwise
+    unchanged.
+  - **New**: `docs/PROJECT_CONTEXT.md` -- the requested universal doc.
+    Single file covering: why the project exists, the one-paragraph
+    architecture, the full 3-phase pivot history condensed to one page,
+    every component/directory, the full tools-layer table, all 4 twins'
+    real hardware + verified results + verdict methodology, current known
+    issues (including this session's earlier AUV yaw-fix finding, stated
+    precisely -- fixed vs. still-open, not glossed over), this cleanup
+    pass itself, and a full doc map. Positioned as the new #1 "start here"
+    entry in `README.md`'s documentation table, ahead of
+    `TWIN_DEMO_GUIDE.md`. Every specific claim in it (function names,
+    class names, file existence, ports) was grep/read-verified against the
+    live repo while writing, not transcribed from memory of older docs --
+    e.g. confirmed `sim_config/models/plane_spike/` has zero references in
+    any `profiles/*.json`/`targets/*.json` before calling it an orphaned
+    research artifact, confirmed `believed_thread`/`gz_pose_thread`/
+    `detector_thread`/`overhead_emitter`/`DetectorSuite` are real current
+    names via `grep`.
+  - Not touched, deliberately: `evidence/` (Phase 1's historical checkpoint
+    logs -- still cited by `docs/ROADMAP.md`'s checkpoint table, left as
+    the historical record it is), `ros2_ws/src/vrx` (the VRX submodule --
+    still load-bearing for the legacy `wamv` profile), `profiles/
+    {wamv,blueboat,bluerov2}.json` and their `sim_config/models/` (retired
+    from the primary demo set but still fully functional and still the
+    teaching/clone base for `docs/DESIGNER_GUIDE.md`/
+    `docs/NEW_AUV_QUICKSTART.md` -- deleting them would be a functional
+    regression, not a doc cleanup).
+  - Nothing in this pass touched code behavior -- documentation and
+    filesystem organization only. Uncommitted at the time of this entry;
+    the day's earlier code changes (the yaw fix) are also still
+    uncommitted -- both awaiting explicit "commit and push" per this
+    project's standing rule of never committing without being asked.
+
+- 2026-08-10 (presentation day -- AUV nav bug root-caused precisely, ONE real
+  bug fixed, a SECOND deeper one found underneath and deliberately left
+  alone): User asked for a full backend audit + to fix the AUV
+  destination-tracking bug from the 2026-08-09 dry run if not yet fixed.
+  Re-investigated live rather than trusting the old diagnosis.
+  - **The old diagnosis (untuned PSC_POSXY_P/PSC_VELXY_* "copied from
+    BlueROV2") was WRONG.** Confirmed live via PARAM_REQUEST_READ: those are
+    pre-4.x parameter names that don't exist in this firmware build (current
+    names are PSC_NE_POS_P / PSC_NE_VEL_P/I/D -- traced via
+    AC_PosControl.cpp's own param-conversion table). The parm file's lines
+    silently no-op at boot -- both REMUS-100 twins have always run ArduSub's
+    plain default gains, not "BlueROV2's gains." Nothing to retune here.
+  - **Real root cause, found instead**: `legit_vision_feeder()`
+    (dashboard_server.py) and `acoustic_spoof.py`'s `run_feed()` both call
+    `vision_position_estimate_send(..., 0.0, 0.0, 0.0)` -- hardcoding
+    roll/pitch/**yaw** to zero. Both REMUS-100 twins set `EK3_SRC1_YAW=6`,
+    making this feed the EKF's YAW source too, not just position. Sending a
+    constant 0.0 tells the EKF "always facing north" regardless of the
+    vehicle's real heading. Confirmed live: at rest, ArduPilot's own
+    `ATTITUDE.yaw` read ~0 rad while Gazebo's true yaw for the same instant
+    was ~1.78 rad (~102 deg). Reproduced the exact 2026-08-09 failure
+    signature standalone (short-range goto: net progress then a full
+    reversal back near the start point, `NAV_CONTROLLER_OUTPUT.wp_dist`
+    reading 0 while true distance was still ~80m) with a scripted repro that
+    replays goto()'s exact mission-upload sequence and watches true Gazebo
+    position continuously.
+  - **Fixed**: `acoustic_spoof.read_true_ned()` now also parses the
+    orientation quaternion from the same Gazebo pose block (previously only
+    position was extracted -- the old code's block-termination check fired
+    at the position sub-block's own closing brace, before the orientation
+    sub-block was ever reached) and yields a real NED compass yaw
+    (`yaw_ned = pi/2 - yaw_enu`, ENU->NED conversion derived and sanity
+    checked, not guessed). Both callers now send this real yaw instead of a
+    hardcoded 0.0. `acoustic_spoof.py`'s own attack path (`run_feed`)
+    deliberately still forges POSITION only, never yaw -- a false heading
+    would be a second, uninteded corruption unrelated to the position-spoof
+    attack this module models.
+  - **This fix is real and verified correct in isolation** (ArduPilot's
+    believed heading now tracks Gazebo truth continuously, confirmed live)
+    but **exposed a SECOND, deeper bug it had been masking**: with a
+    correct heading fed from the start, both REMUS-100 twins now hold
+    position and report `wp_dist=0`/near-zero thruster output IMMEDIATELY
+    on a fresh AUTO mission, i.e. they don't move toward the destination AT
+    ALL (worse for a live demo than before, which at least drove partway
+    there before diverging). Confirmed NOT a mission-upload bug (MISSION_ITEM_INT
+    readback shows the correct destination coordinates, MISSION_CURRENT
+    confirms it's targeting the right waypoint) and NOT a race (reproduced
+    deterministically 3/3 times, including retrying on an already-converged,
+    fully-settled EKF). Best current hypothesis, not yet confirmed: an
+    earth-frame-to-body-frame rotation issue in how ArduSub's position
+    controller output gets applied to REMUS-100's 6-thruster vectored mixer
+    once heading is genuinely non-zero -- i.e. a motor-mixing/SITL-config
+    level issue, not something fixable by touching the feeder or dashboard
+    code again. This has never been proven working for ANY vehicle in this
+    project's underwater vectored-thruster line, REMUS-100 or the earlier
+    BlueROV2 -- AUTO-mission horizontal waypoint tracking specifically (not
+    arm/dive/RC-override, all of which stay fully verified) was never
+    actually confirmed accurate before the 2026-08-09 dry run first looked
+    for it.
+  - **Deliberately NOT chased further today** -- diagnosing a motor-mixing/
+    frame-rotation issue inside ArduSub's position controller needs the
+    same iterate-and-test cycle this project has always required for
+    control-loop changes (see the CUSV buoyancy trim, 3 iterations), which
+    does not exist minutes before a live presentation. The yaw fix stays
+    (objectively correct, zero downside, and c2_replay's mode_change/
+    rc_override verdicts re-verified byte-identical after landing it --
+    VULNERABLE/VULNERABLE, detectability 1.0, `target_runs/
+    auv_vulnerable_remus100/20260812T204332/verdicts.json`). The AUV
+    waypoint-navigation bug itself is still open.
+  - **Recommendation is UNCHANGED from 2026-08-09**: do not live
+    click-to-navigate demo the AUV twins on the dashboard map -- use
+    `mass_vulnerable_cusv`/`mass_resilient_cusv` for the navigation/movement
+    visual (unaffected by any of today's changes -- surface twins don't use
+    `acoustic_spoof.py` at all). Demonstrate the AUV twins via the C2
+    command buttons (mode-change, RC-override) and/or the `test_target.py`
+    CLI report.
+  - Full teardown clean (`ps`/`ss`) after every test this session.
+
+- 2026-08-09 (final pre-presentation dry run -- found a 6th real issue, NOT
+  fixed, disclosed instead): User asked for one more full dry run plus a
+  constraints/roadmap writeup the night before presenting. Validate +
+  movement + CLI regression all repeated clean for all 4 twins (see below)
+  -- but this pass watched AUV navigation CONTINUOUSLY over 60-90s instead
+  of spot-sampling, and found a real, previously-invisible problem:
+  **`auv_vulnerable_remus100`/`auv_resilient_remus100_hardened` do not
+  track a clicked destination correctly.** At long range (~800m) the
+  vehicle oscillates/circles, covering only ~34m of net progress in 90s
+  despite repeatedly hitting 5.6 m/s at 100% throttle -- and at short range
+  (~80m) it's worse: distance to destination increased monotonically
+  (82.6m -> 375.4m over 56s), i.e. actively diverging, not just
+  inefficient. Confirmed via `MISSION_ITEM_INT` readback that the uploaded
+  waypoint coordinates are exactly correct (ruling out a goto()/frame-math
+  bug) -- `NAV_CONTROLLER_OUTPUT`'s `wp_dist`/`target_bearing` were
+  internally inconsistent with the vehicle's own verified true position,
+  pointing at an ArduSub position-controller/EKF-origin behavior, not a
+  dashboard bug. Both REMUS-100 twins share byte-identical `PSC_POSXY_P`/
+  `PSC_VELXY_P/I/D` gains (confirmed by diffing the two parm files),
+  apparently copied from BlueROV2 -- REMUS-100 can generate a much higher
+  top speed than BlueROV2, and these gains are the classic shape of
+  "tuned for a slower vehicle, unstable on a faster one."
+  - **Why this was never caught before**: navigation was UNREACHABLE for
+    either AUV twin until today's earlier `legit_vision_feeder` fix (no
+    position source at all -> AUTO mode-entry silently refused). This
+    isn't a regression from anything landed today -- it's a pre-existing
+    tuning gap that simply had no way to become visible until arming and
+    AUTO-entry started working.
+  - **Deliberately NOT fixed this pass** -- blind-tuning an ArduSub
+    position controller (PSC_*/WPNAV_*) the night before a presentation,
+    without the normal iterate-and-re-test cycle this project's other
+    tuning work (e.g. CUSV's buoyancy trim, 3 iterations) always used, is
+    a real risk of making it worse in a way that's harder to notice than
+    "doesn't track well." Disclosing honestly and recommending a
+    workaround for tomorrow (below) instead.
+  - **What's unaffected, confirmed via the same pass**: arming, mode
+    changes, C2/RC-override attacks, and the full `test_target.py` CLI
+    verdict suite all work identically on both AUV twins regardless of
+    this bug -- none of that code path depends on AUTO waypoint tracking.
+    Re-ran the full CLI suite on all 4 twins headless as part of this same
+    dry run: byte-identical verdict shapes to every prior run this session
+    for all 4 (`mass_vulnerable_cusv` VULNERABLE/VULNERABLE/VULNERABLE
+    1.0/1.0/1.0; `mass_resilient_cusv` RESILIENT/INCONCLUSIVE/N-A/N-A,
+    0.0 c2 recall; `auv_vulnerable_remus100` VULNERABLE/VULNERABLE, 1.0;
+    `auv_resilient_remus100_hardened` RESILIENT/INCONCLUSIVE, 0.0).
+  - **Recommendation for tomorrow's presentation**: don't live
+    click-to-navigate demo the AUV twins on the dashboard map. Use
+    `mass_vulnerable_cusv`/`mass_resilient_cusv` for the navigation/
+    movement visual (both fully solid, re-confirmed this pass). For the
+    AUV twins, demonstrate via the C2 command buttons (mode-change,
+    RC-override -- both fully live and correct) and/or the
+    `test_target.py` CLI report, neither of which touches the broken
+    navigation path.
+  - Filed as a next-stage item (see roadmap) rather than left silently
+    undocumented.
+
 - 2026-08-09 (5th real fix -- goto() arm retry was too short, presentation
   eve): User came back after the GPS+vision feeder fixes still seeing
   `mass_resilient_cusv` stuck AUTO/DISARMED ("i dont know what you fixed").

@@ -23,6 +23,7 @@ blow-by-blow build history (start there for full project context).
 
 | Start here | For |
 |---|---|
+| [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md) | **Read this first if you're new** (including a fresh AI session) -- the complete, current-state picture of the whole project in one file: why it exists, how it's built, every component, all 4 twins' verified results, known issues, how to run everything. |
 | [`docs/TWIN_DEMO_GUIDE.md`](docs/TWIN_DEMO_GUIDE.md) | Boot a twin, run attacks, read the verdict, tear down -- the fastest path to seeing the whole product work. |
 | [`docs/TARGET_TESTING.md`](docs/TARGET_TESTING.md) | `tools/test_target.py`, the vehicle-agnostic resilience tester -- point it at any ArduPilot SITL, not just this repo's own twins. |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | Docker packaging (`./launch.sh`) -- no native ROS/Gazebo/ArduPilot install needed. |
@@ -30,8 +31,7 @@ blow-by-blow build history (start there for full project context).
 | [`docs/VEHICLE_TWIN_CONTRACT.md`](docs/VEHICLE_TWIN_CONTRACT.md) | **Bring your own vehicle**: the `vehicle_twins/<name>/` folder contract (`profile.json`/`target.json` schemas, model.sdf requirements) and how to validate, boot, attack, and score it in this environment. |
 | [`docs/DESIGNER_GUIDE.md`](docs/DESIGNER_GUIDE.md) | Deeper reference: attacks, detection/scoring internals, adding a new vehicle. |
 | [`docs/NEW_AUV_QUICKSTART.md`](docs/NEW_AUV_QUICKSTART.md) | Full worked example: clone an existing AUV model into a genuinely new one. |
-| [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) | Presenting live (Gazebo 3D + dashboard together). |
-| [`docs/EXECUTION_STATE.md`](docs/EXECUTION_STATE.md) | Dated, blow-by-blow build history -- read this for full project context or to resume work. |
+| [`docs/EXECUTION_STATE.md`](docs/EXECUTION_STATE.md) | Dated, blow-by-blow build history -- read this to resume in-flight work. |
 
 ## Layout
 

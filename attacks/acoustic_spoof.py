@@ -34,6 +34,7 @@ USAGE:
 Interactive: 'step' | 'ramp' | 'off' | 'quit' (same verbs as gps_spoof).
 """
 import os
+import re
 import sys
 import csv
 import math
@@ -92,38 +93,77 @@ def compute_offset_m():
 
 
 # --- true pose from Gazebo (ENU) -> NED --------------------------------------
+def _field(block, name, default=0.0):
+    m = re.search(rf"{name}:\s*([-+\d.e]+)", block)
+    return float(m.group(1)) if m else default
+
+
 def read_true_ned(proc_holder):
-    """Yields (N, E, D) from the AUV's true Gazebo odometry, continuously."""
+    """Yields (N, E, D, yaw_ned_rad) from the AUV's true Gazebo odometry,
+    continuously. yaw_ned_rad is the vehicle's true compass heading (0 =
+    north, clockwise-positive, i.e. the convention VISION_POSITION_ESTIMATE
+    expects).
+
+    Both REMUS-100 twins set EK3_SRC1_YAW=6 -- VISION_POSITION_ESTIMATE is
+    their YAW source too, not just position. A caller that ignores this
+    field and always sends yaw=0.0 silently tells the EKF "the vehicle is
+    always facing north," fighting its real heading estimate the moment it
+    turns. Root-caused live 2026-08-10 as the actual cause of the AUV
+    waypoint-tracking bug documented in EXECUTION_STATE.md's 2026-08-09
+    dry-run entry (previously misdiagnosed there as untuned PSC_* position-
+    controller gains -- that diagnosis didn't hold up: PSC_POSXY_P/
+    PSC_VELXY_* are pre-4.x parameter names that don't exist in this
+    firmware build and silently no-op, confirmed live via PARAM_REQUEST_READ
+    returning nothing for them, so the twins were always running ArduSub's
+    plain default gains, not "BlueROV2's gains." Confirmed instead: at rest,
+    ArduPilot's own ATTITUDE.yaw read ~0 rad while Gazebo's true yaw for the
+    same instant was ~1.78 rad (~102 deg) -- exactly the corruption this
+    fix removes.
+    """
     proc = subprocess.Popen(["gz", "topic", "-e", "-t", ODOM_TOPIC],
                             stdout=subprocess.PIPE, text=True)
     proc_holder["proc"] = proc
-    import re
     block = ""
+    depth = 0
     in_pose = False
     for line in proc.stdout:
-        if "pose {" in line:
-            in_pose = True; block = ""
+        if not in_pose:
+            if "pose {" in line:
+                in_pose = True; block = ""; depth = 1
             continue
-        if in_pose:
-            block += line
-            if line.strip() == "}" and "position" in block:
-                # Gazebo's protobuf text format omits any field equal to its
-                # default (0.0) -- requiring x/y/z to all literally appear as
-                # text silently dropped every pose where the AUV was exactly
-                # on one of those axes (same bug already found and fixed
-                # 2026-08-09 in ais_emulator.py, dashboard_server.py, and
-                # run_attack_suite.py -- missed here until now). Default a
-                # missing field to 0.0 (its real value) instead of requiring
-                # a match, and widen the exponent character class so a
-                # positive-exponent value ("1.23e+05") doesn't get truncated.
-                mx = re.search(r"x:\s*([-+\d.e]+)", block)
-                my = re.search(r"y:\s*([-+\d.e]+)", block)
-                mz = re.search(r"z:\s*([-+\d.e]+)", block)
-                in_pose = False
-                gx = float(mx.group(1)) if mx else 0.0
-                gy = float(my.group(1)) if my else 0.0
-                gz = float(mz.group(1)) if mz else 0.0
-                yield (gy, gx, -gz)  # N, E, D
+        depth += line.count("{") - line.count("}")
+        block += line
+        if depth <= 0:
+            in_pose = False
+            # Gazebo's protobuf text format omits any field equal to its
+            # default (0.0) -- requiring x/y/z to all literally appear as
+            # text silently dropped every pose where the AUV was exactly
+            # on one of those axes (same bug already found and fixed
+            # 2026-08-09 in ais_emulator.py, dashboard_server.py, and
+            # run_attack_suite.py -- missed here until now). Default a
+            # missing field to 0.0 (its real value) instead of requiring
+            # a match, and widen the exponent character class so a
+            # positive-exponent value ("1.23e+05") doesn't get truncated.
+            # Extract the position and orientation sub-blocks separately --
+            # both use the same x/y/z field names, so searching the whole
+            # combined block would silently grab whichever occurs first.
+            pm = re.search(r"position\s*\{(.*?)\}", block, re.S)
+            om = re.search(r"orientation\s*\{(.*?)\}", block, re.S)
+            pblock = pm.group(1) if pm else ""
+            oblock = om.group(1) if om else ""
+            gx = _field(pblock, "x")
+            gy = _field(pblock, "y")
+            gz = _field(pblock, "z")
+            qx = _field(oblock, "x")
+            qy = _field(oblock, "y")
+            qz = _field(oblock, "z")
+            qw = _field(oblock, "w")
+            # Gazebo orientation is ENU (yaw measured CCW from East, about
+            # the Up axis). VISION_POSITION_ESTIMATE wants a NED compass
+            # heading (0=North, CW-positive): yaw_ned = pi/2 - yaw_enu.
+            yaw_enu = math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+            yaw_ned = (math.pi / 2.0 - yaw_enu + math.pi) % (2.0 * math.pi) - math.pi
+            yield (gy, gx, -gz, yaw_ned)  # N, E, D, yaw
 
 
 # --- feed loop ---------------------------------------------------------------
@@ -137,11 +177,14 @@ def run_feed(conn):
     print("Commands: step | ramp | off | quit")
     holder = {}
     last_log = 0.0
-    for (tn, te, td) in read_true_ned(holder):
+    for (tn, te, td, tyaw) in read_true_ned(holder):
         off_n, off_e = compute_offset_m()
         fn, fe = tn + off_n, te + off_e
         us = int(time.time() * 1e6)
-        conn.mav.vision_position_estimate_send(us, fn, fe, td, 0.0, 0.0, 0.0)
+        # yaw is the AUV's real heading, never spoofed -- this attack forges
+        # position only (see module docstring); a false heading would corrupt
+        # navigation independent of and unrelated to the position offset.
+        conn.mav.vision_position_estimate_send(us, fn, fe, td, 0.0, 0.0, tyaw)
         with _lock:
             active, mode = state.active, state.mode
         if active and time.time() - last_log > 0.5:

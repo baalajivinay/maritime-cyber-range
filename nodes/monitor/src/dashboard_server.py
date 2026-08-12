@@ -349,9 +349,16 @@ def legit_vision_feeder():
             c.mav.set_gps_global_origin_send(
                 c.target_system, int(constants.HOME_LAT * 1e7), int(constants.HOME_LON * 1e7), 0)
             holder = {}
-            for (n, e, d) in acoustic_spoof.read_true_ned(holder):
+            for (n, e, d, yaw) in acoustic_spoof.read_true_ned(holder):
                 us = int(time.time() * 1e6)
-                c.mav.vision_position_estimate_send(us, n, e, d, 0.0, 0.0, 0.0)
+                # yaw MUST be the vehicle's real heading, not a hardcoded 0.0 --
+                # both REMUS-100 twins set EK3_SRC1_YAW=6, so this feed IS the
+                # EKF's yaw source. Sending a constant 0.0 silently told the EKF
+                # "always facing north," corrupting heading the moment the
+                # vehicle turned -- root-caused live 2026-08-10 as the real
+                # cause of the AUV waypoint-tracking bug (see acoustic_spoof.py's
+                # read_true_ned docstring for the full diagnosis).
+                c.mav.vision_position_estimate_send(us, n, e, d, 0.0, 0.0, yaw)
         except Exception as ex:
             print(f"legit vision feeder error: {ex}; retry 3s"); time.sleep(3)
 

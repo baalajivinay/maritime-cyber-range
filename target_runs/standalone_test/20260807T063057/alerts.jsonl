@@ -1,7 +1,0 @@
-{"t": 1786064479.737858, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "own MMSI 912345678 broadcast 8703036 m from the vessel's own telemetry position -- impersonation"}
-{"t": 1786064481.739562, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
-{"t": 1786064481.7397375, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "own MMSI 912345678 broadcast 8703036 m from the vessel's own telemetry position -- impersonation"}
-{"t": 1786064483.7409081, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "own MMSI 912345678 broadcast 8703036 m from the vessel's own telemetry position -- impersonation"}
-{"t": 1786064483.7409906, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
-{"t": 1786064485.7422354, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "position report from invalid/fabricated MMSI 999999001 (ghost vessel)"}
-{"t": 1786064485.7423651, "detector": "AisConflictDetector", "attack_type": "ais_spoof", "domain": "surface", "detail": "own MMSI 912345678 broadcast 8703036 m from the vessel's own telemetry position -- impersonation"}

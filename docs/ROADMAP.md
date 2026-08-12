@@ -1,9 +1,27 @@
 # Roadmap: from a surface-only demo to a dual-domain (AUV + MASS) simulator
 
+> **HISTORICAL — this roadmap's scope is 100% complete.** Every work order
+> (WO-08 through WO-27) and checkpoint below is done; see the checkpoint log
+> at the bottom. Kept as the detailed record of *how* the dual-domain
+> foundation was built and *why* (attack-semantics-differ-by-domain
+> reasoning, the checkpoint discipline, etc.) — genuinely useful design
+> history, not a forward-looking plan anymore.
+>
+> **Two later pivots are NOT reflected here** (this doc predates both):
+> 1. The project's primary deliverable became a **vehicle-agnostic
+>    resilience-testing tool** (`tools/test_target.py` + `targets/*.json`),
+>    not the fixed 3-vehicle demo this roadmap describes.
+> 2. The demo vehicle set was rebuilt from generic hulls (WAM-V/BlueBoat/
+>    BlueROV2) into real, individually-named Navy/research hardware
+>    (Textron Fleet-class CUSV, REMUS-100) under `vehicle_twins/`.
+>
+> For current state, start at `docs/PROJECT_CONTEXT.md` or
+> `docs/EXECUTION_STATE.md` instead.
+
 ## Where this picks up
 
-The project's own stated goal (`docs/Maritime_Cyber_Range_Progress_Report.docx`)
-was always "a cyber range for **AUV/MASS** vessels" -- underwater and surface,
+The project's own stated goal was always "a cyber range for **AUV/MASS**
+vessels" -- underwater and surface,
 both. In practice everything actually built so far is surface-only: VRX, the
 WAM-V hull, ArduRover firmware, AIS-as-radio-broadcast. This session's
 end-to-end verification proved that surface pipeline works and all three
