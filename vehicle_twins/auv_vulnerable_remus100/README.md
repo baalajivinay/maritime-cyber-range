@@ -64,3 +64,12 @@ tools/run_vehicle.sh vehicle_twins/auv_vulnerable_remus100 down
 ```
 
 See `docs/TWIN_DEMO_GUIDE.md` for the full walkthrough and dashboard usage.
+
+## Known limitation: click-to-navigate
+
+This twin arms and enters AUTO correctly, but does not reliably track a
+clicked destination (oscillates at long range, diverges at short range) --
+open bug, root-caused but not fixed, see `docs/EXECUTION_STATE.md`'s
+2026-08-10 entry. Doesn't affect any of the 3 attacks above or the CLI
+verdicts, which don't depend on waypoint tracking. Use the CUSV twins for a
+live navigation demo.

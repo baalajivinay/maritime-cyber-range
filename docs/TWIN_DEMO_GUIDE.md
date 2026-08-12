@@ -217,6 +217,30 @@ dashboard is up. Unlike the surface fix, this one does NOT need the ~30-60s
 settle wait -- confirmed live, both AUV twins armed and started moving on
 `goto()`'s very first retry straight after boot.
 
+> **Don't click-to-navigate the AUV twins live -- known open bug, use the
+> CUSV twins for the navigation/movement demo instead.** Arming and
+> AUTO-entry work (above), but tracking to the clicked point doesn't: both
+> REMUS-100 twins oscillate at long range and actively diverge at short
+> range instead of converging (found in the 2026-08-09 dry run, watching a
+> full 60-90s continuously rather than spot-checking). Root-caused further
+> 2026-08-10: `legit_vision_feeder` was also hardcoding the vehicle's YAW to
+> 0 in the same `VISION_POSITION_ESTIMATE` feed above -- both REMUS-100
+> twins use it as their yaw source too (`EK3_SRC1_YAW=6`), so this was
+> silently telling the EKF "always facing north," corrupting heading the
+> moment the vehicle turned. That real bug is now fixed (`attacks/
+> acoustic_spoof.py`'s `read_true_ned()` sends true yaw), but fixing it
+> exposed a second, deeper issue underneath: with a *correct* heading fed
+> from the start, both twins now hold position and report "arrived"
+> immediately instead of driving to the destination at all -- not yet
+> root-caused, likely an earth-to-body frame issue in how ArduSub's position
+> controller drives REMUS-100's 6-thruster mixer. Not fixed today,
+> deliberately -- see `docs/EXECUTION_STATE.md`'s 2026-08-10 entry for the
+> full diagnosis. **Everything else (arming, mode-change, RC-override, the
+> full `test_target.py` verdict suite) is unaffected** -- none of it depends
+> on AUTO waypoint tracking. Use `mass_vulnerable_cusv`/`mass_resilient_cusv`
+> to demo click-to-navigate; use either AUV twin for the C2 attack buttons
+> and the CLI report instead.
+
 ## 5. Tear down
 
 ```bash
