@@ -155,10 +155,12 @@ Each attack module (`gps_spoof.py`, `ais_spoof.py`, `c2_replay.py`,
 ever read these files during normal operation — the whole point is that they
 exist independently of whatever a detector observes, so a detector's
 performance can be scored against them after the fact without the detector
-having had access to ground truth while running. Only `tools/score_detectors.py`
-(offline) and `tools/test_target.py` (which writes its own target-scoped
-copies under `target_runs/`, never touching `attack_logs/` for anything but
-`fdm_relay`-method GPS spoofing) read them.
+having had access to ground truth while running. Today only
+`tools/test_target.py` reads them (and only its own target-scoped copies under
+`target_runs/`, never touching `attack_logs/` for anything but `fdm_relay`-method
+GPS spoofing). The offline scorer `tools/score_detectors.py` that historically
+also read them was removed in the 2026-10-12 operational pass; detectability is
+now a raw alert count per run rather than a precision/recall score.
 
 ## Running order
 

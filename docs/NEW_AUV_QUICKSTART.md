@@ -280,17 +280,20 @@ This baselines the vehicle, runs the enabled attacks, taps the live feed
 with the same blind detectors used everywhere else in this project, and
 writes `target_runs/myauv_local/<timestamp>/verdicts.json`.
 
-### 10. Generate the report
+### 10. Read the results
+
+Your run wrote `target_runs/myauv_local/<timestamp>/verdicts.json` — the
+per-attack 4-outcome verdicts plus a raw detectability alert count. Read it
+directly, or re-verify all four bundled twins at once:
 
 ```bash
-python3 tools/generate_target_report.py
+python3 tools/test_all_4.py   # -> /tmp/mcr_run/all_4_vehicles_report.json + printed summary
 ```
 
-Opens as `target_runs/resilience_report.html` in a browser -- one page,
-every target this repo has ever tested (yours included), each with a
-vulnerability table, a detectability table, per-VULNERABLE-finding
-recommendations, and one synthesized deployment-readiness verdict. This is
-the actual thing to put on a screen during your presentation.
+> The old HTML report tool (`generate_target_report.py`) was removed in the
+> 2026-10-12 operational pass. For a presentation surface, the live dashboard's
+> own "📊 Report" button (one-click PDF of the current session) is now the
+> thing to put on a screen — see `docs/TWIN_DEMO_GUIDE.md`.
 
 ### 11. Tear down
 

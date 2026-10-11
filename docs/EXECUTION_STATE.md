@@ -1565,3 +1565,23 @@ Legend: [x] done · [~] in progress · [ ] not started
   Surveyed underwater assets; found DAVE BlueROV2 + ocean worlds + ardusub.parm
   already on disk — big de-risk for WO-11/12. Wrote this state file. Starting
   WO-11.
+
+- 2026-10-12: **Operational-posture reporting change + doc reconciliation.**
+  Removed the three offline report/scoring tools (`tools/generate_target_report.py`,
+  `tools/generate_report.py`, `tools/score_detectors.py`). The range is now
+  operational, not graded: `test_target.py` reports detectability as a raw alert
+  count (`detectability.alerts_generated`) rather than precision/recall, and the
+  deployment-readiness verdict is a human synthesis from the per-attack verdicts
+  rather than an auto-generated HTML page. All-twin re-verification is now
+  `tools/test_all_4.py` (boot → attack via test_target.py → tear down each of the
+  4 twins, aggregate each one's latest verdicts.json into
+  /tmp/mcr_run/all_4_vehicles_report.json). Reconciled every doc that referenced
+  the removed tools (README, PROJECT_CONTEXT, TARGET_TESTING, TWIN_DEMO_GUIDE,
+  DESIGNER_GUIDE, NEW_AUV_QUICKSTART, ARCHITECTURE) and the stale code comments in
+  test_target.py / gps_spoof.py / run_attack_suite.py. ROADMAP's historical WO
+  entries left as-is (banner-marked historical). The 2026-08-02 security-audit
+  and 2026-08-07 metrics entries ABOVE in this log describe the scorer as it was
+  at the time and are left unedited as history — this entry supersedes them.
+  (Note for a future reader: `ais_spoof` is currently gated off in test_target.py
+  via `if False and ...`; AIS is N/A on bare ArduPilot anyway, but that's why the
+  twin tables show AIS as N/A.)

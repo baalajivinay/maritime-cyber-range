@@ -18,9 +18,10 @@ requested attacks, and reports two independent axes per attack:
   continuous coverage from one connection, since a real external target
   typically exposes only one MAVLink endpoint (confirmed this session: a
   second concurrent connection to the same ArduPilot TCP serial port just
-  hangs). Alerts are scored afterward with the same tools/score_detectors.py
-  logic used everywhere else in this project (score(gt_dir=<this run's own
-  target_runs/ dir>)), never during the run -- detectors stay blind.
+  hangs). Alerts are written to this run's own target_runs/<ts>/alerts.jsonl
+  and reported as a raw count (detectability.alerts_generated) -- the detectors
+  stay blind during the run. (Historically an offline scorer graded them for
+  precision/recall; that step was removed in the 2026-10-12 operational pass.)
 
 Ground truth for a target run lives under target_runs/<name>/<run_ts>/,
 deliberately separate from attack_logs/ and evidence/ so target runs never
@@ -53,7 +54,6 @@ sys.path.insert(0, os.path.join(REPO, "detection"))
 from targets.loader import load_target
 from pymavlink import mavutil
 from detectors import DetectorSuite
-from score_detectors import score as score_alerts
 
 
 # --- detectability: tap every message through the same blind detector ------
@@ -181,9 +181,9 @@ _log_lock = threading.Lock()  # ais_spoof's ghost + impersonate loops both log
 
 
 def _log_ground_truth(out_dir, filename, wall_ts, attack_type, description):
-    """Minimal wall_ts/attack_type/description schema -- tools/score_detectors.py
-    only needs wall_ts for clustering (attack_type/description are read only
-    for c2_replay's inject_rc_override post-hoc duration correction, which
+    """Minimal wall_ts/attack_type/description schema -- the (now-removed)
+    offline scorer only needed wall_ts for clustering (attack_type/description
+    were read only for c2_replay's inject_rc_override post-hoc duration correction, which
     doesn't apply here since the RC-override sub-check logs its own duration
     the same way attacks/c2_replay.py does)."""
     path = os.path.join(out_dir, filename)
@@ -846,20 +846,22 @@ def run_target_test(target_name, requested_attacks=None):
     if ais_thread:
         ais_thread.join(timeout=2)
 
-    # score detectability with the SAME logic used everywhere else in this
-    # project, pointed at this run's own ground truth -- never mixes with
-    # or reads the reference-vehicle attack_logs/.
+    # Write out the raw alerts collected during the test run.
+    # In this operational version of the cyber range, we do not calculate
+    # precision/recall against ground truth; we simply track the incidents.
     alerts_path = os.path.join(out_dir, "alerts.jsonl")
     with open(alerts_path, "w") as f:
         for a in alerts:
             f.write(json.dumps(a.as_dict()) + "\n")
-    detectability = score_alerts(alerts_path, gt_dir=out_dir)
-    results["detectability"] = detectability
+            
+    # Store raw alert count instead of ML metrics
+    results["detectability"] = {"alerts_generated": len(alerts)}
+    
     if ais_bind_error:
         results["warnings"] = [f"AIS detectability tap could not bind udp {udp_addr} ({ais_bind_error[0]}) -- "
-                                f"ais_spoof recall below is not a real measurement, another process "
-                                f"(likely the dashboard) already owned that port."]
-    print(f"[test_target] detectability: {json.dumps({k: v['recall'] for k, v in detectability['families'].items()})}")
+                                f"another process (likely the dashboard) already owned that port."]
+    
+    print(f"[test_target] detectability: {len(alerts)} alerts generated")
 
     out_path = os.path.join(out_dir, "verdicts.json")
     with open(out_path, "w") as f:

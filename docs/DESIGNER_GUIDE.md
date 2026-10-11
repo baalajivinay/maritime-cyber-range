@@ -23,9 +23,15 @@ read results, and add your own vehicle.
 | Attacks | `attacks/*.py` | `gps_spoof`, `ais_spoof` (ghost + impersonation), `c2_replay` (RC-override / command injection), `acoustic_spoof` (submerged position spoof). |
 | Attack runner | `tools/run_attack_suite.py` | Runs the profile's applicable attacks, verifies each vs true Gazebo pose, reports PASS/FAIL/SKIP/N-A. |
 | Detection | `detection/` | Blind rule-based detectors on live feeds + a live dashboard alert layer. `run_detectors.py` also self-samples its own CPU/memory/throughput (system-overhead metric). |
-| Scoring | `tools/score_detectors.py` | Replays blind detector alerts vs ground truth → precision/recall/false-positive-rate/detection-latency per attack. |
-| Evaluation report | `tools/generate_report.py` | Compiles every profile's scoring + overhead numbers into one HTML report (`evidence/evaluation_report.html`). |
 | Vehicle contract | `tools/validate_vehicle.py` | Checks a new vehicle meets the harness contract before you boot it. |
+
+> **Removed (2026-10-12 operational pass):** the offline scorer
+> `tools/score_detectors.py` (precision/recall/FP-rate/latency) and the HTML
+> evaluation reports (`tools/generate_report.py`,
+> `tools/generate_target_report.py`). Detectability is now a raw alert count per
+> run, surfaced by `tools/test_target.py`; all-twin aggregation is
+> `tools/test_all_4.py`. The scoring subsection below is retained as historical
+> reference for how blind detectors *were* graded against ground truth.
 
 Deeper design notes live in `docs/ARCHITECTURE.md`; the full build history and
 checkpoints in `docs/ROADMAP.md`; the live work cursor in
@@ -90,7 +96,14 @@ phenomena; a submerged AUV navigates by inertial + **acoustic** positioning, so
 its position attack is `acoustic_spoof`. C2 is MAVLink-level and works in both
 domains.
 
-## Detection + scoring
+## Detection + scoring (scoring path HISTORICAL — see note above)
+
+> The precision/recall scoring and HTML-report commands in this section refer to
+> tools removed on 2026-10-12 (`score_detectors.py`, `generate_report.py`). They
+> are kept to document the methodology by which blind detectors were graded
+> against ground truth. In the current operational flow, run the detectors live
+> (`run_detectors.py`) and read the raw alert counts from `test_target.py`
+> runs; there is no offline grading step.
 
 Detectors consume **only live feeds** (the same telemetry the dashboard sees) and
 never the private `attack_logs/*.csv` ground truth — that isolation is what makes

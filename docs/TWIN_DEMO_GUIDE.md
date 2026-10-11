@@ -117,27 +117,31 @@ python3 tools/test_target.py --target vehicle_twins/mass_vulnerable_cusv/target.
 Prints a verdict per attack as it runs, then writes
 `target_runs/mass_vulnerable_cusv/<timestamp>/verdicts.json`.
 
-## 3. Generate the CROSS-TARGET report (terminal, from step 2's data)
+## 3. Aggregate ALL FOUR twins (terminal)
 
 ```bash
-python3 tools/generate_target_report.py
+python3 tools/test_all_4.py
 ```
 
-Writes `target_runs/resilience_report.html` — open it in a browser. It
-compiles **every** target this repo has ever tested (all 4 twins once
-you've run each), each with a vulnerability table, a detectability table,
-a recommendation next to every VULNERABLE finding, and one synthesized
-deployment-readiness verdict.
+Boots → attacks → tears down each of the 4 twins in turn, then aggregates
+each one's latest `verdicts.json` into `/tmp/mcr_run/all_4_vehicles_report.json`
+and prints a per-twin verdict summary. For a single twin, just read the
+`verdicts.json` that step 2 wrote.
 
-**This is one of two separate report mechanisms in this project — they
-don't depend on each other, and mixing them up is an easy mistake:**
+> **Note.** An HTML cross-target report tool (`generate_target_report.py`) used
+> to live here; it was removed in the 2026-10-12 operational pass. Detectability
+> is now a raw alert count per run and the deployment-readiness verdict is a
+> human call from the per-attack verdicts — see `docs/TARGET_TESTING.md`.
+
+**There are two separate result surfaces in this project — they don't depend
+on each other, and mixing them up is an easy mistake:**
 
 | | This one (steps 2-3) | The dashboard's own (step 4 below) |
 |---|---|---|
-| How you run it | terminal, `test_target.py` then `generate_target_report.py` | click "📊 Report" in the browser |
+| How you run it | terminal, `test_target.py` (one twin) or `test_all_4.py` (all four) | click "📊 Report" in the browser |
 | Needs a headless boot? | yes (see step 2's port-sharing note) | no — works anytime the dashboard is up |
-| Covers | every target ever tested, all 4 twins side by side | only the current session's own attacks |
-| Output | `target_runs/resilience_report.html` (open manually) | PDF, one click to download |
+| Covers | every twin you run, all 4 side by side via `test_all_4.py` | only the current session's own attacks |
+| Output | `verdicts.json` per run / `/tmp/mcr_run/all_4_vehicles_report.json` | PDF, one click to download |
 
 If all you want is a PDF of what you just demoed, skip straight to step 4
 — you never need to touch this CLI path at all.

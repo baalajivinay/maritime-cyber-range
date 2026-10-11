@@ -57,8 +57,9 @@ blow-by-blow build history (start there for full project context).
 - `detection/` -- blind rule-based detectors + offline scoring
 - `nodes/` -- AIS emulator, monitoring dashboard (Flask-SocketIO + Leaflet)
 - `tools/` -- orchestration: `run_sim.sh`/`run_demo.sh`/`run_vehicle.sh`
-  (boot), `test_target.py` (resilience tester), `generate_target_report.py`
-  (cross-target report), `score_detectors.py`, `validate_vehicle.py`
+  (boot), `test_target.py` (resilience tester, one target), `test_all_4.py`
+  (boot → attack → tear down every twin in turn, aggregates each one's
+  `verdicts.json`), `validate_vehicle.py`
 - `targets/` -- connection-only target configs for `test_target.py` against
   *any* ArduPilot SITL (not tied to this repo's own vehicle models)
 - `ros2_ws/` -- colcon workspace (`src/vrx`, the vendored WAM-V/VRX

@@ -62,9 +62,9 @@ _log_lock = threading.Lock()
 # packet every ~4ms while lockstep is running -- logging every single one
 # while spoofing is active grows the CSV by ~250 rows/sec of active spoof
 # time (confirmed live 2026-08-09: a session's worth of testing inflated
-# this file from ~3K to ~290K rows). score_detectors.py's window-clustering
-# only needs each activation's approximate start/end (its 12s pad tolerates
-# being off by far more than this), not every packet, so throttle to ~10Hz
+# this file from ~3K to ~290K rows). Downstream consumers only need each
+# activation's approximate start/end (well within a ~12s pad tolerance),
+# not every packet, so throttle to ~10Hz
 # -- the same resolution tools/test_target.py's own RC-override sender
 # already uses elsewhere in this project. The FIRST packet of each new
 # activation always logs immediately (unthrottled) so a window's start --

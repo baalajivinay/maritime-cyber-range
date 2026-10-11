@@ -9,11 +9,20 @@ open, without having to reconstruct it from git history or a dozen docs.
 Other docs go deeper on specific topics (see the map at the bottom); this
 one is the map itself plus enough substance to act on immediately.
 
-**Last verified accurate: 2026-08-12.** If anything here conflicts with the
-live code or with `docs/EXECUTION_STATE.md`'s dated running log, trust the
-code and the log — this file can drift, they can't (EXECUTION_STATE.md is
-updated after every meaningful change; if you make a change, update it and
-consider whether this file needs a matching touch-up).
+**Last verified accurate: 2026-10-12** (reporting/tooling sections; the §6
+twin-results table is still from the last full live pass — re-run to requote).
+If anything here conflicts with the live code or with
+`docs/EXECUTION_STATE.md`'s dated running log, trust the code and the log —
+this file can drift, they can't (EXECUTION_STATE.md is updated after every
+meaningful change; if you make a change, update it and consider whether this
+file needs a matching touch-up).
+
+**Reporting note (2026-10-12):** the project moved to an *operational* posture
+— the three offline report/scoring tools (`generate_target_report.py`,
+`generate_report.py`, `score_detectors.py`) were removed. Detectability is now
+tracked as a raw alert count per run, not a precision/recall score, and the
+deployment-readiness verdict is a human call synthesized from the per-attack
+verdicts rather than auto-generated into an HTML page. See §5.
 
 ---
 
@@ -86,11 +95,12 @@ vehicle (someone else's SITL, not just this repo's own models) was. Built
 needed), `tools/test_target.py` (the orchestrator: baseline, attack,
 detect, verdict), `attacks/gps_input_inject.py` (a protocol-standard,
 vehicle-agnostic GPS attack alongside the existing physics-layer one), and
-`tools/generate_target_report.py` (cross-target HTML report with
-per-finding recommendations and a synthesized deployment-readiness
-verdict). Verdicts are one of **four** outcomes, not a binary pass/fail —
-see §7. Proved genericity against independently-launched SITL instances
-this repo never built.
+(at the time) a cross-target HTML report tool. Verdicts are one of **four**
+outcomes, not a binary pass/fail — see §7. Proved genericity against
+independently-launched SITL instances this repo never built. *(That HTML
+report tool, `generate_target_report.py`, was later removed in the 2026-10-12
+operational pass — see the reporting note in §1; all-twin aggregation is now
+`tools/test_all_4.py`.)*
 
 **Phase 3 — Real, named hardware; twins replace generic reference vehicles
 (2026-08-08).** The three original vehicles (WAM-V, BlueBoat, BlueROV2)
@@ -123,7 +133,7 @@ and the doc/repo cleanup this file is part of (2026-08-12).
 | `tools/` | Orchestration layer — see §5's table. |
 | `targets/` | Connection-only configs for `test_target.py` against anything (this repo's own vehicles or external). `loader.py` validates + refuses to run without `authorized: true`. |
 | `target_runs/` | Per-run verdicts/evidence from `test_target.py`, one timestamped folder per run. |
-| `attack_logs/` | Ground-truth CSVs each attack module writes about itself — **private**, never read by any detector, only by offline scoring. |
+| `attack_logs/` | Ground-truth CSVs each attack module writes about itself — **private**, never read by any detector. Historically the offline scorer read them; with scoring removed (see the reporting note in §1) they are kept as a raw evidence trail only. `test_target.py` writes its own per-run copies under `target_runs/`. |
 | `evidence/` | Screenshots/video/logs from Phase 1's checkpoint regressions — historical. |
 | `deploy/` | Docker packaging (`Dockerfile`, `entrypoint.sh`) + `launch.sh` (host-side launcher). |
 | `ros2_ws/src/vrx/` | Vendored VRX (WAM-V) simulator, a git submodule — only needed for the legacy `wamv` profile's VRX boot path. |
@@ -137,13 +147,11 @@ and the doc/repo cleanup this file is part of (2026-08-12).
 | `tools/run_sim.sh <profile> up\|down\|status` | Boots one domain's full stack (Gazebo → FDM relay → ArduPilot SITL → MAVLink bridge → AIS emulator if surface) with real health checks. The actual boot engine everything else calls into. | Directly for a legacy `profiles/*.json` vehicle. |
 | `tools/run_vehicle.sh vehicle_twins/<name> up\|down\|status` | Symlinks a twin's `profile.json` into `profiles/`, then calls `run_sim.sh`. Headless. | Before running `test_target.py` against a twin. |
 | `tools/run_demo.sh <profile-or-twin-path> up\|down\|status` | Same boot, plus starts `dashboard_server.py`. | For the live browser demo. |
-| `tools/test_target.py --target <path>` | Connects, baselines, runs the target's enabled attacks, taps `DetectorSuite` live, writes `target_runs/<name>/<ts>/{verdicts.json,alerts.jsonl,*_ground_truth.csv}`. | The core resilience-test deliverable, headless. |
-| `tools/generate_target_report.py` | Compiles every target's latest run into `target_runs/resilience_report.html` — vulnerability + detectability tables, per-finding recommendations, deployment-readiness verdict. | After one or more `test_target.py` runs. |
+| `tools/test_target.py --target <path>` | Connects, baselines, runs the target's enabled attacks, taps `DetectorSuite` live, writes `target_runs/<name>/<ts>/{verdicts.json,alerts.jsonl,*_ground_truth.csv}`. Detectability is reported as a raw alert count (`alerts_generated`), not precision/recall. | The core resilience-test deliverable, headless. |
+| `tools/test_all_4.py` | Boots → attacks (via `test_target.py`) → tears down every one of the 4 twins in turn, then aggregates each twin's latest `verdicts.json` into `/tmp/mcr_run/all_4_vehicles_report.json` and prints a per-twin verdict summary. | One command to re-verify all 4 twins end-to-end. |
 | `tools/validate_target.py <name>` | Pre-flight contract check on a `targets/*.json` (or a twin's `target.json`) — no live connection needed. | Before ever running `test_target.py` on a new target. |
 | `tools/validate_vehicle.py <name>` | Pre-flight contract check on a `profiles/*.json` + its SDF (plugin present, ports match, sensors present). | Before booting a new/edited vehicle. |
 | `tools/run_attack_suite.py --profile <name>` | The *legacy* attack runner (profile-based, not target-based) — PASS/FAIL/SKIP/N-A per attack, verified against true Gazebo pose. | Automated regression on a `profiles/*.json` vehicle without the dashboard. |
-| `tools/score_detectors.py` | Offline: replays a detector alert log against `attack_logs/*.csv` ground truth → precision/recall/FP-rate/latency. | After `run_detectors.py` + some attacks. |
-| `tools/generate_report.py` | Compiles scoring + overhead into `evidence/evaluation_report.html` (the *legacy* profile-based report — parallel to, not the same as, `generate_target_report.py`). | Legacy-path evaluation. |
 | `tools/mav_bridge.py` | Standalone MAVLink fan-out (replaces MAVProxy's `output add` — MAVProxy needs a tty, this doesn't). Ports come from the active profile. | Started automatically by `run_sim.sh`. |
 | `tools/view_3d.sh` | Attaches the Gazebo 3D GUI (needs a real GPU desktop). | Optional, for a visually immersive demo moment. |
 | `tools/capture_demo.py` | Scripted screenshot capture for the `evidence/demo_captures/` set. | Historical, Phase 1. |

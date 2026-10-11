@@ -20,15 +20,22 @@ the range" below.
 | Loader | `targets/loader.py` | `load_target(name)`. Validates the contract, refuses to load unless `authorized: true`. |
 | Contract check | `tools/validate_target.py` | Pre-flight validation: catches an invalid `gps_spoof.method`, warns on `allow_arm_and_actuate` against a non-loopback host, warns on a dead-end AIS impersonation config. |
 | GPS injection (portable) | `attacks/gps_input_inject.py` | Sends standard MAVLink `GPS_INPUT` (#232) -- works on any ArduPilot (or PX4) build with `GPS_TYPE=14`, real hardware included. |
-| Orchestrator | `tools/test_target.py` | Connects, baselines, runs the requested attacks, taps the live feed with `DetectorSuite` throughout, writes verdicts + evidence. |
-| Report | `tools/generate_target_report.py` | Compiles every target's latest run into one HTML page: per-attack vulnerability + detectability, recommendations for anything VULNERABLE, and one synthesized deployment-readiness verdict per target. |
+| Orchestrator | `tools/test_target.py` | Connects, baselines, runs the requested attacks, taps the live feed with `DetectorSuite` throughout, writes verdicts + evidence. Detectability is a raw alert count per run, not precision/recall. |
+| All-twin aggregator | `tools/test_all_4.py` | Boots → attacks → tears down each of the 4 twins in turn, then aggregates each one's latest `verdicts.json` into `/tmp/mcr_run/all_4_vehicles_report.json` and prints a per-twin verdict summary. (Replaces the removed `generate_target_report.py` HTML report; the deployment-readiness verdict is now a human call from the per-attack verdicts.) |
 
 ## Quick start
 
 ```bash
 python3 tools/validate_target.py wamv_local        # contract check, no live connection needed
 python3 tools/test_target.py --target wamv_local   # runs every attack enabled in the config
-python3 tools/generate_target_report.py            # -> target_runs/resilience_report.html
+# -> target_runs/wamv_local/<ts>/verdicts.json  (read the per-attack verdicts directly)
+```
+
+To re-verify all four bundled twins in one go (boot → attack → tear down each,
+then aggregate every twin's latest `verdicts.json`):
+
+```bash
+python3 tools/test_all_4.py   # -> /tmp/mcr_run/all_4_vehicles_report.json + printed summary
 ```
 
 Run a subset of attacks:
@@ -39,9 +46,8 @@ python3 tools/test_target.py --target wamv_local --attacks c2_replay,ais_spoof
 
 Each run writes `target_runs/<name>/<run_ts>/{verdicts.json,alerts.jsonl,*_ground_truth.csv}`
 -- deliberately outside `attack_logs/`/`evidence/`, so target runs never mix
-with the existing reference-vehicle evidence trail. `generate_target_report.py`
-walks every `target_runs/*/*/verdicts.json` and uses each target's most
-recent run.
+with the existing reference-vehicle evidence trail. `test_all_4.py` walks each
+twin's `target_runs/*/*/verdicts.json` and uses the most recent run per twin.
 
 ## Onboarding a new target
 
@@ -167,28 +173,37 @@ rule-based detectors the dashboard uses), so each verdict comes with a
 **detectability** companion answer: would a passive monitor have caught
 this, independent of whether the target itself was vulnerable.
 
-## The report
+## Reading the results
+
+Each run writes `target_runs/<name>/<ts>/verdicts.json` — the per-attack
+4-outcome verdicts plus a `detectability` block (a raw alert count,
+`alerts_generated`, for that run). Read it directly, or aggregate all four
+bundled twins at once:
 
 ```bash
-python3 tools/generate_target_report.py     # -> target_runs/resilience_report.html
+python3 tools/test_all_4.py   # -> /tmp/mcr_run/all_4_vehicles_report.json + printed per-twin summary
 ```
 
-One HTML page, compiled from every target's latest run:
+> **Historical note.** An HTML report tool (`generate_target_report.py`) and an
+> offline precision/recall scorer (`score_detectors.py`) used to sit here. Both
+> were removed in the 2026-10-12 operational pass. Detectability is now the raw
+> alert count above (not precision/recall), and the deployment-readiness verdict
+> is no longer auto-generated — it's a human call from the per-attack verdicts.
 
-- A **vulnerability + detectability table per attack family**, same style as
-  `evidence/evaluation_report.html`.
-- A **recommendation next to every VULNERABLE finding** -- concrete, not
-  generic (e.g. enable MAVLink2 message signing for C2 forgery; add GPS
-  innovation gating / GPS blending for a GPS-spoof VULNERABLE result).
-- A **detectability-gap note per attack family** where relevant (e.g. the
-  C2-override detector watches RC-override traffic, not mode-change
-  forgery; the GPS-jump detector catches sudden jumps, not slow ramps) --
-  documented so a RESILIENT-but-undetected combination isn't misread as
-  full coverage.
-- One **synthesized deployment-readiness verdict per target**: any
-  VULNERABLE finding -> "NOT READY TO DEPLOY"; else any INCONCLUSIVE ->
-  "CONDITIONALLY READY -- retest needed"; else -> "READY (against the
-  attacks tested)".
+**Synthesizing a deployment-readiness verdict** (the rule the removed tool
+applied, kept here as guidance you now apply by eye):
+
+- any **VULNERABLE** finding -> "NOT READY TO DEPLOY";
+- else any **INCONCLUSIVE** -> "CONDITIONALLY READY -- retest needed";
+- else -> "READY (against the attacks tested)".
+
+When acting on a VULNERABLE finding, the standard mitigations are concrete, not
+generic: enable MAVLink2 message signing for C2 forgery; add GPS innovation
+gating / GPS blending for a GPS-spoof VULNERABLE result. And mind the
+**detectability gaps** per attack family (e.g. the C2 detector watches
+RC-override and `SET_MODE` traffic; the GPS-jump detector catches sudden jumps
+while `GpsRampDetector` covers slow ramps) so a RESILIENT-but-undetected
+combination isn't misread as full coverage.
 
 ## Known limitations
 

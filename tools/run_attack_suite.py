@@ -187,10 +187,10 @@ def check_ais(conn):
     SO_REUSEPORT. The emulator/spoofer broadcast from a single source socket, so
     the kernel's REUSEPORT hashing sends ALL their datagrams to exactly ONE bound
     listener. If detection/run_detectors.py is ALSO bound to the AIS port at the
-    same time (the concurrent scoring workflow), it can win the hash and this
-    verifier then sees 0 messages -- a false FAIL. The detector's own result
-    (scored by tools/score_detectors.py) is authoritative for AIS. Run this suite
-    with no concurrent AIS listener for a clean PASS."""
+    same time (the concurrent detection workflow), it can win the hash and this
+    verifier then sees 0 messages -- a false FAIL. The detector's own live result
+    is authoritative for AIS. Run this suite with no concurrent AIS listener for
+    a clean PASS."""
     import ais_spoof
     from pyais.stream import IterMessages
     REAL = int(constants.VESSEL_MMSI)
