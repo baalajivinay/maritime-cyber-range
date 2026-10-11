@@ -13,6 +13,14 @@ ros2_ws/log
 evidence/*.log
 evidence/*.jsonl
 eeprom.bin
+# per-run resilience-test evidence (regenerated at runtime, never needed in the image)
+target_runs
+logs
+# heavy source docs not needed at runtime (keep the .md guides; drop the binaries)
+docs/*.pdf
+docs/*.docx
+docs/*.pptx
+docs/examples
 # editor / OS cruft
 .DS_Store
 .claude

@@ -48,39 +48,42 @@ gunzip -c mcr-image.tar.gz | docker load
 ./launch.sh up               # boot the underwater BlueROV2 (sim + dashboard), opens the browser
 ./launch.sh gui              # attach the Gazebo 3D window (Linux + X + GPU)
 ./launch.sh status           # health of the running stack
-./launch.sh attack --profile bluerov2   # run the attack suite
+./launch.sh switch vehicle_twins/auv_vulnerable_remus100   # change vehicle live
+./launch.sh attack --profile mass_vulnerable_cusv          # run the legacy attack suite
 ./launch.sh logs             # follow the dashboard log
 ./launch.sh shell            # a shell inside the container (env pre-sourced)
 ./launch.sh down             # stop everything
 ```
 
-> **Which vehicle runs in the container.** The default and the validated headless
-> path is **`bluerov2`** (underwater) — it boots the sim, serves the dashboard,
-> and runs the full attack/detection loop entirely inside Docker. The surface
-> **`wamv` (VRX)** profile does **not** yet boot headless in a container: the VRX
-> `sydney_regatta` world stalls during load in the containerized Gazebo server
-> (the `ros_gz` spawn node loops "Requesting list of world names"; not caused by
-> networking, GPU/X, or Fuel — the models are local). Run the surface vehicle
-> **natively on your GPU workstation** (the repo's `tools/run_demo.sh wamv up`),
-> where VRX works as designed. Making `wamv` boot headless in Docker (likely an
-> `xvfb`/offscreen-rendering setup for VRX) is a known follow-up.
+> **Which vehicle runs in the container.** The default is the **vulnerable CUSV
+> twin** (`vehicle_twins/mass_vulnerable_cusv`) — the project's current primary
+> deliverable. All four twins (CUSV surface, REMUS-100 underwater; vulnerable and
+> hardened) boot headless in the container and have been **verified end-to-end in
+> Docker** (boot → attack → verdict): e.g. the vulnerable CUSV returns
+> mode-change / RC-override / GPS-spoof all VULNERABLE with the detector alerts
+> firing. Select any of them with the full folder path:
 >
-> **The current primary demo twins** (`vehicle_twins/mass_vulnerable_cusv`,
-> `auv_vulnerable_remus100`, and their hardened pairs) use the same non-VRX
-> Gazebo boot path as `blueboat`/`bluerov2` respectively (not WAM-V's VRX
-> path), so they should be Docker-compatible in principle -- e.g.
-> `./launch.sh up vehicle_twins/mass_vulnerable_cusv` (the full folder path,
-> same argument `tools/run_vehicle.sh`/`run_demo.sh` take natively -- the
-> bare profile name alone won't resolve on a fresh container, since its
-> `profiles/*.json` symlink is only created the first time the folder path
-> is used). This has **not been explicitly verified in the container** yet
-> (only natively, see each twin's own `README.md`); treat it as
-> likely-to-work, not validated, until someone confirms it end to end.
+> ```bash
+> ./launch.sh up vehicle_twins/mass_vulnerable_cusv          # default
+> ./launch.sh up vehicle_twins/auv_vulnerable_remus100       # underwater
+> ./launch.sh up vehicle_twins/mass_resilient_cusv           # hardened pair
+> ```
+>
+> Use the **folder path**, not the bare twin name: a fresh container's
+> `profiles/<name>.json` is an absolute symlink to the build host's path (dead in
+> the container) until the folder-path boot re-creates it — so the path form is
+> what resolves. The legacy `bluerov2`/`blueboat` reference vehicles still boot by
+> bare name. The only vehicle that does **not** boot headless in Docker is the
+> legacy **`wamv` (VRX)** world (its `sydney_regatta` world stalls during load in
+> the containerized Gazebo server); run that one **natively on a GPU workstation**
+> (`tools/run_demo.sh wamv up`). An `xvfb`/offscreen setup for VRX is a known
+> follow-up.
 
 Then open **http://localhost:8080** — set a destination, launch GPS / AIS / C2 /
 acoustic attacks, watch true-vs-believed diverge and the live detector alerts,
-and hit **Report** for precision/recall. (Full walkthrough:
-`docs/TWIN_DEMO_GUIDE.md`.)
+and hit **Report** for a one-click PDF of the session. (Detectability is reported
+as a raw alert count now, not precision/recall — see `docs/TARGET_TESTING.md`.
+Full walkthrough: `docs/TWIN_DEMO_GUIDE.md`.)
 
 ## The 3D GUI (X11)
 

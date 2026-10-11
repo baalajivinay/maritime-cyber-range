@@ -154,6 +154,7 @@ RUN chmod +x /usr/local/bin/mcr-entrypoint
 EXPOSE 8080
 WORKDIR /root/maritime-cyber-range
 ENTRYPOINT ["/usr/local/bin/mcr-entrypoint"]
-# default: boot the underwater vehicle -- the validated headless-container demo
-# (the surface wamv/VRX world doesn't boot headless in Docker; see docs/DEPLOY.md).
-CMD ["up", "bluerov2"]
+# default: boot the vulnerable CUSV twin -- the current primary deliverable, and
+# verified end-to-end (boot -> attack -> verdict) headless in Docker. (Only the
+# legacy wamv/VRX world still needs a native GPU host; see docs/DEPLOY.md.)
+CMD ["up", "vehicle_twins/mass_vulnerable_cusv"]

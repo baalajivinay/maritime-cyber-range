@@ -7,9 +7,13 @@
 #  Verbs:
 #    ./launch.sh build            build the image (first time, ~long: compiles
 #                                 ArduPilot + VRX; needs internet + ~15 GB disk)
-#    ./launch.sh up [vehicle]     boot sim + dashboard (default: bluerov2), open browser
+#    ./launch.sh up [vehicle]     boot sim + dashboard, open browser
+#                                 default: vehicle_twins/mass_vulnerable_cusv
+#                                 (any vehicle_twins/<name> twin, or legacy
+#                                  bluerov2|blueboat work too)
 #    ./launch.sh gui              attach the Gazebo 3D window  (needs X + GPU)
-#    ./launch.sh switch <vehicle> change vehicle live         (wamv|blueboat|bluerov2)
+#    ./launch.sh switch <vehicle> change vehicle live
+#                                 (vehicle_twins/<name> | bluerov2 | blueboat)
 #    ./launch.sh status           health of the running stack
 #    ./launch.sh attack [args]    run the attack suite in the container
 #    ./launch.sh shell            a shell inside the container (env pre-sourced)
@@ -25,10 +29,13 @@ set -euo pipefail
 IMAGE="${MCR_IMAGE:-mcr:latest}"
 NAME="${MCR_CONTAINER:-mcr}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# bluerov2 (underwater) is the validated headless-container demo. The surface
-# wamv/VRX world does not yet boot headless in Docker (see docs/DEPLOY.md); run
-# that one natively on a GPU host. `up` with no arg uses this default.
-DEFAULT_VEHICLE="bluerov2"
+# The 4 digital twins (CUSV surface, REMUS-100 underwater) all boot headless in
+# the container -- verified end-to-end (boot -> attack -> verdict) in Docker.
+# mass_vulnerable_cusv is the default: surface, all three attacks land VULNERABLE,
+# and the dashboard map shows true-vs-believed divergence live. The only vehicle
+# that does NOT boot headless in Docker is the legacy wamv/VRX world (run it
+# natively on a GPU host -- see docs/DEPLOY.md). `up` with no arg uses this default.
+DEFAULT_VEHICLE="vehicle_twins/mass_vulnerable_cusv"
 
 die(){ echo "Error: $*" >&2; exit 1; }
 have(){ command -v "$1" >/dev/null 2>&1; }
@@ -102,7 +109,7 @@ cmd_up(){
 need_container(){ container_running || die "no running container -- run './launch.sh up' first."; }
 
 cmd_gui(){    need_container; docker exec -it "$NAME" mcr-entrypoint gui; }
-cmd_switch(){ need_container; docker exec "$NAME" mcr-entrypoint switch "${1:?usage: switch <wamv|blueboat|bluerov2>}"; open_browser "http://localhost:8080"; }
+cmd_switch(){ need_container; docker exec "$NAME" mcr-entrypoint switch "${1:?usage: switch <vehicle_twins/<name> | bluerov2 | blueboat>}"; open_browser "http://localhost:8080"; }
 cmd_status(){ need_container; docker exec "$NAME" mcr-entrypoint status; }
 cmd_attack(){ need_container; docker exec -it "$NAME" mcr-entrypoint attack "$@"; }
 cmd_shell(){  need_container; docker exec -it "$NAME" mcr-entrypoint shell; }
