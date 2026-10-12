@@ -19,3 +19,8 @@ evidence/live_session_alerts.jsonl
 
 # Personal/understanding-only docs -- not part of the shipped package
 *.docx
+
+# Built application artifacts (multi-GB self-extractors / image tarballs)
+dist/
+*.run
+mcr-image.tar.gz
