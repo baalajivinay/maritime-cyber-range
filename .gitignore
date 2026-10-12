@@ -20,7 +20,9 @@ evidence/live_session_alerts.jsonl
 # Personal/understanding-only docs -- not part of the shipped package
 *.docx
 
-# Built application artifacts (multi-GB self-extractors / image tarballs)
-dist/
+# Built application artifacts (multi-GB) -- ignore the binaries, keep the docs
+dist/*
+!dist/README.md
+!dist/SHA256SUMS.txt
 *.run
 mcr-image.tar.gz
