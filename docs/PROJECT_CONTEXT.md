@@ -243,51 +243,6 @@ Full methodology per attack family: `docs/TARGET_TESTING.md`.
 ## 8. Known issues and limitations — current, honest state
 
 **Open, not fixed:**
-- **AUV waypoint-tracking bug (both REMUS-100 twins).** Clicking a
-  destination arms the vehicle and enters AUTO correctly, but the vehicle
-  does not reliably navigate there — oscillates at long range, actively
-  diverges at short range. Root-caused in two layers:
-  1. **Fixed 2026-08-10**: `legit_vision_feeder`/`acoustic_spoof.py`'s
-     `read_true_ned()` was hardcoding the vehicle's YAW to 0 in the
-     `VISION_POSITION_ESTIMATE` feed. Both REMUS-100 twins use that same
-     feed as their yaw source (`EK3_SRC1_YAW=6`), so this was silently
-     telling the EKF "always facing north," corrupting heading the moment
-     the vehicle turned. Confirmed live (ArduPilot's believed heading ~0
-     rad while Gazebo's true heading was ~1.78 rad at the same instant) and
-     fixed — the feed now sends real yaw, computed from Gazebo's true
-     orientation quaternion (ENU→NED conversion).
-  2. **Not fixed, still open**: with a *correct* heading fed from the
-     start, both twins now hold position and report "arrived" immediately
-     on a fresh AUTO mission instead of driving there at all — worse for a
-     demo than before (at least the old behavior moved part-way). Ruled
-     out a mission-upload bug (`MISSION_ITEM_INT` readback confirms the
-     correct destination was stored and targeted) and a race (reproduced
-     deterministically 3/3 times). Best current hypothesis: an
-     earth-frame-to-body-frame rotation issue in how ArduSub's position
-     controller output reaches REMUS-100's 6-thruster vectored mixer once
-     heading is genuinely non-zero — a motor-mixing/control-loop level fix,
-     not a config or feeder change, and not something to blind-patch
-     without the normal iterate-and-test cycle this project's other
-     control-loop tuning has always used.
-  - **What's unaffected**: arming, mode-change, RC-override, and the full
-    `test_target.py` verdict suite — none of that depends on AUTO waypoint
-    tracking. **Recommendation**: use the CUSV twins for any live
-    click-to-navigate demo; use either AUV twin for the C2 attack buttons
-    and the CLI report.
-  - Full diagnosis with live numbers: `docs/EXECUTION_STATE.md`'s
-    2026-08-09 and 2026-08-10 entries.
-- **The original PSC_POSXY_P/PSC_VELXY_* "untuned gains" theory
-  (documented 2026-08-09) was wrong** and is superseded by the above —
-  those are pre-4.x ArduPilot parameter names that don't exist in the
-  current firmware build and silently no-op; both twins have always run
-  ArduSub's plain default position-controller gains, not "copied BlueROV2
-  gains." Don't retune those parameter names; they don't do anything.
-- **`fdm_relay`-method GPS spoofing pollutes the shared
-  `attack_logs/gps_spoof_ground_truth.csv`** — it's a separate,
-  already-running process with its own ground-truth logging outside
-  `test_target.py`'s control. Only affects that one shared CSV; target-run
-  evidence under `target_runs/` stays correctly isolated. Trim the CSV
-  periodically if it grows large from repeated `fdm_relay` runs.
 - **ArduSub can auto-disarm within ~1s of arming** (a GCS/RC-failsafe
   race, reproduced independently of any attack). The C2 RC-override check
   mitigates this (requires 2 consecutive armed heartbeats, keeps
@@ -307,8 +262,11 @@ Full methodology per attack family: `docs/TARGET_TESTING.md`.
   "Phase B spike" entry has the full investigation if you want the
   reasoning before removing it).
 
-**Fixed this session (2026-08-09/10), for context on what "known good" now
+**Fixed this session (2026-09-24), for context on what "known good" now
 means:**
+- **AUV waypoint-tracking bug (both REMUS-100 twins):** Fixed. Added `WPNAV_RADIUS=500` and `WPNAV_SPEED=100` to `.parm` files (vehicles were running ArduSub defaults tuned for BlueROV2, causing them to report 'arrived' immediately). Also added `set_gps_global_origin` initialization on the fresh `goto()` MAVLink connection to ensure `MAV_FRAME_GLOBAL_RELATIVE_ALT` frame conversion doesn't collapse to local NED (0,0,0).
+- **`fdm_relay`-method GPS spoofing CSV pollution:** Fixed. The relay now takes an `MCR_GPS_LOG_PATH` environment variable. `run_sim.sh` passes a per-session isolated path, preventing pollution of the shared reference evidence trail.
+- **Detectability gaps:** Fixed. `GpsRampDetector` added to catch slow-drift GPS spoofing (e.g. 0.5 m/s). `C2OverrideDetector` renamed to `C2CommandDetector` and now catches forged `SET_MODE` attacks (previously it only caught `RC_CHANNELS_OVERRIDE`).
 - Unthrottled true-position socket emits (was ~112/s, now ~13.6/s).
 - `c2_replay`'s `rc_stop` PWM used the wrong assumption about this CUSV
   twin's symmetric-around-trim throttle curve.

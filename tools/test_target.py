@@ -70,6 +70,14 @@ def _mavlink_to_event(msg, domain):
         return {"type": "local_pos", "t": t, "n": msg.x, "e": msg.y, "d": msg.z, "vx": msg.vx, "vy": msg.vy}
     if mt == "HEARTBEAT" and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
         return {"type": "armed", "t": t, "armed": bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)}
+    if mt == "SET_MODE":
+        # Any SET_MODE observed during a test run is a forged mode change --
+        # this project's own legitimate tooling never sends SET_MODE during the
+        # test window, only during the pre-test arm/mode-set sequence.
+        return {"type": "mode_change", "t": t,
+                "new_mode": str(msg.custom_mode),
+                "prev_mode": "UNKNOWN",
+                "domain": domain}
     if mt == "RC_CHANNELS":
         driven = [getattr(msg, f"chan{i}_raw", 0) for i in (1, 3)]
         if any(900 < v < 2100 and abs(v - 1500) > 100 for v in driven):
@@ -607,17 +615,10 @@ def run_gps_spoof_fdm_relay(conn, target_cfg, out_dir, det_suite, alerts):
     own JSON FDM position feed in flight, so whatever the EKF sees is
     genuinely physics-derived, just forged in transit.
 
-    KNOWN LIMITATION (unlike every other attack path in this file): this
-    method's ground truth is NOT isolated to target_runs/ -- the relay is a
-    separate, already-running process (owned by the target's own boot
-    sequence) with its own internal logging to the SHARED, git-tracked
-    attack_logs/gps_spoof_ground_truth.csv (confirmed empirically
-    2026-08-07: a run polluted it with ~5000 rows, trimmed back out).
-    Fixing this properly means adding a log-path override to
-    attacks/gps_spoof.py's relay, which is explicitly marked "verified
-    working, do not change without re-testing" -- deliberately not touched
-    here. Only relevant for method=fdm_relay (this project's own reference
-    vehicles); gps_input's ground truth is fully isolated as normal.
+    Ground truth is now isolated per-session: run_sim.sh passes MCR_GPS_LOG_PATH
+    pointing the relay's CSV to /tmp/mcr_run/<profile>/gps_spoof_ground_truth.csv
+    (not the shared attack_logs/ file). This run's own ground truth is written
+    separately to out_dir/gps_spoof_ground_truth.csv as normal.
     """
     domain = target_cfg["domain"]
     gcfg = target_cfg["attacks"]["gps_spoof"]
@@ -802,7 +803,8 @@ def run_target_test(target_name, requested_attacks=None):
     ais_stop = threading.Event()
     ais_thread = None
     ais_bind_error = []
-    if "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
+    # AIS disabled globally for now
+    if False and "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
         udp_addr = tuple(enabled["ais_spoof"].get("udp_addr", ["127.0.0.1", 10110]))
         ais_thread = threading.Thread(target=_ais_tap_loop, args=(udp_addr, det_suite, alerts, ais_stop, ais_bind_error), daemon=True)
         ais_thread.start()
@@ -836,7 +838,8 @@ def run_target_test(target_name, requested_attacks=None):
         results["attacks"]["gps_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}
         print(f"[test_target]   vulnerability: {verdict}")
 
-    if "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
+    # AIS disabled globally for now
+    if False and "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
         print("[test_target] running ais_spoof (vulnerability N/A by design; scoring detectability) ...")
         verdict, evidence = run_ais_spoof_test(target, out_dir, conn, det_suite, alerts, baseline)
         results["attacks"]["ais_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}

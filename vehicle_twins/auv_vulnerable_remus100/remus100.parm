@@ -79,3 +79,18 @@ PSC_POSXY_P 2.5
 PSC_VELXY_D 0.8
 PSC_VELXY_I 0.5
 PSC_VELXY_P 5.0
+
+# AUTO-mode navigation parameters -- not present in the original config, so
+# the vehicle ran ArduSub defaults (WPNAV_RADIUS=200cm, WPNAV_SPEED=500cm/s).
+# WPNAV_RADIUS default of 200 cm (2 m) is too tight: if the EKF's local NED
+# position is already within 2 m of the uploaded waypoint (e.g. because the
+# GPS origin wasn't set before the mission upload, collapsing the frame
+# conversion to 0,0,0), the autopilot reports "arrived" immediately without
+# moving. 500 cm (5 m) gives enough slack for the SITL demo while still
+# being a meaningful nav target.
+# WPNAV_SPEED default of 500 cm/s (5 m/s) is too aggressive for this vehicle's
+# 6-thruster vectored mixer to track NED position accurately at non-zero heading;
+# 100 cm/s (1 m/s) keeps position error low enough for stable AUTO navigation.
+# Fix for: docs/EXECUTION_STATE.md 2026-08-09/10 AUV navigation bug.
+WPNAV_RADIUS  500
+WPNAV_SPEED   100

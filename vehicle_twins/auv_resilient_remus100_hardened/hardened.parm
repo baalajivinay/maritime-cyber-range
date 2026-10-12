@@ -47,6 +47,12 @@ PSC_VELXY_D 0.8
 PSC_VELXY_I 0.5
 PSC_VELXY_P 5.0
 
+# AUTO-mode navigation: same fix as auv_vulnerable_remus100/remus100.parm --
+# see that file's comment for full rationale. Required in this file separately
+# because SITL only accepts one --defaults file (can't inherit from sibling).
+WPNAV_RADIUS  500
+WPNAV_SPEED   100
+
 # --- Hardening, value carried over unchanged from this project's original
 # hardened BlueROV2 twin's own live-verified 2026-08-08 result
 # (MAV_GCS_SYSID + MAV_OPTIONS=1 is the

@@ -128,6 +128,7 @@ def mav_loop(deadline):
     m.wait_heartbeat(timeout=15)
     m.mav.request_data_stream_send(m.target_system, m.target_component,
                                    mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
+    _prev_mode_holder = {"mode": "UNKNOWN"}  # tracks current mode for mode_change event context
     while time.time() < deadline:
         msg = m.recv_match(blocking=True, timeout=1)
         if msg is None:
@@ -143,6 +144,25 @@ def mav_loop(deadline):
         elif mt == "HEARTBEAT" and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
             tap({"type": "armed", "t": t,
                  "armed": bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)})
+            # Track current mode string for context in mode_change events below.
+            _mode_map = getattr(m, "_mode_mapping_cache", None)
+            if _mode_map is None:
+                try:
+                    _mode_map = {v: k for k, v in m.mode_mapping().items()}
+                    m._mode_mapping_cache = _mode_map
+                except Exception:
+                    _mode_map = {}
+            _prev_mode_holder["mode"] = _mode_map.get(msg.custom_mode, str(msg.custom_mode))
+        elif mt == "SET_MODE":
+            # A SET_MODE on the wire means someone sent a mode-change command.
+            # In this project's autonomous operation there is no legitimate GCS
+            # sending mode changes, so any observed SET_MODE is suspicious --
+            # same threat model as RC_CHANNELS_OVERRIDE.
+            new_mode = str(msg.custom_mode)
+            tap({"type": "mode_change", "t": t,
+                 "new_mode": new_mode,
+                 "prev_mode": _prev_mode_holder.get("mode", "UNKNOWN"),
+                 "domain": DOMAIN})
         elif mt == "RC_CHANNELS":
             # No physical RC in this project -> any driven throttle/steering
             # channel is an override (C2 actuator seizure).

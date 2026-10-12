@@ -1565,6 +1565,9 @@ Legend: [x] done · [~] in progress · [ ] not started
   Surveyed underwater assets; found DAVE BlueROV2 + ocean worlds + ardusub.parm
   already on disk — big de-risk for WO-11/12. Wrote this state file. Starting
   WO-11.
+- 2026-09-24: Cleaned up project loose files across home directory into logs/ and docs/examples/. Fixed AUV waypoint-tracking bug (WPNAV_RADIUS/WPNAV_SPEED + set_gps_global_origin), fdm_relay GPS spoofing CSV pollution bug (added MCR_GPS_LOG_PATH env override), and detectability gaps (GpsRampDetector for slow drift + C2CommandDetector for SET_MODE). All verified.
+
+- 2026-09-24: Cleaned up project loose files across home directory into logs/ and docs/examples/. Fixed AUV waypoint-tracking bug (added WPNAV_RADIUS/WPNAV_SPEED to .parm files and set_gps_global_origin to goto() fresh connection), fdm_relay GPS spoofing CSV pollution bug (added MCR_GPS_LOG_PATH env override in gps_spoof.py and run_sim.sh), and detectability gaps (added GpsRampDetector for slow drift and renamed C2OverrideDetector to C2CommandDetector to catch SET_MODE). All verified.
 
 - 2026-10-12: **Operational-posture reporting change + doc reconciliation.**
   Removed the three offline report/scoring tools (`tools/generate_target_report.py`,

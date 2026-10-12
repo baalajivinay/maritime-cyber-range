@@ -41,9 +41,10 @@ import constants
 RELAY_BIND = constants.FDM_RELAY_BIND     # ArduPilot always sends here
 GAZEBO_ADDR = constants.FDM_GAZEBO_ADDR   # real Gazebo, moved off 9002 via SDF edit
 
-ATTACK_LOG_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "attack_logs", "gps_spoof_ground_truth.csv")
+ATTACK_LOG_PATH = os.environ.get(
+    "MCR_GPS_LOG_PATH",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                 "attack_logs", "gps_spoof_ground_truth.csv"))
 
 # Approximate home, used ONLY for human-readable ground-truth logging
 # (converting the injected meters offset to an approximate lat/lon for

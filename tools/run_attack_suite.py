@@ -274,7 +274,7 @@ def check_acoustic_spoof(conn):
     walks away from its TRUE Gazebo position while spoofing, and tracks it when
     off."""
     if not os.path.exists(os.path.join(REPO, "attacks", "acoustic_spoof.py")):
-        return "SKIP", "acoustic_spoof not implemented yet (WO-16)"
+        return "SKIP", "attacks/acoustic_spoof.py not found in this checkout"
     import threading
     import acoustic_spoof as A
 

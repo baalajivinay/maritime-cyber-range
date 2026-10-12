@@ -21,6 +21,7 @@ Event shapes (dicts):
   {"type":"armed",        "t":ts, "armed":bool}            # from HEARTBEAT
 """
 import math
+import time
 from dataclasses import dataclass, asdict
 
 
@@ -76,6 +77,47 @@ class GpsJumpDetector:
                                  f"believed position moved at {speed:.0f} m/s (> {self.max_speed:.0f}) -- implausible")
         self.last = (t, lat, lon)
         return None
+
+
+# ---------------------------------------------------------------------------
+class GpsRampDetector:
+    """Surface: catches slow, sustained GPS position drift — the 'ramp' spoof
+    profile (e.g. 0.5 m/s) that falls below GpsJumpDetector's speed gate.
+
+    Accumulates a sliding 30s window of believed-position history and alerts
+    when the mean displacement speed over that window exceeds `drift_threshold_mps`
+    (0.3 m/s default — well above typical GNSS wander noise of ~0.01 m/s in a
+    static SITL simulation, well below even a slow-moving autonomous vessel).
+    One alert per window_s to avoid repeated firing on the same drift event."""
+    def __init__(self, window_s=30.0, drift_threshold_mps=0.3):
+        self.window_s = window_s
+        self.threshold = drift_threshold_mps
+        self.history = []       # [(t, lat, lon)]
+        self.last_alert = None
+
+    def update(self, e):
+        if e.get("type") != "believed_pos":
+            return None
+        t, lat, lon = e["t"], e["lat"], e["lon"]
+        if lat == 0 and lon == 0:
+            return None
+        self.history.append((t, lat, lon))
+        cutoff = t - self.window_s
+        while self.history and self.history[0][0] < cutoff:
+            self.history.pop(0)
+        if len(self.history) < 5:
+            return None
+        oldest_t, oldest_lat, oldest_lon = self.history[0]
+        dt = t - oldest_t
+        if dt <= 0:
+            return None
+        speed = _horiz_m(oldest_lat, oldest_lon, lat, lon) / dt
+        if speed > self.threshold and (
+                self.last_alert is None or t - self.last_alert >= self.window_s):
+            self.last_alert = t
+            return Alert(t, "GpsRampDetector", "gps_spoof", "surface",
+                         f"sustained position drift at {speed:.2f} m/s over {dt:.0f}s "
+                         f"(> {self.threshold:.2f}) -- possible GPS ramp spoof")
 
 
 # ---------------------------------------------------------------------------
@@ -167,23 +209,49 @@ class AisConflictDetector:
 
 
 # ---------------------------------------------------------------------------
-class C2OverrideDetector:
-    """Both domains: an RC_CHANNELS_OVERRIDE is an external party commanding
-    actuators directly -- there is no legitimate reason for one in this project's
-    autonomous operation, so any override is a C2 seizure."""
+class C2CommandDetector:
+    """Both domains: detects unauthenticated C2 seizure via two signatures.
+
+    (a) RC_CHANNELS_OVERRIDE — an external party commanding actuators directly.
+        There is no legitimate reason for one in this project's autonomous
+        operation, so any override is treated as a C2 seizure.
+    (b) mode_change — a SET_MODE message observed on the wire that changes the
+        vehicle's operating mode. In fully autonomous operation any unexpected
+        mode change is a forged command (the inject_forged_mode_change attack).
+        Event emitted by detection/run_detectors.py and tools/test_target.py's
+        _mavlink_to_event() when a SET_MODE message is seen.
+
+    Backward compat: C2OverrideDetector is an alias for this class — alert
+    logs and verdict files reference attack_type='c2_replay', not the detector
+    class name, so no existing output breaks."""
     def __init__(self, refractory_s=3.0):
         self.refractory = refractory_s
         self.last_alert = None
 
-    def update(self, e):
-        if e.get("type") != "rc_override":
-            return None
-        t = e["t"]
+    def _emit(self, t, detail, domain):
         if self.last_alert is not None and t - self.last_alert < self.refractory:
             return None
         self.last_alert = t
-        return Alert(t, "C2OverrideDetector", "c2_replay", e.get("domain", "surface"),
-                     "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized")
+        return Alert(t, "C2CommandDetector", "c2_replay", domain, detail)
+
+    def update(self, e):
+        t = e.get("t", time.time())
+        et = e.get("type")
+        if et == "rc_override":
+            return self._emit(t, "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized",
+                              e.get("domain", "surface"))
+        if et == "mode_change":
+            new_mode = e.get("new_mode", "UNKNOWN")
+            prev_mode = e.get("prev_mode", "UNKNOWN")
+            return self._emit(t,
+                              f"Unexpected SET_MODE observed: {prev_mode} -> {new_mode} -- forged mode change",
+                              e.get("domain", "surface"))
+        return None
+
+
+# Backward compat alias -- alert logs reference attack_type='c2_replay', not
+# this class name, so renaming is safe for all existing output files.
+C2OverrideDetector = C2CommandDetector
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +293,13 @@ class AcousticDivergenceDetector:
 
 # ---------------------------------------------------------------------------
 DOMAIN_DETECTORS = {
-    "surface": lambda cfg: [GpsJumpDetector(), AisConflictDetector(known_mmsi=cfg.get("known_mmsi")), C2OverrideDetector()],
-    "underwater": lambda cfg: [AcousticDivergenceDetector(), C2OverrideDetector()],
+    "surface": lambda cfg: [
+        GpsJumpDetector(),
+        GpsRampDetector(),
+        AisConflictDetector(known_mmsi=cfg.get("known_mmsi")),
+        C2CommandDetector(),
+    ],
+    "underwater": lambda cfg: [AcousticDivergenceDetector(), C2CommandDetector()],
 }
 
 

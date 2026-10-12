@@ -38,8 +38,6 @@ sys.path.insert(0, os.path.join(_REPO, "attacks"))
 sys.path.insert(0, os.path.join(_REPO, "tools"))
 import constants
 from detectors import DetectorSuite
-from score_detectors import score as score_alerts
-from generate_report import render_family_table, render_overhead_panel
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
@@ -626,6 +624,18 @@ def _goto_locked(lat, lon):
                                    source_system=constants.GCS_SOURCE_SYSTEM)
     if c.wait_heartbeat(timeout=10) is None:
         return "no autopilot heartbeat"
+    # Send the GPS global origin on this fresh connection so MAVLink
+    # MAV_FRAME_GLOBAL_RELATIVE_ALT mission items have a valid origin to
+    # convert against. Without this, a fresh connection (especially to an
+    # ArduSub vehicle using ExternalNav rather than real GPS) has no origin
+    # and the frame conversion silently maps the target to NED (0,0,0) --
+    # which the vehicle is already at, triggering instant "arrived".
+    # Harmless for surface vehicles (they get the origin from their own GPS).
+    c.mav.set_gps_global_origin_send(
+        c.target_system,
+        int(constants.HOME_LAT * 1e7),
+        int(constants.HOME_LON * 1e7), 0)
+    time.sleep(0.3)
     # reset to a clean fresh state -- arming from MANUAL/disarmed is what reliably
     # (re)starts AUTO navigation; re-arming an already-armed AUTO vehicle does not.
     c.set_mode(c.mode_mapping().get('MANUAL', 0)); time.sleep(0.5)
@@ -767,25 +777,59 @@ def cmd_goto():
     threading.Thread(target=lambda: goto(lat, lon), daemon=True).start()
     return jsonify(ok=True, msg=f"destination set: {lat:.5f}, {lon:.5f} — commanding AUTO nav")
 
+def _fmt(v, suffix="", digits=2):
+    if v is None:
+        return "n/a"
+    if isinstance(v, float) and v != v:
+        return "n/a"
+    if isinstance(v, float):
+        return f"{v:.{digits}f}{suffix}"
+    return f"{v}{suffix}"
+
+def render_overhead_panel(overhead):
+    if overhead is None:
+        return '<p class="missing">No system-overhead sample for this profile yet.</p>'
+    ept = overhead["event_proc_time_us"]
+    return f"""
+    <table class="kv">
+      <tr><th>Wall-clock sampled</th><td>{_fmt(overhead['wall_s'], 's')}</td></tr>
+      <tr><th>CPU time (user+sys)</th><td>{_fmt(overhead['cpu_s'], 's')} ({_fmt(overhead['cpu_pct_of_wall'], '%')} of wall)</td></tr>
+      <tr><th>Peak resident memory</th><td>{_fmt(overhead['peak_rss_mb'], ' MB')}</td></tr>
+      <tr><th>Events processed</th><td>{overhead['events_processed']} ({_fmt(overhead['events_per_sec'], '/s')})</td></tr>
+      <tr><th>Alerts emitted</th><td>{overhead['alerts_emitted']}</td></tr>
+      <tr><th>Per-event processing time</th>
+          <td>mean {_fmt(ept['mean'], 'us')} / p95 {_fmt(ept['p95'], 'us')} / max {_fmt(ept['max'], 'us')}</td></tr>
+    </table>"""
 
 def _report_table_html():
-    """Score the blind detectors (this session's alerts) vs ground truth and
-    render the same precision/recall/FP-rate/latency + overhead tables as
-    tools/generate_report.py, scoped to this live session. Shared by the
-    in-page report overlay and the downloadable PDF so they can never drift
-    out of sync with each other."""
-    result = score_alerts(ALERT_LOG, min_ts=SESSION_START)
+    """Renders an operational incident report listing all alerts generated 
+    during this session."""
+    alerts = []
+    if os.path.exists(ALERT_LOG):
+        with open(ALERT_LOG, "r") as f:
+            for line in f:
+                try:
+                    a = json.loads(line)
+                    if a.get("t", 0) >= SESSION_START:
+                        alerts.append(a)
+                except Exception:
+                    continue
+
+    rows = ""
+    for a in alerts:
+        ts = time.strftime("%H:%M:%S", time.localtime(a["t"]))
+        rows += f"<tr><td>{ts}</td><td>{html_lib.escape(a.get('detector', 'Unknown'))}</td>"
+        rows += f"<td>{html_lib.escape(a.get('attack_type', 'unknown'))}</td><td>{html_lib.escape(a.get('detail', ''))}</td></tr>"
+
     overhead = _live_overhead_snapshot()
-    rows = render_family_table(result["families"])
     return f"""
     <div class="tblwrap"><table class="detail">
       <thead>
         <tr>
-          <th>Attack</th><th>TP</th><th>FP</th><th>FP rate</th><th>Windows detected</th>
-          <th>Precision</th><th>Recall</th><th>Mean latency</th><th>p95 latency</th><th>Max latency</th>
+          <th>Time</th><th>Detector</th><th>Category</th><th>Incident Detail</th>
         </tr>
       </thead>
-      <tbody>{rows or '<tr><td colspan="10" class="muted">no attacks scored yet this session</td></tr>'}</tbody>
+      <tbody>{rows or '<tr><td colspan="4" class="muted">No incidents detected this session</td></tr>'}</tbody>
     </table></div>
     <h4 style="margin:16px 0 8px;">System performance overhead (this session)</h4>
     <div class="tblwrap">{render_overhead_panel(overhead)}</div>

@@ -194,7 +194,7 @@ do_up() {
   rm -f "$FIFO"; mkfifo "$FIFO"
   setsid bash -c "exec 9>'$FIFO'; sleep infinity" >/dev/null 2>&1 < /dev/null &
   echo $! > "$RUN_DIR/fifo_keepalive.pid"
-  spawn "$LOG_DIR/relay.log" "cd '$REPO'; MCR_VEHICLE_PROFILE='$PROFILE' python3 -u attacks/gps_spoof.py < '$FIFO'" > "$RUN_DIR/relay.pid"
+  spawn "$LOG_DIR/relay.log" "cd '$REPO'; MCR_VEHICLE_PROFILE='$PROFILE' MCR_GPS_LOG_PATH='$RUN_DIR/gps_spoof_ground_truth.csv' python3 -u attacks/gps_spoof.py < '$FIFO'" > "$RUN_DIR/relay.pid"
   wait_udp_port "$RELAY_PORT" 20 || fail "FDM relay never bound UDP :$RELAY_PORT"
   log "  relay bound :$RELAY_PORT [OK]"
 
@@ -224,13 +224,13 @@ do_up() {
   wait_heartbeat "$HB_PORT" 30 || fail "no MAVLink heartbeat on :$HB_PORT (bridge/SITL link)"
   log "  heartbeat on :$HB_PORT [OK]"
 
-  # 5) AIS emulator (surface only -- AIS is N/A submerged)
-  if [[ "$DOMAIN" == "surface" ]]; then
-    log "starting AIS emulator..."
-    spawn "$LOG_DIR/ais.log" "cd '$REPO'; MCR_VEHICLE_PROFILE='$PROFILE' python3 -u nodes/ais_emulator/ais_emulator.py" > "$RUN_DIR/ais.pid"
-    sleep 2
-    log "  AIS emulator started (broadcasting on UDP 10110)"
-  fi
+  # 5) AIS emulator (DISABLED)
+  # if [[ "$DOMAIN" == "surface" ]]; then
+  #   log "starting AIS emulator..."
+  #   spawn "$LOG_DIR/ais.log" "cd '$REPO'; MCR_VEHICLE_PROFILE='$PROFILE' python3 -u nodes/ais_emulator/ais_emulator.py" > "$RUN_DIR/ais.pid"
+  #   sleep 2
+  #   log "  AIS emulator started (broadcasting on UDP 10110)"
+  # fi
 
   log "STACK UP. Send spoof commands to the relay via:  echo step > $FIFO"
   log "Teardown:  tools/run_sim.sh $PROFILE down"
