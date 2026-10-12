@@ -17,10 +17,11 @@ SilentInstall silent                 ; no installer UI -- it's a launcher, not a
 ; Icon "mcr.ico"                     ; (optional) drop a 256x256 mcr.ico here to brand the .exe
 
 Section
-  InitPluginsDir
-  SetOutPath "$PLUGINSDIR"
+  ; Extract the launcher to %TEMP% (persists after this tiny .exe exits) and
+  ; start it in a VISIBLE PowerShell console so the user sees progress and can
+  ; answer prompts (the one-time image load takes minutes). $EXEDIR = the folder
+  ; this .exe was run from, where mcr-image.tar.gz sits beside it.
+  SetOutPath "$TEMP"
   File "MaritimeCyberRange.ps1"
-  ; run the launcher; $EXEDIR = where this .exe (and the image data file) live
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\MaritimeCyberRange.ps1" -DataDir "$EXEDIR"'
-  Pop $0
+  Exec 'powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$TEMP\MaritimeCyberRange.ps1" -DataDir "$EXEDIR"'
 SectionEnd
