@@ -1,0 +1,22 @@
+# deploy/Dockerfile.dev -- DEV image for scale-up work.
+#
+# Layers ONLY additive scale-up code on top of the FROZEN release image. It
+# never rebuilds mcr:latest, so the shipped Ubuntu/Windows package can't be
+# altered by scale-up work (see scaleup/README.md's isolation contract).
+#
+# Build (the release image must exist first -- built from the release/app-v1 tag):
+#   docker build -f deploy/Dockerfile      -t mcr:latest .
+#   docker build -f deploy/Dockerfile.dev  -t mcr:dev    .
+#
+# Run the scenario engine inside the dev image:
+#   docker run --rm mcr:dev python3 tools/run_scenario.py scenarios/harbor_transit_gps_walkoff.json
+FROM mcr:latest
+
+# additive scale-up code only -- nothing here overwrites a core package file
+COPY scaleup   /root/maritime-cyber-range/scaleup
+COPY scenarios /root/maritime-cyber-range/scenarios
+COPY tools/run_scenario.py /root/maritime-cyber-range/tools/run_scenario.py
+
+# dev-only dependencies go here, kept OUT of the shipped image. The scenario
+# engine itself is stdlib-only; add libs here as later modules need them, e.g.:
+# RUN /opt/mcr-venv/bin/pip install --no-cache-dir pyyaml matplotlib scikit-learn

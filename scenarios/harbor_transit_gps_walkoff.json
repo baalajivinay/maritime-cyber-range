@@ -1,0 +1,49 @@
+{
+  "name": "harbor_transit_gps_walkoff",
+  "description": "Vulnerable CUSV on a 600 m eastbound harbour transit. A slow GPS ramp spoof convinces the autopilot it is drifting north, so it steers south to 'correct' -- walking its TRUE track into charted shallows, a shipping lane, and a crossing ferry, all while its believed position stays cleanly on the planned route.",
+  "target": "vehicle_twins/mass_vulnerable_cusv/target.json",
+  "domain": "surface",
+  "mission": {
+    "start": [-33.7242229, 150.6797359],
+    "goal":  [-33.7242229, 150.6862200],
+    "speed_mps": 4.0
+  },
+  "hazards": [
+    {
+      "type": "nogo_zone",
+      "name": "shipping_lane",
+      "polygon": [
+        [-33.724582, 150.681000],
+        [-33.724582, 150.686000],
+        [-33.725570, 150.686000],
+        [-33.725570, 150.681000]
+      ]
+    },
+    {
+      "type": "shoal",
+      "name": "charted_rock",
+      "point": [-33.724762, 150.682980],
+      "radius_m": 45
+    }
+  ],
+  "contacts": [
+    {
+      "name": "crossing_ferry",
+      "start": [-33.724915, 150.683000],
+      "velocity_ne_mps": [0.0, 1.5]
+    }
+  ],
+  "timeline": [
+    {"at_s": 0,   "action": "baseline"},
+    {"at_s": 20,  "action": "gps_spoof",
+     "params": {"method": "fdm_relay", "profile": "ramp", "bearing_deg": 0, "rate_mps": 0.7}},
+    {"at_s": 150, "action": "stop_attacks"}
+  ],
+  "consequences": [
+    {"type": "position_divergence", "threshold_m": 50,  "severity": "high"},
+    {"type": "nogo_breach",   "zone": "shipping_lane",  "severity": "critical"},
+    {"type": "grounding",     "hazard": "charted_rock", "severity": "critical"},
+    {"type": "cpa_violation", "contact": "crossing_ferry", "threshold_m": 80, "severity": "critical"}
+  ],
+  "sim": {"duration_s": 160, "rate_hz": 5}
+}
