@@ -46,6 +46,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import constants
 from pymavlink import mavutil
 
+# Scale-up (default OFF): if MCR_SITE is set, make the USBL/acoustic attack
+# site-aware -- bound the forged offset to the site's acoustic detection range
+# (a fix beyond it is implausible) and report the site sound speed. Honest
+# limit: this sim injects position directly (no modelled acoustic travel-time
+# channel), so the sound speed informs the attack's PLAUSIBILITY / detectability
+# bounds, not the injected value; ray-traced ranging (Bellhop) is Tier B.
+_SITE = None
+_SITE_USBL_RANGE = None
+_SITE_C = None
+if os.environ.get("MCR_SITE"):
+    try:
+        from scaleup.sites import load_site as _load_site
+        _SITE = _load_site(os.environ["MCR_SITE"])
+        _SITE_USBL_RANGE = _SITE.usbl_detection_range()
+        _SITE_C = _SITE.sound_speed_at(10.0)
+    except Exception:
+        _SITE = None
+
 ENDPOINT = os.environ.get("MCR_ACOUSTIC_ENDPOINT", "tcp:127.0.0.1:5762")
 ODOM_TOPIC = os.environ.get("MCR_ACOUSTIC_ODOM_TOPIC", f"/model/{constants.MODEL_NAME}/odometry")
 
@@ -175,10 +193,20 @@ def run_feed(conn):
         conn.target_system, int(constants.HOME_LAT * 1e7), int(constants.HOME_LON * 1e7), 0)
     print(f"Acoustic-positioning feed live on {ENDPOINT}. Spoof OFF (transparent USBL).")
     print("Commands: step | ramp | off | quit")
+    if _SITE is not None:
+        print(f"Site '{_SITE.id}': sound speed {_SITE_C:.1f} m/s @10 m; USBL detection range "
+              f"~{_SITE_USBL_RANGE/1000:.1f} km (forged offset bounded to this).")
     holder = {}
     last_log = 0.0
     for (tn, te, td, tyaw) in read_true_ned(holder):
         off_n, off_e = compute_offset_m()
+        # site acoustics: a forged fix beyond the USBL detection range is not
+        # physically plausible -- cap the offset magnitude to it.
+        if _SITE is not None and _SITE_USBL_RANGE:
+            mag = math.hypot(off_n, off_e)
+            if mag > _SITE_USBL_RANGE:
+                sc = _SITE_USBL_RANGE / mag
+                off_n, off_e = off_n * sc, off_e * sc
         fn, fe = tn + off_n, te + off_e
         us = int(time.time() * 1e6)
         # yaw is the AUV's real heading, never spoofed -- this attack forges

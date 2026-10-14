@@ -75,10 +75,23 @@ sonar/USBL ducting), and a current vector on the tactical map.
   tidal time-series (INCOIS fields, via the plugin's water-current table) is
   Tier B. An actively-navigating autopilot partially rejects the current
   (realistic); a disarmed/low-thrust hull drifts with it.
-- **Density → buoyancy** (next): point the world `<density>` / hull buoyancy at
-  `site.density()` instead of a fixed 1025.
-- **Sound-speed → acoustic attack** (next): `acoustic_spoof.py`'s USBL
-  range/geometry from the site profile; `transmission_loss_db()` bounds spoof range.
+- **Density → buoyancy: IMPLEMENTED.** When `MCR_SITE` is set, `run_sim.sh`
+  patches the world buoyancy `<default_density>` to `site.density()` (EOS-80) in
+  a per-session world copy, so buoyant force uses the real site density.
+  Verified live: Kochi → the CUSV world goes from freshwater 1000 to 1022.4 kg/m³.
+  ```bash
+  MCR_SITE=kochi tools/run_vehicle.sh vehicle_twins/mass_vulnerable_cusv up
+  ```
+  Honest note: seawater density varies <1%, so the buoyant-force effect is small
+  (mainly correctness + a slight trim shift for a neutrally-buoyant AUV).
+- **Sound-speed → acoustic attack: IMPLEMENTED (site-aware bounds).** With
+  `MCR_SITE` set, `attacks/acoustic_spoof.py` loads the site, reports the sound
+  speed, and **bounds the forged USBL offset to the site's acoustic detection
+  range** (a fix beyond it is implausible). Honest limit: the sim injects
+  position directly — it has **no modelled acoustic travel-time channel** — so
+  the sound speed informs the attack's *plausibility / detectability* bounds
+  (detection range, ranging bias) rather than the injected value. Ray-traced
+  travel-time ranging & multipath (**Bellhop**) is the Tier-B upgrade.
 - **Bathymetry / sea-state** (Tier B): GEBCO heightmap + the Gazebo wave plugin.
 
 ## Files

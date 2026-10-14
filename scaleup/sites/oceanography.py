@@ -98,6 +98,19 @@ def sound_speed_profile(surface_temp, deep_temp, salinity_psu, max_depth_m,
     return out
 
 
+def travel_time_s(range_m, c_mps):
+    """Acoustic one-way travel time."""
+    return range_m / c_mps if c_mps > 0 else 0.0
+
+
+def ranging_bias_m(true_range_m, c_assumed_mps, c_actual_mps):
+    """Range error if a USBL assumes c_assumed but the water's real speed is
+    c_actual: a measured two-way time maps to the wrong range. bias = R*(c_a/c-1)."""
+    if c_actual_mps <= 0:
+        return 0.0
+    return true_range_m * (c_assumed_mps / c_actual_mps - 1.0)
+
+
 def sonic_layer_depth(profile):
     """Depth of the sound-speed maximum in the upper water column -- the base of
     the surface duct (a signature acoustic feature for sonar/USBL)."""

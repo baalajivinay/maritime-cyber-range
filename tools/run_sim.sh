@@ -168,14 +168,30 @@ do_status() {
 do_up() {
   log "domain=$DOMAIN vehicle=$VTYPE home=$HOME_LAT,$HOME_LON  run_dir=$RUN_DIR"
 
+  # Scale-up (default OFF): if MCR_SITE names an Indian test site, patch the
+  # world buoyancy <default_density> to that water body's EOS-80 density, so
+  # buoyant force uses the real site density. Guarded -- unset MCR_SITE leaves
+  # the shipped behaviour byte-identical.
+  WORLD_LAUNCH="$REPO/$WORLD_SDF"
+  if [[ -n "${MCR_SITE:-}" && -n "$WORLD_SDF" && "$WORLD_METHOD" != "vrx" ]]; then
+    local sden
+    sden=$(python3 -c "import sys;sys.path.insert(0,'$REPO');from scaleup.sites import load_site;print(round(load_site('$MCR_SITE').density(),1))" 2>/dev/null)
+    if [[ -n "$sden" ]]; then
+      WORLD_LAUNCH="$RUN_DIR/world_site.sdf"
+      sed "s|<default_density>[0-9.]*</default_density>|<default_density>$sden</default_density>|" \
+          "$REPO/$WORLD_SDF" > "$WORLD_LAUNCH"
+      log "site '$MCR_SITE': buoyancy water density -> $sden kg/m^3"
+    fi
+  fi
+
   # 1) Gazebo world -- boot method comes from the profile's "world" config, so a
   #    new vehicle just declares how it boots (VRX launch, or a plain gz world).
   if [[ "$WORLD_METHOD" == "vrx" ]]; then
     log "starting VRX world '$WORLD_NAME'..."
     spawn "$LOG_DIR/world.log" "source /opt/ros/jazzy/setup.bash; source '$REPO/ros2_ws/install/setup.bash'; ros2 launch vrx_gz competition.launch.py world:=$WORLD_NAME headless:=True urdf:='$REPO/$WORLD_URDF'" > "$RUN_DIR/world.pid"
   else
-    log "starting gz world '$WORLD_SDF'..."
-    spawn "$LOG_DIR/world.log" "gz sim -v4 -s -r '$REPO/$WORLD_SDF'" > "$RUN_DIR/world.pid"
+    log "starting gz world '$WORLD_SDF' (density source: $(basename "$WORLD_LAUNCH"))..."
+    spawn "$LOG_DIR/world.log" "gz sim -v4 -s -r '$WORLD_LAUNCH'" > "$RUN_DIR/world.pid"
   fi
   wait_gz_model "$MODEL_NAME" 60 || fail "Gazebo model '$MODEL_NAME' never appeared (world didn't boot)"
   log "  world up, model '$MODEL_NAME' present [OK]"

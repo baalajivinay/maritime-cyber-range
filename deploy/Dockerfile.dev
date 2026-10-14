@@ -23,6 +23,8 @@ COPY tools/inject_current.py /root/maritime-cyber-range/tools/inject_current.py
 # normal scaleup -> test_all_4 -> release flow, NOT the frozen baseline). Add
 # each such file as the branch changes it.
 COPY nodes/monitor/src/templates/index.html /root/maritime-cyber-range/nodes/monitor/src/templates/index.html
+COPY tools/run_sim.sh          /root/maritime-cyber-range/tools/run_sim.sh
+COPY attacks/acoustic_spoof.py /root/maritime-cyber-range/attacks/acoustic_spoof.py
 
 # dev-only dependencies go here, kept OUT of the shipped image. The scenario
 # engine itself is stdlib-only; add libs here as later modules need them, e.g.:

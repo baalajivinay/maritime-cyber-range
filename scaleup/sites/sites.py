@@ -41,6 +41,12 @@ class Site:
     def surface_sound_speed(self):
         return O.sound_speed_mackenzie(self.water["surface_temp_c"], self.water["salinity_psu"], 0.0)
 
+    def sound_speed_at(self, depth_m=0.0):
+        w = self.water
+        t = O.temperature_at_depth(depth_m, w["surface_temp_c"], w["deep_temp_c"],
+                                   w.get("mixed_layer_m", 20), w.get("thermocline_bottom_m", 150))
+        return O.sound_speed_mackenzie(t, w["salinity_psu"], depth_m)
+
     def sonic_layer_depth(self):
         return O.sonic_layer_depth(self.sound_speed_profile())
 
