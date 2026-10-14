@@ -73,6 +73,13 @@ class SimExecutor(Executor):
             # forged offset makes TRUE drift opposite to the injected shift
             off_n, off_e = _offset_ne_at(scenario.timeline, t)
             tlat, tlon = geo.offset_m(blat, blon, -off_n, -off_e)
+            # site environment: the water current advects the hull. First-order
+            # model -- the position-spoofed vehicle does not reject the current
+            # (conservative; a full model couples it to the controller). Same
+            # scenario at different sites therefore yields different TRUE tracks.
+            if scenario.site is not None:
+                cn, ce = scenario.site.current_ne()
+                tlat, tlon = geo.offset_m(tlat, tlon, cn * t, ce * t)
             telemetry.append({
                 "t": t,
                 "true_lat": tlat, "true_lon": tlon,

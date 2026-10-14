@@ -1,0 +1,36 @@
+{
+  "id": "kochi",
+  "name": "Kochi (Cochin) — Arabian Sea shelf",
+  "establishment": "Southern Naval Command; NPOL (Naval Physical & Oceanographic Laboratory, sonar/acoustics)",
+  "position": [9.90, 76.20],
+  "region": "Arabian Sea, south-west India continental shelf",
+  "water": {
+    "surface_temp_c": 28.5,
+    "deep_temp_c": 13.5,
+    "salinity_psu": 35.2,
+    "mixed_layer_m": 20,
+    "thermocline_bottom_m": 150,
+    "max_depth_m": 45,
+    "source": "representative post-monsoon regional climatology (INCOIS / World Ocean Atlas means)",
+    "fidelity": "A"
+  },
+  "current": {
+    "speed_mps": 0.35,
+    "bearing_deg": 160,
+    "type": "West India Coastal Current (seasonally reversing: poleward in winter, equatorward in summer monsoon)",
+    "source": "representative WICC magnitude from regional literature / INCOIS surface-current climatology",
+    "fidelity": "A"
+  },
+  "sea_state": {
+    "sig_wave_height_m": 1.2,
+    "period_s": 7.0,
+    "note": "fair-weather; SW monsoon far rougher (Hs 2-3 m)"
+  },
+  "acoustics": {
+    "usbl_freq_khz": 25,
+    "source_level_db": 190,
+    "det_threshold_db": 60,
+    "note": "Arabian Sea: saline, warm surface -> downward-refracting c-profile; NPOL sonar relevance"
+  },
+  "notes": "All attacks run here; the site sets the ENVIRONMENT (current, density, sound-speed), not the attack set."
+}

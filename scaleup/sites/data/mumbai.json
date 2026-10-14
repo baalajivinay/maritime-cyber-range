@@ -1,0 +1,36 @@
+{
+  "id": "mumbai",
+  "name": "Mumbai — Arabian Sea harbour approaches",
+  "establishment": "Western Naval Command; dense harbour-approach traffic",
+  "position": [18.92, 72.80],
+  "region": "Arabian Sea, wide shallow continental shelf off Mumbai",
+  "water": {
+    "surface_temp_c": 27.5,
+    "deep_temp_c": 15.0,
+    "salinity_psu": 35.5,
+    "mixed_layer_m": 25,
+    "thermocline_bottom_m": 100,
+    "max_depth_m": 25,
+    "source": "representative regional climatology (INCOIS / WOA); wide shallow shelf",
+    "fidelity": "A"
+  },
+  "current": {
+    "speed_mps": 0.6,
+    "bearing_deg": 20,
+    "type": "tidally dominated in the harbour approaches (reversing with the tide)",
+    "source": "representative tidal-stream magnitude for the approaches; a real run would use the tidal phase for the date/time",
+    "fidelity": "A"
+  },
+  "sea_state": {
+    "sig_wave_height_m": 1.0,
+    "period_s": 6.0,
+    "note": "sheltered approaches; open-shelf swell higher"
+  },
+  "acoustics": {
+    "usbl_freq_khz": 30,
+    "source_level_db": 185,
+    "det_threshold_db": 60,
+    "note": "shallow water -> strong multipath/boundary interaction (not fully modelled by the spreading+absorption budget); high traffic -> AIS/collision relevance"
+  },
+  "notes": "All attacks run here; the site sets the ENVIRONMENT, not the attack set."
+}

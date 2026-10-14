@@ -17,12 +17,17 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 from scaleup.scenario import (load_scenario, run_scenario, SimExecutor, LiveExecutor,
                               report, report_html)
+from scaleup.scenario.model import apply_site
+from scaleup.sites import load_site
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("scenario", help="path to a scenario JSON (see scenarios/)")
+    ap.add_argument("--site", default=None,
+                    help="run at an Indian test site (kochi|visakhapatnam|mumbai): re-centres the "
+                         "scenario there and applies that water body's current/density/sound-speed")
     ap.add_argument("--mode", choices=["sim", "live"], default="sim",
                     help="sim = synthetic model (default); live = against a booted twin")
     ap.add_argument("--out", default=None,
@@ -31,6 +36,8 @@ def main():
     args = ap.parse_args()
 
     scenario = load_scenario(args.scenario)
+    if args.site:
+        apply_site(scenario, load_site(args.site))
     executor = SimExecutor() if args.mode == "sim" else LiveExecutor()
     result = run_scenario(scenario, executor, keep_telemetry=bool(args.out))
 

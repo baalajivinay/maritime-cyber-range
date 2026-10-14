@@ -1,0 +1,36 @@
+{
+  "id": "visakhapatnam",
+  "name": "Visakhapatnam — Bay of Bengal shelf",
+  "establishment": "Eastern Naval Command; NSTL (Naval Science & Technological Laboratory, UUV/torpedo hydrodynamics)",
+  "position": [17.68, 83.33],
+  "region": "Bay of Bengal, east India narrow continental shelf",
+  "water": {
+    "surface_temp_c": 28.0,
+    "deep_temp_c": 13.0,
+    "salinity_psu": 32.5,
+    "mixed_layer_m": 10,
+    "thermocline_bottom_m": 120,
+    "max_depth_m": 60,
+    "source": "representative regional climatology (INCOIS / WOA); Bay of Bengal is freshened by river runoff -> lower surface salinity and strong near-surface stratification",
+    "fidelity": "A"
+  },
+  "current": {
+    "speed_mps": 0.45,
+    "bearing_deg": 40,
+    "type": "East India Coastal Current (seasonally reversing)",
+    "source": "representative EICC magnitude from regional literature / INCOIS",
+    "fidelity": "A"
+  },
+  "sea_state": {
+    "sig_wave_height_m": 1.0,
+    "period_s": 6.5,
+    "note": "cyclone-season extremes not modelled here"
+  },
+  "acoustics": {
+    "usbl_freq_khz": 25,
+    "source_level_db": 190,
+    "det_threshold_db": 60,
+    "note": "low-salinity freshwater lens -> strong near-surface sound-speed gradient / surface duct; NSTL AUV relevance"
+  },
+  "notes": "All attacks run here; the site sets the ENVIRONMENT, not the attack set."
+}

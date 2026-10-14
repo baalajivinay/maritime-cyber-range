@@ -39,6 +39,7 @@ Schema (JSON):
 """
 import json
 from dataclasses import dataclass, field
+from ..sites import load_site
 
 
 @dataclass
@@ -86,12 +87,33 @@ class Scenario:
     timeline: list
     consequences: list
     sim: dict
+    site: object = None        # a sites.Site (its current/density/sound-speed apply), or None
 
     def hazard(self, name):
         return next((h for h in self.hazards if h.name == name), None)
 
     def contact(self, name):
         return next((c for c in self.contacts if c.name == name), None)
+
+
+def apply_site(scenario, site):
+    """Translate a scenario's whole geometry to a site's position and attach the
+    site (so its current/density/sound-speed apply). Lets one scenario -- with
+    its full attack timeline -- run unchanged at any of the 3 sites."""
+    dlat = site.position[0] - scenario.mission["start"][0]
+    dlon = site.position[1] - scenario.mission["start"][1]
+    mv = lambda p: [p[0] + dlat, p[1] + dlon]
+    scenario.mission["start"] = mv(scenario.mission["start"])
+    scenario.mission["goal"] = mv(scenario.mission["goal"])
+    for h in scenario.hazards:
+        if h.polygon:
+            h.polygon = [mv(v) for v in h.polygon]
+        if h.point:
+            h.point = mv(h.point)
+    for c in scenario.contacts:
+        c.start = mv(c.start)
+    scenario.site = site
+    return scenario
 
 
 def load_scenario(path):
@@ -108,4 +130,5 @@ def load_scenario(path):
         timeline=sorted((TimelineStep(**s) for s in d.get("timeline", [])), key=lambda s: s.at_s),
         consequences=[Consequence(**c) for c in d.get("consequences", [])],
         sim=d.get("sim", {"duration_s": 120, "rate_hz": 5}),
+        site=load_site(d["site"]) if d.get("site") else None,
     )

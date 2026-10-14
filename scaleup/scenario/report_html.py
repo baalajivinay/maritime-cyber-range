@@ -9,6 +9,7 @@ static SVG -- no JS, no CDN, no external assets (renders anywhere, CSP-safe).
 to_html(result, scenario) -> str
 """
 import html as _html
+import math
 from . import geo, standards
 
 # --- validated palette (dark steps + chrome) --------------------------------
@@ -184,8 +185,94 @@ def _map_svg(result, scenario):
     el.append(f'<path d="M{nx-4},{ny+6} L{nx},{ny} L{nx+4},{ny+6} Z" fill="{INK2}"/>')
     el.append(f'<text x="{nx}" y="{ny+40}" fill="{MUTED}" font-size="11" text-anchor="middle">N</text>')
 
+    # site current vector (bottom-right) -- shows the water advecting the hull
+    if scenario.site is not None:
+        cb = math.radians(scenario.site.current["bearing_deg"])
+        cx0, cy0 = MAP_W - PAD - 30, MAP_H - PAD - 8
+        ln = 26
+        dx, dy = math.sin(cb) * ln, -math.cos(cb) * ln
+        ex, ey = cx0 + dx, cy0 + dy
+        el.append(f'<line x1="{cx0:.0f}" y1="{cy0:.0f}" x2="{ex:.0f}" y2="{ey:.0f}" stroke="{BELIEVED}" stroke-width="2.2"/>')
+        ah = math.atan2(dy, dx)
+        for da in (2.5, -2.5):
+            hx, hy = ex - 6 * math.cos(ah + da), ey - 6 * math.sin(ah + da)
+            el.append(f'<line x1="{ex:.0f}" y1="{ey:.0f}" x2="{hx:.0f}" y2="{hy:.0f}" stroke="{BELIEVED}" stroke-width="2.2"/>')
+        el.append(f'<text x="{cx0:.0f}" y="{cy0+16:.0f}" fill="{MUTED}" font-size="10.5" text-anchor="middle">'
+                  f'CURRENT {scenario.site.current["speed_mps"]:.2f} m/s</text>')
+
     return f'<svg viewBox="0 0 {MAP_W} {MAP_H}" width="100%" role="img" ' \
            f'aria-label="Tactical map: true vs believed track">{"".join(el)}</svg>'
+
+
+def _ssp_svg(site):
+    """Sound-speed profile: sound speed (x) vs depth (y, increasing downward).
+    The profile shape -- surface duct / thermocline minimum -- is what governs
+    sonar & USBL propagation. Computed with Mackenzie (1981)."""
+    prof = site.sound_speed_profile()
+    cs = [p[1] for p in prof]
+    dmax = max(p[0] for p in prof) or 1.0
+    cmin, cmax = min(cs), max(cs)
+    if cmax - cmin < 0.6:
+        cmid = (cmin + cmax) / 2; cmin, cmax = cmid - 0.5, cmid + 0.5
+    W, H, L, R, T, B = 430, 300, 58, 16, 18, 34
+    pw, ph = W - L - R, H - T - B
+
+    def px(c): return L + (c - cmin) / (cmax - cmin) * pw
+    def py(d): return T + (d / dmax) * ph
+
+    el = [f'<rect x="0" y="0" width="{W}" height="{H}" rx="6" fill="{SURFACE}" stroke="{RING}"/>']
+    for i in range(5):
+        c = cmin + (cmax - cmin) * i / 4
+        x = px(c)
+        el.append(f'<line x1="{x:.1f}" y1="{T}" x2="{x:.1f}" y2="{T+ph}" stroke="{GRID}" stroke-width="1"/>')
+        el.append(f'<text x="{x:.1f}" y="{H-12}" fill="{MUTED}" font-size="10.5" text-anchor="middle" '
+                  f'font-variant-numeric="tabular-nums">{c:.1f}</text>')
+        d = dmax * i / 4
+        y = py(d)
+        el.append(f'<line x1="{L}" y1="{y:.1f}" x2="{W-R}" y2="{y:.1f}" stroke="{GRID}" stroke-width="1"/>')
+        el.append(f'<text x="{L-8}" y="{y+4:.1f}" fill="{MUTED}" font-size="10.5" text-anchor="end" '
+                  f'font-variant-numeric="tabular-nums">{d:.0f}</text>')
+    el.append(f'<text x="{L-46}" y="{T+10}" fill="{MUTED}" font-size="10.5">depth m</text>')
+    el.append(f'<text x="{W-R}" y="{H-12}" fill="{MUTED}" font-size="10.5" text-anchor="end">sound speed m/s</text>')
+    pts = " ".join(f"{px(c):.1f},{py(d):.1f}" for d, c, _ in prof)
+    el.append(f'<polyline points="{pts}" fill="none" stroke="{TRUE}" stroke-width="2.4"/>')
+    sld = site.sonic_layer_depth()
+    if sld is not None:
+        y = py(sld)
+        el.append(f'<line x1="{L}" y1="{y:.1f}" x2="{W-R}" y2="{y:.1f}" stroke="{SHOAL_COL}" '
+                  f'stroke-width="1.2" stroke-dasharray="4 4"/>')
+        el.append(f'<text x="{W-R-4}" y="{y-5:.1f}" fill="{SHOAL_COL}" font-size="10.5" text-anchor="end">'
+                  f'sonic layer {sld:.0f} m</text>')
+    return f'<svg viewBox="0 0 {W} {H}" width="100%" role="img" aria-label="Sound-speed profile">{"".join(el)}</svg>'
+
+
+def _site_section(site):
+    e = site.environment()
+    rows = [
+        ("Water density", f"{e['water_density_kg_m3']:.1f} kg/m³", "EOS-80 (Millero-Poisson 1981)"),
+        ("Surface sound speed", f"{e['surface_sound_speed_mps']:.1f} m/s", "Mackenzie 1981"),
+        ("Sonic-layer depth", f"{e['sonic_layer_depth_m']:.0f} m", "from the c-profile"),
+        ("USBL link", f"{e['usbl_freq_khz']} kHz · ~{e['usbl_detection_range_m']/1000:.1f} km range",
+         "spreading + Thorp absorption"),
+        ("Current", f"{e['current_speed_mps']:.2f} m/s @ {e['current_bearing_deg']:.0f}°", e['current_type']),
+        ("Max depth", f"{e['max_depth_m']:.0f} m", "representative; GEBCO/chart in Phase II"),
+        ("Sig. wave height", f"{e['sig_wave_height_m']} m" if e['sig_wave_height_m'] else "—", ""),
+    ]
+    tr = "".join(f'<tr><td>{_esc(k)}</td><td class="num">{_esc(v)}</td>'
+                 f'<td class="mut" style="font-size:11px">{_esc(src)}</td></tr>' for k, v, src in rows)
+    return f"""
+<h2>Test-site environment</h2>
+<p class="desc" style="margin-top:0"><strong>{_esc(site.name)}</strong> — {_esc(site.establishment)}
+· {site.position[0]:.3f}°N {site.position[1]:.3f}°E · {_esc(site.region)}</p>
+<div style="display:grid;grid-template-columns:1fr 430px;gap:18px;align-items:start">
+<table><thead><tr><th>Parameter</th><th class="num">Value</th><th>Model / source</th></tr></thead>
+<tbody>{tr}</tbody></table>
+<figure style="margin:0">{_ssp_svg(site)}
+<figcaption>Sound-speed profile (Mackenzie 1981). The surface duct / sonic-layer depth
+governs sonar &amp; USBL propagation.</figcaption></figure></div>
+<p class="mut" style="font-size:11.5px">Fidelity tier <b>{_esc(e['fidelity'])}</b> — exact equations driven by
+representative regional climatology ({_esc(e['sources']['water'])}; current: {_esc(e['sources']['current'])}).
+Real INCOIS/GEBCO/CTD data ingest and trial validation are the documented Phase-II/III upgrades.</p>"""
 
 
 def _divergence_svg(result, scenario):
@@ -285,6 +372,7 @@ def to_html(result, scenario):
         f'<span class="mut">{_esc(a["params"]) if a["params"] else ""}</span></li>'
         for a in result.attacks_run)
 
+    site_html = _site_section(scenario.site) if getattr(scenario, "site", None) else ""
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(result.scenario_name)} — Scenario T&amp;E report</title>
@@ -343,7 +431,7 @@ footer{{margin-top:34px;color:{MUTED};font-size:11.5px;border-top:1px solid {GRI
 {_legend()}
 <figcaption>Believed track holds the planned route; the forged offset walks the TRUE hull
 track into the charted hazards. Markers show where each consequence first occurred.</figcaption></figure>
-
+{site_html}
 <h2>True-vs-believed divergence</h2>
 <figure>{_divergence_svg(result, scenario)}
 <figcaption>Separation between the hull's actual position and what the autopilot believes,
