@@ -58,16 +58,28 @@ The visual report gains a **Test-site environment** section: a cited physics
 table + a computed **sound-speed profile** (the sonic-layer depth that governs
 sonar/USBL ducting), and a current vector on the tactical map.
 
-## Feeding it into the live Gazebo sim (integration notes)
+## Feeding it into the live Gazebo sim
 
-- **Current → vehicle:** apply as a body force in Gazebo. For the AUV, the DAVE
-  ocean-current plugin; for the surface hull, a drift force. The site's
-  `current_ne()` gives the vector. (World-SDF change → ships via release flow.)
-- **Density → buoyancy:** the world `<density>` / the hull buoyancy uses
+- **Current → vehicle: IMPLEMENTED.** The twins already run
+  `gz-sim-hydrodynamics`, which drags the hull relative to the water. The site's
+  current (ENU world frame) is published to the plugin's `/ocean_current` topic
+  by `tools/inject_current.py`, so a **booted twin physically drifts** with that
+  water body -- no SDF or plugin change. Verified live: Kochi's 160° current
+  drifts the CUSV hull south.
+  ```bash
+  tools/run_vehicle.sh vehicle_twins/mass_vulnerable_cusv up    # boot a twin
+  python3 tools/inject_current.py --site kochi                   # hold its current
+  python3 tools/inject_current.py --off                          # zero it
+  ```
+  Honest limits (Tier A): a **uniform, steady** current. Spatially-varying /
+  tidal time-series (INCOIS fields, via the plugin's water-current table) is
+  Tier B. An actively-navigating autopilot partially rejects the current
+  (realistic); a disarmed/low-thrust hull drifts with it.
+- **Density → buoyancy** (next): point the world `<density>` / hull buoyancy at
   `site.density()` instead of a fixed 1025.
-- **Sound-speed → acoustic attack:** `acoustic_spoof.py`'s USBL range/geometry
-  uses the site profile; `transmission_loss_db()` bounds plausible spoof range.
-- **Bathymetry/sea-state:** Tier-B GEBCO heightmap + the Gazebo wave plugin.
+- **Sound-speed → acoustic attack** (next): `acoustic_spoof.py`'s USBL
+  range/geometry from the site profile; `transmission_loss_db()` bounds spoof range.
+- **Bathymetry / sea-state** (Tier B): GEBCO heightmap + the Gazebo wave plugin.
 
 ## Files
 `oceanography.py` (the equations) · `sites.py` (Site model + derived physics) ·

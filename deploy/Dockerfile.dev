@@ -15,7 +15,9 @@ FROM mcr:latest
 # additive scale-up modules
 COPY scaleup   /root/maritime-cyber-range/scaleup
 COPY scenarios /root/maritime-cyber-range/scenarios
-COPY tools/run_scenario.py /root/maritime-cyber-range/tools/run_scenario.py
+COPY tools/run_scenario.py  /root/maritime-cyber-range/tools/run_scenario.py
+COPY tools/site_info.py      /root/maritime-cyber-range/tools/site_info.py
+COPY tools/inject_current.py /root/maritime-cyber-range/tools/inject_current.py
 
 # scale-up changes to core package files are previewed here (they ship via the
 # normal scaleup -> test_all_4 -> release flow, NOT the frozen baseline). Add
