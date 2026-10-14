@@ -8,7 +8,7 @@ imports this; it runs only via tools/run_scenario.py.
 from .model import load_scenario, Scenario, TimelineStep, Hazard, Contact, Consequence
 from .engine import run_scenario, ScenarioResult
 from .executors import Executor, SimExecutor, LiveExecutor
-from . import consequences, geo, report, standards
+from . import consequences, geo, report, report_html, standards
 
 __all__ = [
     "load_scenario", "Scenario", "TimelineStep", "Hazard", "Contact", "Consequence",

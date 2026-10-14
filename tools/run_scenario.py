@@ -15,7 +15,8 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
-from scaleup.scenario import load_scenario, run_scenario, SimExecutor, LiveExecutor, report
+from scaleup.scenario import (load_scenario, run_scenario, SimExecutor, LiveExecutor,
+                              report, report_html)
 
 
 def main():
@@ -24,13 +25,14 @@ def main():
     ap.add_argument("scenario", help="path to a scenario JSON (see scenarios/)")
     ap.add_argument("--mode", choices=["sim", "live"], default="sim",
                     help="sim = synthetic model (default); live = against a booted twin")
-    ap.add_argument("--out", default=None, help="directory to write report.md + result.json")
+    ap.add_argument("--out", default=None,
+                    help="directory to write report.md + result.json + report.html (the visual T&E report)")
     ap.add_argument("--json", action="store_true", help="print machine JSON instead of the Markdown report")
     args = ap.parse_args()
 
     scenario = load_scenario(args.scenario)
     executor = SimExecutor() if args.mode == "sim" else LiveExecutor()
-    result = run_scenario(scenario, executor)
+    result = run_scenario(scenario, executor, keep_telemetry=bool(args.out))
 
     print(report.to_json(result) if args.json else report.to_markdown(result))
 
@@ -40,7 +42,9 @@ def main():
             f.write(report.to_markdown(result))
         with open(os.path.join(args.out, "result.json"), "w") as f:
             f.write(report.to_json(result))
-        print(f"\n[written] {args.out}/report.md and result.json")
+        with open(os.path.join(args.out, "report.html"), "w") as f:
+            f.write(report_html.to_html(result, scenario))
+        print(f"\n[written] {args.out}/report.md, result.json, report.html")
 
     # non-zero exit if any critical consequence triggered -- CI/gate friendly
     sys.exit(2 if result.overall_severity == "critical" else 0)
