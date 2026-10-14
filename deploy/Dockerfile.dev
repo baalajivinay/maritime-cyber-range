@@ -12,10 +12,15 @@
 #   docker run --rm mcr:dev python3 tools/run_scenario.py scenarios/harbor_transit_gps_walkoff.json
 FROM mcr:latest
 
-# additive scale-up code only -- nothing here overwrites a core package file
+# additive scale-up modules
 COPY scaleup   /root/maritime-cyber-range/scaleup
 COPY scenarios /root/maritime-cyber-range/scenarios
 COPY tools/run_scenario.py /root/maritime-cyber-range/tools/run_scenario.py
+
+# scale-up changes to core package files are previewed here (they ship via the
+# normal scaleup -> test_all_4 -> release flow, NOT the frozen baseline). Add
+# each such file as the branch changes it.
+COPY nodes/monitor/src/templates/index.html /root/maritime-cyber-range/nodes/monitor/src/templates/index.html
 
 # dev-only dependencies go here, kept OUT of the shipped image. The scenario
 # engine itself is stdlib-only; add libs here as later modules need them, e.g.:
