@@ -16,6 +16,11 @@ eeprom.bin
 # per-run resilience-test evidence (regenerated at runtime, never needed in the image)
 target_runs
 logs
+# built application packages (multi-GB) -- must never land in the image's COPY .
+dist
+*.run
+*.zip
+mcr-image.tar.gz
 # heavy source docs not needed at runtime (keep the .md guides; drop the binaries)
 docs/*.pdf
 docs/*.docx
