@@ -65,6 +65,16 @@ def _gate_control_endpoints():
 PROFILE = constants.PROFILE_NAME
 DOMAIN = constants.DOMAIN
 VEHICLE_LABEL = f"{DOMAIN.title()} — {PROFILE} ({constants.ARDUPILOT_VEHICLE_TYPE})"
+
+# Scale-up: Indian test sites for the dashboard's site picker. Selecting one
+# reboots the stack with MCR_SITE, which relocates HOME (constants) + the
+# Gazebo origin (run_sim) and injects that water body's current (run_demo).
+REPO_DIR = os.path.dirname(os.path.abspath(constants.__file__))
+try:
+    from scaleup.sites import list_sites as _list_sites
+    SITES = [{"id": s.id, "name": s.name.split(" —")[0].split(" (")[0]} for s in _list_sites()]
+except Exception:
+    SITES = []
 _last_warning = None   # set by detector_thread if a profile/sim domain mismatch is seen
 RUN_DIR = os.environ.get("MCR_RUN_DIR", f"/tmp/mcr_run/{PROFILE}")
 RELAY_FIFO = os.path.join(RUN_DIR, "relay.fifo")
@@ -752,7 +762,10 @@ def _on_client_disconnect():
 # --- routes ------------------------------------------------------------------
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html',
+                           site_id=constants.SITE_ID or "",
+                           home_lat=constants.HOME_LAT, home_lon=constants.HOME_LON,
+                           sites=SITES)
 
 
 @app.route('/cmd/attack', methods=['POST'])
@@ -767,6 +780,24 @@ def cmd_attack():
 @app.route('/cmd/stop', methods=['POST'])
 def cmd_stop():
     return jsonify(ok=True, msg=stop_attacks())
+
+
+@app.route('/cmd/site', methods=['POST'])
+def cmd_site():
+    """Relocate the whole sim to an Indian test site (or back to default) by
+    rebooting this stack with MCR_SITE. Detached (setsid) so it survives the
+    reboot that kills this very dashboard; the browser reconnects + reloads."""
+    site = ((request.get_json(silent=True) or {}).get('site') or "").strip()
+    valid = {s['id'] for s in SITES}
+    if site and site not in valid:
+        return jsonify(ok=False, msg=f"unknown site '{site}'"), 400
+    env_prefix = f"MCR_SITE={site} " if site else ""
+    cmd = (f"cd {REPO_DIR}; source /opt/ros/jazzy/setup.bash 2>/dev/null; "
+           f"source {REPO_DIR}/ros2_ws/install/setup.bash 2>/dev/null; "
+           f"{env_prefix}tools/run_demo.sh {PROFILE} up")
+    subprocess.Popen(["setsid", "bash", "-c", cmd], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    return jsonify(ok=True, msg=f"relocating to {site or 'default (Sydney Regatta)'} — reloading when up")
 
 
 @app.route('/cmd/goto', methods=['POST'])

@@ -174,13 +174,18 @@ do_up() {
   # the shipped behaviour byte-identical.
   WORLD_LAUNCH="$REPO/$WORLD_SDF"
   if [[ -n "${MCR_SITE:-}" && -n "$WORLD_SDF" && "$WORLD_METHOD" != "vrx" ]]; then
-    local sden
-    sden=$(python3 -c "import sys;sys.path.insert(0,'$REPO');from scaleup.sites import load_site;print(round(load_site('$MCR_SITE').density(),1))" 2>/dev/null)
-    if [[ -n "$sden" ]]; then
+    local senv sden slat slon
+    senv=$(python3 -c "import sys;sys.path.insert(0,'$REPO');from scaleup.sites import load_site;s=load_site('$MCR_SITE');print(round(s.density(),1), s.position[0], s.position[1])" 2>/dev/null)
+    if [[ -n "$senv" ]]; then
+      read -r sden slat slon <<< "$senv"
+      # relocate the Gazebo GPS origin to the site AND set the water density.
+      # (SITL --home already follows, via constants.HOME_LAT/LON override.)
       WORLD_LAUNCH="$RUN_DIR/world_site.sdf"
-      sed "s|<default_density>[0-9.]*</default_density>|<default_density>$sden</default_density>|" \
+      sed -e "s|<default_density>[0-9.]*</default_density>|<default_density>$sden</default_density>|" \
+          -e "s|<latitude_deg>[-0-9.]*</latitude_deg>|<latitude_deg>$slat</latitude_deg>|" \
+          -e "s|<longitude_deg>[-0-9.]*</longitude_deg>|<longitude_deg>$slon</longitude_deg>|" \
           "$REPO/$WORLD_SDF" > "$WORLD_LAUNCH"
-      log "site '$MCR_SITE': buoyancy water density -> $sden kg/m^3"
+      log "site '$MCR_SITE': relocate to $slat,$slon; buoyancy density -> $sden kg/m^3"
     fi
   fi
 

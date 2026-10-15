@@ -106,6 +106,12 @@
 
         select.ctl2, #c2cmd { width: 100%; background: var(--panel-2); color: var(--ink-2);
             border: 1px solid var(--border); border-radius: 5px; padding: 8px; font-size: 12px; font-family: var(--sans); }
+        .sitesel { margin-left: auto; background: var(--panel-2); color: var(--ink-2);
+            border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; font-size: 12px;
+            font-family: var(--sans); cursor: pointer; letter-spacing: .01em; }
+        .sitesel:hover { border-color: var(--accent); color: var(--ink); }
+        .sitesel:disabled { opacity: .55; cursor: default; }
+        header .sitelbl { color: var(--muted); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; }
         .fieldlabel { color: var(--muted); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
                       margin: 12px 0 6px; }
         #cmdmsg { color: var(--muted); font-size: 11.5px; margin-top: 11px; min-height: 14px; font-family: var(--mono); }
@@ -169,6 +175,11 @@
         <span class="brand">Maritime Cyber Range</span>
         <span class="rule"></span>
         <span class="sub" id="vehicle">Live Monitor</span>
+        <span class="sitelbl" style="margin-left:auto">Test site</span>
+        <select class="sitesel" id="sitesel" title="Relocate the sim to a test water body (reboots the stack)">
+            <option value="">Sydney Regatta (default)</option>
+            {% for s in sites %}<option value="{{ s.id }}"{% if s.id == site_id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        </select>
         <span class="statusbadge" id="statusbadge"><span class="sq" id="conn"></span><span id="conntext">Offline</span></span>
     </header>
     <div id="warnbar"></div>
@@ -264,8 +275,8 @@
         // palette constants mirror the CSS custom properties above
         var COL = { believed:'#3987e5', true_pos:'#d95926', ais:'#d55181', goal:'#0ca30c',
                     diverge:'#fab219', plane:'#0d0d0d' };
-        var HOME = [-33.724223, 150.679736];
-        var map = L.map('map', {zoomControl:true}).setView(HOME, 16);
+        var HOME = [{{ home_lat|default(-33.724223) }}, {{ home_lon|default(150.679736) }}];
+        var map = L.map('map', {zoomControl:true}).setView(HOME, 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                     {maxZoom: 20, attribution: '© OpenStreetMap'}).addTo(map);
 
@@ -371,6 +382,27 @@
             post('/cmd/report').then(r=>{ document.getElementById('report_html').innerHTML=r.html||'<p class="muted">(no data)</p>';
                 document.getElementById('report_overlay').style.display='flex'; flash('report ready'); });
         };
+
+        // ---- Test-site selector: relocate the whole sim to a water body ----
+        var sitesel = document.getElementById('sitesel');
+        if(sitesel){ sitesel.onchange = function(){
+            var label = sitesel.options[sitesel.selectedIndex].text;
+            sitesel.disabled = true;
+            flash('relocating to '+label+' …');
+            post('/cmd/site',{site:sitesel.value}).then(function(r){
+                flash(r.msg||('relocating to '+label));
+                // the stack (incl this dashboard) reboots at the new site; wait
+                // for it to drop then return, then reload so the map + physics refresh.
+                var downSeen=false, t=0;
+                var iv=setInterval(function(){
+                    t+=2;
+                    fetch('/?_='+Date.now(), {cache:'no-store'})
+                        .then(function(resp){ if(resp.ok && downSeen){ clearInterval(iv); location.reload(); } })
+                        .catch(function(){ downSeen=true; });
+                    if(t>75){ clearInterval(iv); location.reload(); }
+                }, 2000);
+            }).catch(function(){ sitesel.disabled=false; flash('relocation request failed'); });
+        };}
 
         // ---- Live overhead + detection-latency KPIs ----
         socket.on('overhead_update', function(o){

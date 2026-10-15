@@ -168,3 +168,23 @@ GCS_SOURCE_SYSTEM = _profile.get("gcs_source_system", 255)
 # going through MAVLink, so a second underwater vehicle doesn't have to
 # hardcode another vehicle's model name.
 MODEL_NAME = _profile.get("world", {}).get("model_name", PROFILE_NAME)
+
+# --- Test-site relocation (scale-up, default OFF) ------------------------
+# When MCR_SITE names an Indian test site (kochi|visakhapatnam|mumbai),
+# relocate HOME to that water body's position so the WHOLE stack spawns there:
+# ArduPilot SITL --home (run_sim reads HOME_LAT/LON from here), the dashboard's
+# true-pose->lat/lon conversion and map centre, and the GPS/vision feeders all
+# follow this one override. The site's physics (density/current/sound-speed) is
+# applied separately by run_sim.sh / tools/inject_current.py.
+SITE_ID = os.environ.get("MCR_SITE") or None
+SITE_NAME = None
+SITE_POSITION = None
+if SITE_ID:
+    try:
+        from scaleup.sites import load_site as _load_site
+        _site = _load_site(SITE_ID)
+        HOME_LAT, HOME_LON = float(_site.position[0]), float(_site.position[1])
+        SITE_NAME = _site.name
+        SITE_POSITION = [HOME_LAT, HOME_LON]
+    except Exception:
+        SITE_ID = None

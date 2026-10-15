@@ -38,6 +38,7 @@ log(){ echo "[run_demo:$PROFILE] $*"; }
 # themselves, so the launcher survives.
 killall_demo(){
   pkill -9 -f "dashboard_server.py" 2>/dev/null
+  pkill -9 -f "inject_current.py" 2>/dev/null
   for pat in "gz sim" "ardurover" "ardusub" "mav_bridge.py" "gps_spoof.py" \
              "ais_emulator.py" "acoustic_spoof.py" "competition.launch" \
              "parameter_bridge" "pose_tf_broadcaster" "robot_state_publisher" \
@@ -76,6 +77,13 @@ case "$ACTION" in
     killall_demo
     "$REPO/tools/run_sim.sh" "$PROFILE" up || { log "sim boot failed"; exit 1; }
     start_dashboard
+    # Scale-up (default OFF): if a test site is selected, inject its ocean
+    # current into the live sim so the hull drifts with that water body.
+    if [[ -n "${MCR_SITE:-}" ]]; then
+      log "site '$MCR_SITE': injecting ocean current ..."
+      setsid bash -c "cd '$REPO'; source /opt/ros/jazzy/setup.bash 2>/dev/null; exec python3 tools/inject_current.py --site '$MCR_SITE'" \
+        >"$RUN_DIR/inject_current.log" 2>&1 < /dev/null &
+    fi
     log "DEMO UP.  Open  ->  http://localhost:8080"
     log "Fire attacks with tools/run_attack_suite.py --profile $PROFILE, or the relay FIFO $RUN_DIR/relay.fifo"
     # Best-effort: open the dashboard automatically so the terminal command
