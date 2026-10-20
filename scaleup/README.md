@@ -58,3 +58,26 @@ python3 scaleup/tests/test_scenario.py
 - **New executor / vehicle backend** → subclass `Executor`.
 
 Each is purely additive — no change to the shipped package.
+
+## Upscale modules (generic + real-physics)
+
+Additive, default-off packages that make the range firmware-/protocol-agnostic
+and raise physics fidelity. See `docs/ROADMAP.md` for status per item. Tests:
+`python3 scaleup/tests/test_upscale.py`.
+
+- `backends/` — autopilot-agnostic `VehicleBackend` (ArduPilot + PX4), attack-
+  vector applicability matrix, `registry`.
+- `protocols/` — `ProtocolAdapter` seam: `mavlink_adapter`, and a real stdlib
+  `nmea0183` codec + `NMEASpoofer` (the serial-bus analog of the GPS relay; same
+  wire format the ESP32 NMEA injector emits).
+- `twins/` — `registry.discover()`/`conformance()` and a `twin init` scaffolder.
+- `compliance/` — multi-framework mapping (IACS UR E26/E27, IMO MSC.428(98),
+  IEC 62443-3-3, NIST SP 800-82r3, MITRE ATT&CK for ICS, DNV-CG-0325).
+- `physics/` — `sensors` (GNSS/IMU/DVL/mag error), `seastate` (JONSWAP),
+  `tides` (harmonic flood/ebb), `acoustics_bellhop` (image-method multipath +
+  Bellhop adapter), `ingest` (CTD/WOA profile → exact eqns), `bathymetry`
+  (CSV/GEBCO + grounding), `ais_feed` (real AIS traffic).
+- `platform/api.py` — range-as-a-service REST API over the existing tools.
+
+Live hardware-in-the-loop firmware is under `hardware/` (ESP32 C2 node + NMEA
+injector).
