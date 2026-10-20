@@ -21,14 +21,20 @@
  */
 #include <WiFi.h>
 #include <WiFiUdp.h>
-// Provide the MAVLink headers on your include path:
-#include <common/mavlink.h>
+// Arduino "MAVLink" library (okalachev/mavlink-arduino, v2.x). Including the
+// library's own wrapper header is what makes arduino-cli add its include path;
+// the wrapper pulls in the common dialect (HEARTBEAT, SET_MODE,
+// RC_CHANNELS_OVERRIDE used here). For ArduPilot-specific messages include
+// <mavlink/ardupilotmega/mavlink.h> instead.
+#include <MAVLink.h>
 
 static const char* WIFI_SSID = "mcr-range";
 static const char* WIFI_PASS = "range-test-only";
 static const char* TARGET_IP = "192.168.4.1";   // host running mav_bridge/SITL
 static const uint16_t TARGET_PORT = 14550;       // a mav_bridge fan-out / SITL out
 static const uint8_t  TARGET_SYS = 1, TARGET_COMP = 1;
+
+#define USB_FRAME_DUMP 0   // set 1 to also print each packed frame as hex to USB (bench verify)
 
 WiFiUDP udp;
 uint8_t buf[300];
@@ -38,6 +44,10 @@ void sendMsg(mavlink_message_t& msg) {
   udp.beginPacket(TARGET_IP, TARGET_PORT);
   udp.write(buf, len);
   udp.endPacket();
+#if USB_FRAME_DUMP
+  for (uint16_t i = 0; i < len; i++) { if (buf[i] < 16) Serial.print('0'); Serial.print(buf[i], HEX); }
+  Serial.println();
+#endif
 }
 
 void sendHeartbeatGCS() {

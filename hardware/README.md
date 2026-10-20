@@ -39,6 +39,29 @@ GNSS spoofer and **not** the vehicle autopilot.
    and is lawful **only** under authorized test in a sealed enclosure.
 3. **Real acoustic modem / USBL** for the underwater ExternalNav vector.
 
+## Validated on real hardware (2026-10-20, ESP32-WROOM / CP210x on /dev/ttyUSB0)
+
+Both images were built, flashed and verified end-to-end over the USB cable with
+`arduino-cli` (ESP32 core 3.3.12, MAVLink lib 2.0.34):
+
+- **NMEA injector** — flashed; with `USB_ECHO 1` it emitted `$GPGGA/$GPRMC`
+  that `scaleup/protocols/nmea0183.py` parsed **13/13 checksum-valid**, decoded
+  to Kochi (9.90000, 76.20000), and the adapter turned into `believed_pos`
+  detector events. The firmware and the range share one NMEA bus.
+- **MAVLink C2 node** — flashed; with `USB_FRAME_DUMP 1` it emitted 83 MAVLink
+  v2 frames, **0 unparseable** (pymavlink), containing a GCS `HEARTBEAT`,
+  `SET_MODE` (custom_mode=4) and `RC_CHANNELS_OVERRIDE` (chan1=1500, chan3=1700).
+  Fed to the range's blind `C2CommandDetector`, they raised **27 alerts**.
+
+Reproduce (board on `/dev/ttyUSB0`):
+```bash
+arduino-cli compile --fqbn esp32:esp32:esp32 hardware/esp32_nmea_injector
+arduino-cli upload  -p /dev/ttyUSB0 --fqbn esp32:esp32:esp32 hardware/esp32_nmea_injector
+# set USB_ECHO 1 (NMEA) or USB_FRAME_DUMP 1 (MAVLink) first to verify over USB.
+```
+The MAVLink node's **live** C2 test additionally needs a bench WiFi the ESP32
+can join (`WIFI_SSID`) and a host running SITL/`mav_bridge` at `TARGET_IP:PORT`.
+
 ## Legal / safety
 
 All firmware here is for **authorized testing on equipment you own**, on a bench

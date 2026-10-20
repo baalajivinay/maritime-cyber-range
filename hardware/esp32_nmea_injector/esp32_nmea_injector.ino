@@ -29,6 +29,7 @@ static const int   NMEA_BAUD = 38400;           // 4800 for legacy, 38400 common
 static const int   UART_TX_PIN = 17;            // Serial2 TX2
 static const int   UART_RX_PIN = 16;
 static const uint16_t CTRL_PORT = 10111;        // UDP control
+#define USB_ECHO 0   // set 1 to also mirror forged sentences to USB serial (bench test/verify)
 
 // start position (overwrite for your site; default = Kochi)
 double lat0 = 9.90, lon0 = 76.20, bearingDeg = 90.0;
@@ -83,6 +84,10 @@ void emitFix() {
                ",0.0," + String(bearingDeg, 1) + ",010100,,,A";
   Serial2.print(nmeaWrap(gga));
   Serial2.print(nmeaWrap(rmc));
+#if USB_ECHO
+  Serial.print(nmeaWrap(gga));   // mirror to USB so a bench test can read them
+  Serial.print(nmeaWrap(rmc));   // over the one cable without wiring TX2->RX
+#endif
 }
 
 // ---- control --------------------------------------------------------------
