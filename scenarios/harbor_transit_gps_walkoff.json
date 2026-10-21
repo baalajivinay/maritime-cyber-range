@@ -1,7 +1,7 @@
 {
   "name": "harbor_transit_gps_walkoff",
   "description": "Vulnerable CUSV on a 600 m eastbound harbour transit. A slow GPS ramp spoof convinces the autopilot it is drifting north, so it steers south to 'correct' -- walking its TRUE track into charted shallows, a shipping lane, and a crossing ferry, all while its believed position stays cleanly on the planned route.",
-  "target": "vehicle_twins/mass_vulnerable_cusv/target.json",
+  "target": "vehicle_twins/interceptor_usv/target.json",
   "domain": "surface",
   "mission": {
     "start": [-33.7242229, 150.6797359],

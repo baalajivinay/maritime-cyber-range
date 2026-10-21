@@ -8,7 +8,7 @@
 #    ./launch.sh build            build the image (first time, ~long: compiles
 #                                 ArduPilot + VRX; needs internet + ~15 GB disk)
 #    ./launch.sh up [vehicle]     boot sim + dashboard, open browser
-#                                 default: vehicle_twins/mass_vulnerable_cusv
+#                                 default: vehicle_twins/interceptor_usv
 #                                 (any vehicle_twins/<name> twin, or legacy
 #                                  bluerov2|blueboat work too)
 #    ./launch.sh gui              attach the Gazebo 3D window  (needs X + GPU)
@@ -21,7 +21,7 @@
 #    ./launch.sh logs             follow the dashboard log
 #
 #  The 3D GUI needs a Linux host with an X server and a GPU (Intel/AMD via
-#  /dev/dri, or NVIDIA via nvidia-container-toolkit -- see docs/DEPLOY.md). The
+#  /dev/dri, or NVIDIA via nvidia-container-toolkit -- see docs/RUNNING.md). The
 #  web dashboard works everywhere with no GPU.
 # ============================================================================
 set -euo pipefail
@@ -31,11 +31,11 @@ NAME="${MCR_CONTAINER:-mcr}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The 4 digital twins (CUSV surface, REMUS-100 underwater) all boot headless in
 # the container -- verified end-to-end (boot -> attack -> verdict) in Docker.
-# mass_vulnerable_cusv is the default: surface, all three attacks land VULNERABLE,
+# interceptor_usv is the default: surface, all three attacks land VULNERABLE,
 # and the dashboard map shows true-vs-believed divergence live. The only vehicle
 # that does NOT boot headless in Docker is the legacy wamv/VRX world (run it
-# natively on a GPU host -- see docs/DEPLOY.md). `up` with no arg uses this default.
-DEFAULT_VEHICLE="vehicle_twins/mass_vulnerable_cusv"
+# natively on a GPU host -- see docs/RUNNING.md). `up` with no arg uses this default.
+DEFAULT_VEHICLE="vehicle_twins/interceptor_usv"
 
 die(){ echo "Error: $*" >&2; exit 1; }
 have(){ command -v "$1" >/dev/null 2>&1; }
@@ -56,7 +56,7 @@ open_browser(){
 run_flags(){
   local flags=(--name "$NAME" --hostname mcr -d --rm)
   # forward an optional control-auth token: when MCR_DASHBOARD_TOKEN is set, the
-  # dashboard requires it on every /cmd/* call (safe to expose). See docs/DEPLOY.md.
+  # dashboard requires it on every /cmd/* call (safe to expose). See docs/RUNNING.md.
   [ -n "${MCR_DASHBOARD_TOKEN:-}" ] && flags+=(-e "MCR_DASHBOARD_TOKEN=$MCR_DASHBOARD_TOKEN")
   if [ "$(uname -s)" = "Linux" ]; then
     # host networking = dashboard on localhost:8080 + simplest X/gz-transport
@@ -74,7 +74,7 @@ run_flags(){
     fi
   else
     # macOS/Windows: dashboard only (no native X); publish the port
-    echo "[launch] non-Linux host: the 3D GUI needs extra X setup (docs/DEPLOY.md);" >&2
+    echo "[launch] non-Linux host: the 3D GUI needs extra X setup (docs/RUNNING.md);" >&2
     echo "[launch] booting dashboard-only on http://localhost:8080" >&2
     flags+=(-p 8080:8080)
   fi

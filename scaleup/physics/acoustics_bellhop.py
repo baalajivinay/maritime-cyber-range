@@ -76,6 +76,14 @@ def transmission_loss_multipath(range_m, src_depth_m, rcv_depth_m, water_depth_m
 class AcousticChannel:
     """High-level channel. Uses Bellhop when present, the multipath model
     otherwise; reports which, so a verdict/report can state its fidelity tier."""
+    @classmethod
+    def from_site(cls, site, src_depth_m=5.0, rcv_depth_m=10.0):
+        """Build the channel from a site's water depth, USBL frequency and
+        surface sound speed (all from the site's dataset)."""
+        return cls(water_depth_m=site.water["max_depth_m"], src_depth_m=src_depth_m,
+                   rcv_depth_m=rcv_depth_m, freq_khz=site.acoustics["usbl_freq_khz"],
+                   sound_speed_mps=site.surface_sound_speed())
+
     def __init__(self, water_depth_m=45.0, src_depth_m=5.0, rcv_depth_m=10.0,
                  freq_khz=25.0, sound_speed_mps=1500.0):
         self.D = water_depth_m

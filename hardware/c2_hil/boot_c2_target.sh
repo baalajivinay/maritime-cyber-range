@@ -11,14 +11,14 @@
 # instead -- this script is deliberately the minimal MAVLink-only target.
 #
 # Usage:
-#   hardware/c2_hil/boot_c2_target.sh                 # defaults: mass_vulnerable_cusv @ kochi
-#   MCR_VEHICLE_PROFILE=mass_resilient_cusv MCR_SITE=mumbai hardware/c2_hil/boot_c2_target.sh
+#   hardware/c2_hil/boot_c2_target.sh                 # defaults: interceptor_usv @ kochi
+#   MCR_VEHICLE_PROFILE=maya_auv MCR_SITE=mumbai hardware/c2_hil/boot_c2_target.sh
 #   hardware/c2_hil/boot_c2_target.sh down            # tear down
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ACTION="${1:-up}"
 export MCR_SITE="${MCR_SITE:-kochi}"
-export MCR_VEHICLE_PROFILE="${MCR_VEHICLE_PROFILE:-mass_vulnerable_cusv}"
+export MCR_VEHICLE_PROFILE="${MCR_VEHICLE_PROFILE:-interceptor_usv}"
 RUN="${MCR_HIL_RUN:-/tmp/mcr_c2_hil/$MCR_VEHICLE_PROFILE}"
 LOG="$RUN/logs"; WD="$RUN/sitl_wd"; FIFO="$RUN/sitl_stdin.fifo"
 

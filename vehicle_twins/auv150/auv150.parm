@@ -1,0 +1,60 @@
+# AUV-150 (CSIR-CMERI + IIT-Kharagpur) digital-twin ArduSub defaults.
+#
+# Represents India's indigenous 150 m-class research AUV. Published specs in
+# README.md: 4.8 m length, 0.5 m dia, ~490 kg, 150 m depth, ~3 kn (2-4 kn) max,
+# 4-6 h mission, FIVE thrusters / 5 DOF, nav suite GPS+INS+DVL+altimeter.
+#
+# FIDELITY NOTE: the real AUV-150 ran a custom indigenous controller, NOT
+# ArduSub. This twin stands it up on ArduSub (the range tests the MAVLink /
+# autopilot attack surface); the HULL is represented by the BlueROV2 Gazebo
+# body (a multi-thruster, vectored AUV -- closer to AUV-150's 5-thruster / 5-DOF
+# layout than a single-screw torpedo). AUV-150's real hydrodynamic coefficients
+# and its exact 5-thruster geometry are documented, not reproduced in the SDF
+# (Tier-A body). Command-authentication findings are firmware-accurate.
+#
+# Stock as-fielded command-link posture (ArduSub defaults). Thruster mapping and
+# EK3 external-nav source below are load-bearing for the acoustic/ExternalNav
+# vector (same channel order the BlueROV2 body uses).
+
+SERVO1_FUNCTION 33
+SERVO2_FUNCTION 34
+SERVO3_FUNCTION 35
+SERVO4_FUNCTION 36
+SERVO5_FUNCTION 37
+SERVO6_FUNCTION 38
+
+BATT_MONITOR     4
+FS_OPTIONS       0
+
+EK2_ENABLE 0
+EK3_ENABLE 1
+AHRS_EKF_TYPE 3
+
+# No GPS underwater; horizontal position from acoustic positioning (USBL/DVL),
+# fed to ArduPilot as VISION_POSITION_ESTIMATE by attacks/acoustic_spoof.py.
+GPS_TYPE 1
+SIM_GPS_DISABLE 0
+SIM_GPS_LOCK 1
+VISO_TYPE 1
+EK3_SRC1_POSXY 6
+EK3_SRC1_VELXY 6
+EK3_SRC1_POSZ 1
+EK3_SRC1_VELZ 6
+EK3_SRC1_YAW 6
+COMPASS_USE 0
+COMPASS_USE2 0
+COMPASS_USE3 0
+SIM_BARO_RND 0.01
+
+PSC_ACCZ_P   2
+PSC_ACCZ_I   4
+PSC_ACCZ_FF  0.75
+PSC_VELZ_P   8
+PSC_POSZ_P   3
+PSC_POSXY_P 2.5
+PSC_VELXY_D 0.8
+PSC_VELXY_I 0.5
+PSC_VELXY_P 5.0
+
+WPNAV_RADIUS  500
+WPNAV_SPEED   100

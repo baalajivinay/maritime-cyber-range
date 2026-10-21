@@ -7,7 +7,7 @@ see scenarios/*.json.
 Schema (JSON):
 {
   "name": "...", "description": "...",
-  "target": "vehicle_twins/mass_vulnerable_cusv/target.json",
+  "target": "vehicle_twins/interceptor_usv/target.json",
   "domain": "surface",
   "mission": {                         # the planned track the autonomy flies
      "start":  [lat, lon],

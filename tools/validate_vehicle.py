@@ -32,6 +32,7 @@ Usage:
   python3 tools/validate_vehicle.py <profile>      # e.g. wamv | bluerov2
 Exit code 0 = all checks pass.
 """
+import json
 import os
 import re
 import sys
@@ -42,11 +43,27 @@ sys.path.insert(0, REPO)
 KNOWN_ATTACKS = {"gps_spoof", "ais_spoof", "c2_replay", "acoustic_spoof"}
 
 
+def _resolve_profile_name(raw):
+    """Accept a profile NAME ('wamv'), a 'profiles/<name>.json' path, or a
+    'vehicle_twins/<name>/profile.json' path, and reduce any of them to the
+    profile name constants.load_profile() expects. Blindly appending '.json'
+    to a path produced the confusing 'profile.json.json' error before."""
+    if (os.sep in raw or raw.endswith(".json")) and os.path.exists(raw):
+        try:
+            nm = json.load(open(raw)).get("name")
+            if nm:
+                return nm
+        except Exception:
+            pass
+        return os.path.splitext(os.path.basename(raw))[0]
+    return raw[:-5] if raw.endswith(".json") else raw
+
+
 def main():
     if len(sys.argv) < 2:
-        print("usage: validate_vehicle.py <profile>")
+        print("usage: validate_vehicle.py <profile-name | path/to/profile.json | vehicle_twins/<name>/profile.json>")
         sys.exit(2)
-    name = sys.argv[1]
+    name = _resolve_profile_name(sys.argv[1])
     results = []  # (ok, label, detail)
 
     def check(ok, label, detail=""):

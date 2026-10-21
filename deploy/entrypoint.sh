@@ -15,13 +15,20 @@ source /opt/ros/jazzy/setup.bash 2>/dev/null || true
 source "$REPO/ros2_ws/install/setup.bash" 2>/dev/null || true
 cd "$REPO"
 
+# The dashboard is reached through the container's published port, so it must
+# bind all interfaces inside the container. Because that is a non-loopback bind,
+# dashboard_server.py auto-generates a control token (printed in dashboard.log,
+# which this entrypoint tails) unless MCR_DASHBOARD_TOKEN is already set --
+# control endpoints are therefore never silently open. Read-only views stay open.
+export MCR_DASHBOARD_HOST="${MCR_DASHBOARD_HOST:-0.0.0.0}"
+
 VERB="${1:-up}"; shift || true
 
 case "$VERB" in
   up)
     # Accepts a twin folder path (vehicle_twins/<name>) OR a legacy profile name
     # (bluerov2|blueboat|wamv). Default = the CUSV twin (verified headless demo).
-    PROFILE="${1:-vehicle_twins/mass_vulnerable_cusv}"
+    PROFILE="${1:-vehicle_twins/interceptor_usv}"
     echo "[mcr] booting '$PROFILE' (headless sim + dashboard) ..."
     tools/run_demo.sh "$PROFILE" up || echo "[mcr] boot reported an error -- see logs below"
     echo "[mcr] ---------------------------------------------------------------"

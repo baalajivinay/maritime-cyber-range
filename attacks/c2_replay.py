@@ -8,11 +8,13 @@ or injecting entirely forged commands the "attacker" crafts directly.
 Because MAVLink in default SITL config has no signing/authentication,
 ArduPilot cannot distinguish a legitimate GCS from this script.
 
-PREREQUISITE (run once per SITL session, in the MAVProxy console):
-    output add 127.0.0.1:14553
-This gives this script its own MAVLink endpoint, separate from the
-dashboard (which listens on 14551) and auto_mission.py (14552) -- avoids
-a port conflict, no need to touch start_sitl.sh. See constants.py for
+ENDPOINT: this script binds its own MAVLink endpoint (udpin on
+constants.MAVLINK_C2_REPLAY_PORT, 14553 by default). The operational boot
+path (tools/run_sim.sh -> tools/mav_bridge.py) already fans the SITL link
+out to that port automatically -- no MAVProxy and no manual `output add`
+is needed (the project runs SITL as a bare binary, not under a MAVProxy
+tty). The dashboard (14551) and auto_mission.py (14552) get their own
+ports from the same fan-out, so there is no conflict. See constants.py for
 the full port map.
 
 Requires: pymavlink (already used elsewhere in this project)

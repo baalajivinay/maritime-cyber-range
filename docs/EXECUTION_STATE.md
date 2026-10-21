@@ -1,11 +1,46 @@
 # Execution State — live cursor for the dual-domain completion effort
 
-> **This file is the resume point.** If you are a fresh session (context was
-> summarized, or a session limit was hit), read this file top-to-bottom
-> FIRST, then `docs/ROADMAP.md` for the full plan. This file tells you
-> exactly what is done, what is in flight, and the next concrete action.
-> Update it after every meaningful step — it is cheap insurance against
-> losing the thread.
+> **This file is the dated engineering log / resume point.** If you are a fresh
+> session, read `docs/PROJECT_OVERVIEW.md` first for current state and
+> `docs/RUNNING.md` for commands; this file is the chronological record behind
+> them. Update it after every meaningful step.
+
+## 2026-10-16 — Scale-up multi-site default + in-dashboard twin/site pickers, repackage, consolidation
+
+- **Default site is now Kochi** (Sydney Regatta retired as the default).
+  `constants.py`, `tools/run_sim.sh`, and `tools/run_demo.sh` all default
+  `MCR_SITE` to `kochi` so geometry (HOME) and physics (world density/GPS
+  origin + injected current) always agree.
+- **Dashboard now has TWO pickers** (`index.html` + `dashboard_server.py`):
+  a **Twin** selector (all 4 `vehicle_twins/`) and a **Site** selector
+  (Kochi/Mumbai/Visakhapatnam). Either posts to `/cmd/relocate {twin, site}`,
+  which reboots the stack via `run_demo.sh vehicle_twins/<twin>` with
+  `MCR_SITE=<site>`. Booting by **folder path** (not bare profile name) is
+  deliberate — `run_demo.sh` re-creates the `profiles/<name>.json` symlink, so
+  twin-switching works even when the frozen base image carries a stale absolute
+  `profiles/` symlink (root-caused live: AUV switch failed until this). Also
+  made the host `profiles/` twin symlinks **relative** so they resolve in both
+  host and container.
+- **Position-integrity flicker fixed.** The idle true-vs-believed readout
+  flickered 0.0↔0.1 (GPS/EKF quantisation); added a 1 m deadband so idle reads
+  a steady `0.0` nominal. Verified live.
+- **Attack matrix across the 3 sites** (`mass_vulnerable_cusv`, via
+  `test_target.py`): C2 mode-change / RC-override / GPS-spoof all VULNERABLE at
+  every site (identical, as expected — the vuln is in the autopilot, not the
+  water); 7/7/6 blind-detector alerts. Per-site physics (density/sound-speed/
+  current/USBL range) confirmed patched into each world. See
+  `docs/PROJECT_OVERVIEW.md` §5.
+- **Repackaged** `mcr:latest` (= frozen base + scale-up overlay) into
+  `dist/MaritimeCyberRange-linux.run` and `-windows.zip` (+ `SHA256SUMS.txt`).
+- **Consolidation.** Moved the 6.3 GB of `$HOME` build trees (ardupilot,
+  ardupilot_gazebo, SITL_Models, auv_ws, venv-ardupilot) into `external/`
+  (gitignored) with compat symlinks left at `$HOME`; moved two loose project
+  screenshots into `evidence/screenshots/`. Docs collapsed to
+  `PROJECT_OVERVIEW.md` + `RUNNING.md` (old prose guides removed — recoverable
+  via git); source materials organised under `docs/reference/`; `target_runs/`
+  pruned to the latest run per twin.
+- **Next options:** commit the `scaleup` branch / cut `release/app-v3`; Tier-B
+  site data (INCOIS/GEBCO/CTD); Bellhop ray-traced acoustics.
 
 ## Mission (do not deviate)
 
@@ -1565,8 +1600,6 @@ Legend: [x] done · [~] in progress · [ ] not started
   Surveyed underwater assets; found DAVE BlueROV2 + ocean worlds + ardusub.parm
   already on disk — big de-risk for WO-11/12. Wrote this state file. Starting
   WO-11.
-- 2026-09-24: Cleaned up project loose files across home directory into logs/ and docs/examples/. Fixed AUV waypoint-tracking bug (WPNAV_RADIUS/WPNAV_SPEED + set_gps_global_origin), fdm_relay GPS spoofing CSV pollution bug (added MCR_GPS_LOG_PATH env override), and detectability gaps (GpsRampDetector for slow drift + C2CommandDetector for SET_MODE). All verified.
-
 - 2026-09-24: Cleaned up project loose files across home directory into logs/ and docs/examples/. Fixed AUV waypoint-tracking bug (added WPNAV_RADIUS/WPNAV_SPEED to .parm files and set_gps_global_origin to goto() fresh connection), fdm_relay GPS spoofing CSV pollution bug (added MCR_GPS_LOG_PATH env override in gps_spoof.py and run_sim.sh), and detectability gaps (added GpsRampDetector for slow drift and renamed C2OverrideDetector to C2CommandDetector to catch SET_MODE). All verified.
 
 - 2026-10-12: **Operational-posture reporting change + doc reconciliation.**
@@ -1588,3 +1621,60 @@ Legend: [x] done · [~] in progress · [ ] not started
   (Note for a future reader: `ais_spoof` is currently gated off in test_target.py
   via `if False and ...`; AIS is N/A on bare ArduPilot anyway, but that's why the
   twin tables show AIS as N/A.)
+
+- 2026-10-20: **Test-gap + cleanup pass (branch `fix/test-gaps-and-cleanup`).**
+  Driven by a full-matrix review (4 twins live, 3-site invariance confirmed:
+  identical VULNERABLE verdicts at Kochi/Mumbai/Vizag, GPS Δ55.9 m each).
+  Fixes:
+  * **Acoustic spoofing is now in the headless tester.** Added
+    `run_acoustic_spoof_test()` to `tools/test_target.py` (forges
+    `VISION_POSITION_ESTIMATE`, reusing `attacks/acoustic_spoof.py`'s tested
+    feed; isolates its ground-truth log into the run dir) and enabled
+    `acoustic_spoof` in both AUV `target.json`s. The AUV's signature,
+    site-sensitive attack was previously NEVER exercised by the regression gate
+    — the AUV verdict rested entirely on C2. Verified live: vulnerable AUV
+    VULNERABLE (Δ50.0 m); hardened AUV RESILIENT to C2 but **VULNERABLE to
+    acoustic** (GCS hardening doesn't authenticate ExternalNav) — a new finding.
+  * **`verdicts.json` now records `site` + `git_sha`**; a saved verdict could
+    not previously say which water body or code produced it.
+  * **Detectability now also reports `by_attack_type`** (per-family alert tally),
+    not just a raw count that was uninterpretable run-to-run.
+  * **Removed the dead `if False and ais_spoof ...` branches**; disabled attacks
+    (AIS/GPS on the AUV) now get an explicit N/A verdict with their reason.
+  * **Dashboard secure-by-default:** binds `MCR_DASHBOARD_HOST` (default
+    `127.0.0.1`); a non-loopback bind with no token auto-generates one and prints
+    the URL, so the control plane is never silently open on a LAN. Docker
+    entrypoint sets `MCR_DASHBOARD_HOST=0.0.0.0` (reachable) → auto-token path.
+  * **`tools/validate_vehicle.py`** accepts a profile name OR a path (the blind
+    `.json` append produced a confusing `profile.json.json` error).
+  * **New `tools/test_all_sites.py`** (twin × site matrix + invariance check) and
+    **`tools/teardown_all.sh`** (reliable orphan reaper); `test_all_4.py` now uses
+    the reaper and retries once when a boot produces no verdicts at all.
+  * Fixed stale `c2_replay.py` docstring (MAVProxy `output add` → the
+    `mav_bridge.py` fan-out). Removed dead, unreferenced `attacks/ais_listener.py`
+    and `tools/capture_demo.py` (the latter imports playwright, not even a
+    shipped dep). `tools/run_attack_suite.py` KEPT — it is the Docker entrypoint's
+    attack verb, so cutting it would change shipped-package behaviour.
+
+- 2026-10-20: **Upscale pass — generic + real-physics (branch `feat/upscale`).**
+  All additive under `scaleup/` + `hardware/` (frozen release path untouched);
+  22 new offline tests pass (`scaleup/tests/test_upscale.py`), existing 8+7
+  offline tests still green. See `docs/ROADMAP.md` for per-item status.
+  * **Generic:** autopilot-agnostic `backends/` (ArduPilot + PX4, attack-vector
+    applicability matrix); `protocols/` adapter seam with a real stdlib NMEA-0183
+    codec + spoofer (serial-bus GPS spoofing for ECDIS/chart-plotters); `twins/`
+    registry + `twin init` scaffolder; multi-framework `compliance/` map
+    (IEC 62443, NIST 800-82r3, MITRE ATT&CK ICS, DNV added to IACS/IMO); a
+    range-as-a-service REST API (`platform/api.py`, read endpoints tested).
+  * **Real physics:** `sensors` (GNSS multipath/IMU/DVL/mag error models),
+    `seastate` (JONSWAP, Hs conserved), `tides` (harmonic flood/ebb currents),
+    `acoustics_bellhop` (image-method multipath TL + Bellhop adapter/fallback),
+    `ingest` (CTD/WOA CSV → the exact Mackenzie/EOS-80 eqns), `bathymetry`
+    (CSV grid ✅ / GEBCO NetCDF when netCDF4 present → real grounding),
+    `ais_feed` (real AIS traffic for the detectors/CPA).
+  * **HIL:** `hardware/` ESP32 firmware — a rogue MAVLink C2 node (WiFi) and an
+    NMEA-0183 sensor spoofer (UART). ESP32-WROOM is a genuine hardware attacker
+    node for the C2 + serial-sensor vectors; it is NOT the RF GNSS spoofer (needs
+    an SDR + shielded enclosure) nor the autopilot (needs a Pixhawk).
+  * Honesty: items needing external data/HW (PX4 SITL, GEBCO, Bellhop binary,
+    SDR) ship as adapter + working fallback, tier-marked, never faked.

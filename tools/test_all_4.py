@@ -2,62 +2,74 @@ import os
 import subprocess
 import time
 import json
+import glob
 import sys
 
 PROFILES = [
-    "mass_vulnerable_cusv",
-    "mass_resilient_cusv",
-    "auv_vulnerable_remus100",
-    "auv_resilient_remus100_hardened"
+    "interceptor_usv",
+    "survey_usv",
+    "maya_auv",
+    "auv150"
 ]
 
-REPO = "/home/vinay/maritime-cyber-range"
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _teardown():
+    """Reliable orphan reaper (tools/teardown_all.sh) -- more robust than
+    run_sim.sh's per-profile `down`, which can leave orphans from a crashed
+    boot that then wedge the next run."""
+    subprocess.run(["bash", "tools/teardown_all.sh"], cwd=REPO,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _boot_and_test(profile):
+    """One boot -> test_target -> teardown cycle. Returns the parsed verdicts
+    dict, or None if the stack never produced one (boot/connect failure)."""
+    _teardown()
+    print(f"[*] Booting {profile}...")
+    r = subprocess.run(["bash", "tools/run_sim.sh", profile, "up"], cwd=REPO)
+    if r.returncode != 0:
+        print(f"[!] Failed to boot {profile}")
+        _teardown()
+        return None
+    time.sleep(10)  # let physics/EKF settle
+    print(f"[*] Running test_target suite for {profile}...")
+    target_path = f"vehicle_twins/{profile}/target.json"
+    subprocess.run(["python3", "tools/test_target.py", "--target", target_path], cwd=REPO)
+    runs = sorted(glob.glob(f"{REPO}/target_runs/{profile}/*/verdicts.json"))
+    res = None
+    if runs:
+        with open(runs[-1]) as f:
+            res = json.load(f)
+    print(f"[*] Tearing down {profile}...")
+    subprocess.run(["bash", "tools/run_sim.sh", profile, "down"], cwd=REPO,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _teardown()
+    time.sleep(3)
+    return res
+
 
 def main():
     final_report = {}
-    
+
     for profile in PROFILES:
         print(f"\n{'='*60}")
         print(f"=== TESTING VEHICLE: {profile} ===")
         print(f"{'='*60}")
-        
-        # 1. Clean environment
-        subprocess.run(["bash", "tools/run_sim.sh", profile, "down"], cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for proc in ["gz sim", "ardurover", "ardusub", "mav_bridge.py", "gps_spoof.py"]:
-            subprocess.run(["pkill", "-9", "-f", proc], stderr=subprocess.DEVNULL)
-        
-        # 2. Boot vehicle headless
-        print(f"[*] Booting {profile}...")
-        r = subprocess.run(["bash", "tools/run_sim.sh", profile, "up"], cwd=REPO)
-        if r.returncode != 0:
-            print(f"[!] Failed to boot {profile}")
-            continue
-            
-        time.sleep(10) # Let physics/EKF settle
-        
-        # 3. Run full attack suite via test_target.py
-        # This will command movement and run all attacks (GPS, C2, AIS, Acoustic)
-        print(f"[*] Running test_target suite for {profile}...")
-        target_path = f"vehicle_twins/{profile}/target.json"
-        
-        # Run test_target.py synchronously
-        r = subprocess.run(["python3", "tools/test_target.py", "--target", target_path], cwd=REPO)
-        
-        # 4. Parse results
-        import glob
-        runs = sorted(glob.glob(f"{REPO}/target_runs/{profile}/*/verdicts.json"))
-        if runs:
-            with open(runs[-1]) as f:
-                res = json.load(f)
-                final_report[profile] = res
-        else:
-            final_report[profile] = {"error": "No verdicts.json generated"}
-            
-        # 5. Teardown
-        print(f"[*] Tearing down {profile}...")
-        subprocess.run(["bash", "tools/run_sim.sh", profile, "down"], cwd=REPO)
-        time.sleep(3)
-        
+
+        res = _boot_and_test(profile)
+        # Retry once if the stack produced NO verdicts at all -- that is a flaky
+        # boot / dropped connection (the orphan-stack failure mode), not a real
+        # finding. (A legitimate INCONCLUSIVE verdict -- e.g. a hardened twin the
+        # attacker can't even arm, or the documented ArduSub ~1s auto-disarm race
+        # -- IS a real result and is reported as-is, not retried.)
+        if res is None:
+            print(f"[*] {profile}: no verdicts produced -- retrying once ...")
+            res = _boot_and_test(profile)
+
+        final_report[profile] = res if res is not None else {"error": "No verdicts.json generated"}
+
     # Write final aggregate report
     report_path = "/tmp/mcr_run/all_4_vehicles_report.json"
     os.makedirs(os.path.dirname(report_path), exist_ok=True)

@@ -50,6 +50,14 @@ class WaveField:
     """Sum-of-sines realisation of a JONSWAP sea with random phases. Gives the
     surface elevation eta(t) and a slow wave-drift speed (a small fraction of
     orbital velocity) usable as a hull disturbance injected like ocean current."""
+    @classmethod
+    def from_site(cls, site, seed=0):
+        """Build the sea from a site's sea_state dataset (Hs, Tp, and the
+        current bearing as the dominant wave direction)."""
+        ss = site.sea_state
+        return cls(hs=ss["sig_wave_height_m"], tp=ss["period_s"],
+                   direction_deg=site.current.get("bearing_deg", 0.0), seed=seed)
+
     def __init__(self, hs, tp, gamma=3.3, direction_deg=0.0, seed=0, n_components=64):
         self.direction = direction_deg
         freqs, S, df = spectrum(hs, tp, gamma, n=n_components)

@@ -122,7 +122,7 @@ MAVLINK_TEST_TARGET_PORT = _profile["ports"]["mavlink"].get("test_target", MAVLI
 # unless something feeds it GPS_INPUT continuously, so without this it
 # can never get a fix and can never arm (confirmed live 2026-08-09:
 # GPS_RAW_INT.fix_type==1/no-fix, satellites_visible==0, on a freshly
-# booted mass_resilient_cusv with nothing else running). Needs its own
+# booted interceptor_usv with nothing else running). Needs its own
 # port, not a shared one -- reusing auto_mission's transient per-click
 # connection would hit the same SO_REUSEADDR silent-port-stealing issue
 # already root-caused and fixed once for goto() this session.
@@ -169,14 +169,17 @@ GCS_SOURCE_SYSTEM = _profile.get("gcs_source_system", 255)
 # hardcode another vehicle's model name.
 MODEL_NAME = _profile.get("world", {}).get("model_name", PROFILE_NAME)
 
-# --- Test-site relocation (scale-up, default OFF) ------------------------
-# When MCR_SITE names an Indian test site (kochi|visakhapatnam|mumbai),
-# relocate HOME to that water body's position so the WHOLE stack spawns there:
+# --- Test-site relocation (scale-up; default site: Kochi) ----------------
+# MCR_SITE names an Indian test site (kochi|visakhapatnam|mumbai) and
+# relocates HOME to that water body's position so the WHOLE stack spawns there:
 # ArduPilot SITL --home (run_sim reads HOME_LAT/LON from here), the dashboard's
 # true-pose->lat/lon conversion and map centre, and the GPS/vision feeders all
 # follow this one override. The site's physics (density/current/sound-speed) is
 # applied separately by run_sim.sh / tools/inject_current.py.
-SITE_ID = os.environ.get("MCR_SITE") or None
+# Default is "kochi" (the Sydney Regatta origin was retired as the default) --
+# run_sim.sh / run_demo.sh default the shell MCR_SITE to the same value so the
+# geometry (here) and the physics (there) always agree.
+SITE_ID = os.environ.get("MCR_SITE") or "kochi"
 SITE_NAME = None
 SITE_POSITION = None
 if SITE_ID:

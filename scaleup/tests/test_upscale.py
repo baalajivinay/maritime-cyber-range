@@ -165,15 +165,48 @@ class TestCompliance(unittest.TestCase):
 
 
 class TestTwinRegistry(unittest.TestCase):
-    def test_discovers_the_four_twins(self):
+    def test_discovers_the_indian_twins(self):
         ids = {t["id"] for t in twins.discover()}
-        for expected in ("mass_vulnerable_cusv", "auv_vulnerable_remus100"):
+        for expected in ("maya_auv", "auv150", "interceptor_usv", "survey_usv"):
             self.assertIn(expected, ids)
 
     def test_conformance_passes_for_shipped_twins(self):
         for rec in twins.discover():
             ok, issues = twins.conformance(rec)
             self.assertTrue(ok, f"{rec['id']} non-conformant: {issues}")
+
+
+class TestEnvironment(unittest.TestCase):
+    """The site->physics dataset binding: sea state, acoustics, density and
+    currents all come from the SAME site numbers."""
+    def test_binding_consumes_site_dataset_per_site(self):
+        from scaleup.physics.environment import Environment
+        densities, sound = {}, {}
+        for sid in ("kochi", "mumbai", "visakhapatnam"):
+            env = Environment.from_site(sid)
+            s = env.summary()
+            self.assertEqual(s["site"], sid)
+            self.assertTrue(1000 < s["water_density_kg_m3"] < 1040)
+            self.assertTrue(1450 < s["surface_sound_speed_mps"] < 1560)
+            self.assertIsNotNone(s["usbl_detection_range_m"])
+            densities[sid] = s["water_density_kg_m3"]
+            sound[sid] = s["surface_sound_speed_mps"]
+        # sites must differ -- proof the binding reads per-site data, not a default
+        self.assertGreater(len(set(densities.values())), 1)
+        self.assertGreater(len(set(sound.values())), 1)
+
+    def test_wave_field_recovers_site_hs(self):
+        from scaleup.physics.environment import Environment
+        from scaleup.physics.seastate import spectrum, significant_wave_height
+        env = Environment.from_site("kochi")
+        hs = env.site.sea_state["sig_wave_height_m"]
+        freqs, S, df = spectrum(hs, env.site.sea_state["period_s"])
+        self.assertAlmostEqual(significant_wave_height(freqs, S, df), hs, delta=0.15)
+
+    def test_harbour_site_has_heavier_gnss_multipath(self):
+        from scaleup.physics.environment import Environment
+        self.assertGreater(Environment.from_site("mumbai").summary()["gnss_multipath_m"],
+                           Environment.from_site("visakhapatnam").summary()["gnss_multipath_m"])
 
 
 if __name__ == "__main__":

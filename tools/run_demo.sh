@@ -17,6 +17,13 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE_ARG="${1:?usage: run_demo.sh <profile-name-or-vehicle_twins-folder> up|down|status}"
 ACTION="${2:-up}"
 
+# Scale-up: default the whole demo to the Kochi test site so the dashboard map,
+# physics, and ocean-current injection all come up at an Indian water body out
+# of the box (Sydney Regatta was retired as the default). run_sim.sh defaults to
+# the same value; exporting here also makes the current-injection block below
+# fire by default. Override with MCR_SITE=... before the command.
+export MCR_SITE="${MCR_SITE:-kochi}"
+
 # Accept either a plain profile name (wamv | blueboat | bluerov2, ...) or a
 # path to a self-contained vehicle_twins/<name>/ folder -- same trick as
 # tools/run_vehicle.sh: symlink that folder's profile.json into profiles/

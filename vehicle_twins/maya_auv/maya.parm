@@ -1,0 +1,69 @@
+# Maya AUV (CSIR-NIO) digital-twin ArduSub defaults.
+#
+# Represents the CSIR National Institute of Oceanography "Maya" small survey
+# AUV (Goa; developed with Univ. of Porto). Published specs encoded in
+# README.md: ~1.7 m length, 0.234 m dia, ~55 kg, 200 m depth rating, ~1.5 m/s
+# nominal, ~7.2 h endurance, single aft thruster + 2 stern planes + 2 rudders.
+#
+# FIDELITY NOTE: the real Maya ran a custom controller (MOOS-IvP / DSPIC),
+# NOT ArduSub. This twin stands it up on ArduSub because the range tests the
+# MAVLink/autopilot attack surface; the HULL is represented by the REMUS-100
+# Gazebo body (sim_config/models/remus100 -- the nearest small-torpedo-AUV
+# model available), which is close in class (torpedo AUV, ~1.6-1.7 m). The
+# hydrodynamic coefficients of the real Maya are documented, not reproduced in
+# the SDF (Tier-A body). The autopilot-logic / command-authentication findings
+# this twin produces are firmware-accurate regardless of hull fidelity.
+#
+# This is the stock as-fielded posture (ArduSub defaults for the command link),
+# so the test reveals whether the out-of-the-box configuration is exploitable.
+# The thruster mapping and EK3 external-nav source below are load-bearing for
+# the acoustic/ExternalNav vector; inherited from the REMUS-100 twin tune.
+
+SERVO1_FUNCTION 33
+SERVO2_FUNCTION 34
+SERVO3_FUNCTION 35
+SERVO4_FUNCTION 36
+SERVO5_FUNCTION 37
+SERVO6_FUNCTION 38
+
+BATT_MONITOR     4
+FS_OPTIONS       0
+
+# EK3 (ArduSub's modern default estimator).
+EK2_ENABLE 0
+EK3_ENABLE 1
+AHRS_EKF_TYPE 3
+
+# Underwater position source: no GPS underwater; horizontal position comes from
+# an acoustic positioning system (USBL/LBL/DVL), fed to ArduPilot as
+# VISION_POSITION_ESTIMATE by attacks/acoustic_spoof.py (which derives its
+# Gazebo odometry topic from constants.MODEL_NAME).
+GPS_TYPE 1
+SIM_GPS_DISABLE 0
+SIM_GPS_LOCK 1
+VISO_TYPE 1
+EK3_SRC1_POSXY 6
+EK3_SRC1_VELXY 6
+EK3_SRC1_POSZ 1
+EK3_SRC1_VELZ 6
+EK3_SRC1_YAW 6
+COMPASS_USE 0
+COMPASS_USE2 0
+COMPASS_USE3 0
+SIM_BARO_RND 0.01
+
+# Depth-hold (ALT_HOLD) position-controller gains (inherited starting point;
+# not re-tuned for Maya's exact mass/thrust ratio -- live-verify depth control).
+PSC_ACCZ_P   2
+PSC_ACCZ_I   4
+PSC_ACCZ_FF  0.75
+PSC_VELZ_P   8
+PSC_POSZ_P   3
+PSC_POSXY_P 2.5
+PSC_VELXY_D 0.8
+PSC_VELXY_I 0.5
+PSC_VELXY_P 5.0
+
+# AUTO-mode navigation (slack radius + conservative speed for stable SITL nav).
+WPNAV_RADIUS  500
+WPNAV_SPEED   100

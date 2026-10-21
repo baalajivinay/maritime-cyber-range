@@ -1,0 +1,22 @@
+# Interceptor USV digital-twin ArduRover defaults.
+#
+# Represents an Indian Navy autonomous fast interceptor boat -- the real
+# programme (BEL + WESEE "A2NCS", Advanced Autonomous Navigation & Control
+# Software) retrofits autonomy onto an in-service fast interceptor hull
+# (~16 m LOA, ~45 kn; Solas Marine class). Published class specs are in
+# README.md.
+#
+# FIDELITY NOTE: the real craft runs A2NCS, not ArduRover. This twin stands it
+# up on ArduRover because the range tests the MAVLink/autopilot attack surface;
+# the HULL is represented by the CUSV Gazebo body (sim_config/models/cusv --
+# the nearest unmanned surface combatant model). Real interceptor hydrodynamics
+# (planing monohull, high speed) are documented, not reproduced in the SDF
+# (Tier-A body). Command-authentication findings are firmware-accurate.
+#
+# Stock as-fielded command-link posture (ArduRover defaults), so the test shows
+# whether the out-of-the-box configuration is exploitable.
+#
+# Skid/twin-thruster output mapping (load-bearing for this hull's steering --
+# ThrottleLeft/ThrottleRight, ArduRover's own skid-steer functions):
+SERVO1_FUNCTION 73
+SERVO3_FUNCTION 74

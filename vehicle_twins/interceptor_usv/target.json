@@ -1,0 +1,52 @@
+{
+  "name": "interceptor_usv",
+  "description": "Digital twin of an Indian Navy autonomous fast interceptor boat (the A2NCS / BEL-WESEE approach: autonomy retrofitted onto an in-service ~16 m, ~45 kn interceptor hull), as fielded with a stock ArduRover-class autopilot. Surface vessel: GPS + AIS + MAVLink command link all present. Boot via tools/run_vehicle.sh vehicle_twins/interceptor_usv up.",
+  "domain": "surface",
+  "authorized": true,
+  "mavlink": {
+    "connection": "udpin:127.0.0.1:14554",
+    "source_system": 255
+  },
+  "attacks": {
+    "gps_spoof": {
+      "enabled": true,
+      "method": "fdm_relay",
+      "bind": [
+        "127.0.0.1",
+        9002
+      ],
+      "gazebo_addr": [
+        "127.0.0.1",
+        9100
+      ],
+      "relay_fifo": "/tmp/mcr_run/interceptor_usv/relay.fifo",
+      "profile": "step",
+      "step_offset_m": 50.0,
+      "direction_deg": 90.0
+    },
+    "ais_spoof": {
+      "enabled": true,
+      "udp_addr": [
+        "127.0.0.1",
+        10110
+      ],
+      "own_mmsi": "419000234",
+      "modes": [
+        "ghost",
+        "impersonate"
+      ]
+    },
+    "c2_replay": {
+      "enabled": true,
+      "target_mode_for_injection": "HOLD",
+      "allow_arm_and_actuate": true,
+      "rc_throttle_pwm": 1700,
+      "rc_steering_pwm": 1500,
+      "duration_s": 8.0
+    }
+  },
+  "timing": {
+    "settle_s": 5.0,
+    "window_s": 20.0
+  }
+}

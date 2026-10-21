@@ -1,0 +1,39 @@
+{
+  "name": "auv150",
+  "description": "Digital twin of the CSIR-CMERI / IIT-Kharagpur 'AUV-150' (India's indigenous 150 m-class research AUV), as fielded with a stock ArduSub-class autopilot. Submerged multi-thruster AUV: no GPS/AIS underwater, position from an acoustic/ExternalNav feed. Boot via tools/run_vehicle.sh vehicle_twins/auv150 up.",
+  "domain": "underwater",
+  "authorized": true,
+  "mavlink": {
+    "connection": "udpin:127.0.0.1:14554",
+    "source_system": 255
+  },
+  "attacks": {
+    "gps_spoof": {
+      "enabled": false,
+      "reason": "N/A while submerged -- GPS RF does not penetrate water (the AUV has no GPS fix underwater)"
+    },
+    "ais_spoof": {
+      "enabled": false,
+      "reason": "N/A -- submerged AUV, no AIS transponder in the water column"
+    },
+    "c2_replay": {
+      "enabled": true,
+      "target_mode_for_injection": "ALT_HOLD",
+      "allow_arm_and_actuate": true,
+      "rc_throttle_pwm": 1700,
+      "rc_steering_pwm": 1500,
+      "duration_s": 8.0
+    },
+    "acoustic_spoof": {
+      "enabled": true,
+      "endpoint": "tcp:127.0.0.1:5762",
+      "model_name": "bluerov2",
+      "step_offset_m": 50.0,
+      "bearing_deg": 90.0
+    }
+  },
+  "timing": {
+    "settle_s": 5.0,
+    "window_s": 20.0
+  }
+}

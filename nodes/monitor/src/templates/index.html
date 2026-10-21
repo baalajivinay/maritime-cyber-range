@@ -175,9 +175,12 @@
         <span class="brand">Maritime Cyber Range</span>
         <span class="rule"></span>
         <span class="sub" id="vehicle">Live Monitor</span>
-        <span class="sitelbl" style="margin-left:auto">Test site</span>
+        <span class="sitelbl" style="margin-left:auto">Twin</span>
+        <select class="sitesel" id="twinsel" title="Choose which digital twin to test (reboots the stack)">
+            {% for t in twins %}<option value="{{ t.id }}"{% if t.id == twin_id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+        </select>
+        <span class="sitelbl">Site</span>
         <select class="sitesel" id="sitesel" title="Relocate the sim to a test water body (reboots the stack)">
-            <option value="">Sydney Regatta (default)</option>
             {% for s in sites %}<option value="{{ s.id }}"{% if s.id == site_id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
         </select>
         <span class="statusbadge" id="statusbadge"><span class="sq" id="conn"></span><span id="conntext">Offline</span></span>
@@ -275,7 +278,7 @@
         // palette constants mirror the CSS custom properties above
         var COL = { believed:'#3987e5', true_pos:'#d95926', ais:'#d55181', goal:'#0ca30c',
                     diverge:'#fab219', plane:'#0d0d0d' };
-        var HOME = [{{ home_lat|default(-33.724223) }}, {{ home_lon|default(150.679736) }}];
+        var HOME = [{{ home_lat|default(9.9) }}, {{ home_lon|default(76.2) }}];
         var map = L.map('map', {zoomControl:true}).setView(HOME, 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                     {maxZoom: 20, attribution: '© OpenStreetMap'}).addTo(map);
@@ -308,7 +311,11 @@
             if(!truePos||!believedPos) return;
             var d = metersBetween(truePos, believedPos);
             var el = document.getElementById('err');
-            el.textContent = d.toFixed(1);
+            // Deadband: a sub-metre true-vs-believed delta is GPS/EKF quantisation
+            // noise on an idle vehicle, not a real divergence -- show a steady 0.0
+            // instead of the 0.0<->0.1 flicker that looked like a live fault.
+            var shown = d < 1.0 ? 0.0 : d;
+            el.textContent = shown.toFixed(1);
             var spoofed = d > 5;
             el.style.color = spoofed ? 'var(--danger)' : 'var(--ok)';
             var note = document.getElementById('errnote');
@@ -383,26 +390,32 @@
                 document.getElementById('report_overlay').style.display='flex'; flash('report ready'); });
         };
 
-        // ---- Test-site selector: relocate the whole sim to a water body ----
+        // ---- Twin + site selectors: reconfigure the whole sim ----
+        // Each selector reboots the stack with BOTH current values (the chosen
+        // twin as the vehicle profile + the chosen site as MCR_SITE), so the map,
+        // physics, ocean current, and vehicle all follow the two dropdowns.
         var sitesel = document.getElementById('sitesel');
-        if(sitesel){ sitesel.onchange = function(){
-            var label = sitesel.options[sitesel.selectedIndex].text;
-            sitesel.disabled = true;
-            flash('relocating to '+label+' …');
-            post('/cmd/site',{site:sitesel.value}).then(function(r){
-                flash(r.msg||('relocating to '+label));
-                // the stack (incl this dashboard) reboots at the new site; wait
-                // for it to drop then return, then reload so the map + physics refresh.
+        var twinsel = document.getElementById('twinsel');
+        function reconfigure(label){
+            if(sitesel) sitesel.disabled = true;
+            if(twinsel) twinsel.disabled = true;
+            flash('reconfiguring → '+label+' …');
+            post('/cmd/relocate',{site: sitesel?sitesel.value:'', twin: twinsel?twinsel.value:''}).then(function(r){
+                flash(r.msg||('reconfiguring → '+label));
+                // the stack (incl this dashboard) reboots; wait for it to drop then
+                // come back, then reload so the map + physics + twin refresh.
                 var downSeen=false, t=0;
                 var iv=setInterval(function(){
                     t+=2;
                     fetch('/?_='+Date.now(), {cache:'no-store'})
                         .then(function(resp){ if(resp.ok && downSeen){ clearInterval(iv); location.reload(); } })
                         .catch(function(){ downSeen=true; });
-                    if(t>75){ clearInterval(iv); location.reload(); }
+                    if(t>120){ clearInterval(iv); location.reload(); }
                 }, 2000);
-            }).catch(function(){ sitesel.disabled=false; flash('relocation request failed'); });
-        };}
+            }).catch(function(){ if(sitesel)sitesel.disabled=false; if(twinsel)twinsel.disabled=false; flash('reconfigure request failed'); });
+        }
+        if(sitesel){ sitesel.onchange = function(){ reconfigure(sitesel.options[sitesel.selectedIndex].text); }; }
+        if(twinsel){ twinsel.onchange = function(){ reconfigure(twinsel.options[twinsel.selectedIndex].text); }; }
 
         // ---- Live overhead + detection-latency KPIs ----
         socket.on('overhead_update', function(o){

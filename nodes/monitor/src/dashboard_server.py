@@ -18,6 +18,7 @@ import sys
 import json
 import time
 import hmac
+import secrets
 import html as html_lib
 import socket
 import statistics
@@ -42,14 +43,30 @@ from detectors import DetectorSuite
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# --- optional control-endpoint auth (OFF unless MCR_DASHBOARD_TOKEN is set) ----
+# --- control-endpoint auth + bind host (secure by default) --------------------
 # The /cmd/* endpoints change state: launch attacks, move the vehicle, reboot the
-# whole sim. With no token they are OPEN -- fine on localhost, but a real loophole
-# once the dashboard is reachable on a LAN or a public tunnel (anyone with the URL
-# could drive it). Set MCR_DASHBOARD_TOKEN to require a shared secret on every
-# control call; read-only views ('/', '/whoami', live telemetry) stay open. The
-# browser forwards it from the page URL's ?token=... as an X-MCR-Token header.
+# whole sim. Read-only views ('/', '/whoami', live telemetry) always stay open.
+#
+# Secure-by-default rules (the range used to bind 0.0.0.0 with NO token -- an
+# open control plane on any LAN or tunnel):
+#   * Bind host is MCR_DASHBOARD_HOST, default 127.0.0.1 -- loopback only, so a
+#     plain native run is reachable only from this machine. The Docker image
+#     sets MCR_DASHBOARD_HOST=0.0.0.0 (it must, to be reachable through the
+#     published port) and so takes the exposed-path rules below.
+#   * MCR_DASHBOARD_TOKEN sets an explicit shared secret.
+#   * If the bind host is NOT loopback and no token was given, a random token is
+#     generated and printed at startup -- exposure is never silently open.
+#   * Loopback bind + no token stays open (safe: only this machine can reach it).
+# The browser forwards the token from the page URL's ?token=... (as an
+# X-MCR-Token header or ?token= query arg) on every control call.
+DASHBOARD_HOST = os.environ.get("MCR_DASHBOARD_HOST", "127.0.0.1").strip()
+DASHBOARD_PORT = int(os.environ.get("MCR_DASHBOARD_PORT", "8080"))
+_IS_LOOPBACK = DASHBOARD_HOST in ("127.0.0.1", "localhost", "::1", "")
 CONTROL_TOKEN = os.environ.get("MCR_DASHBOARD_TOKEN", "").strip()
+_TOKEN_AUTOGEN = False
+if not CONTROL_TOKEN and not _IS_LOOPBACK:
+    CONTROL_TOKEN = secrets.token_urlsafe(16)
+    _TOKEN_AUTOGEN = True
 
 
 @app.before_request
@@ -75,6 +92,36 @@ try:
     SITES = [{"id": s.id, "name": s.name.split(" —")[0].split(" (")[0]} for s in _list_sites()]
 except Exception:
     SITES = []
+
+
+def _twin_label(name, domain):
+    """Friendly dropdown label for a twin, e.g. 'MASS · Vulnerable (CUSV)'."""
+    kind = "Resilient" if ("resilient" in name or "hardened" in name) else "Vulnerable"
+    fam = "AUV" if domain == "underwater" else "MASS"
+    hull = "REMUS-100" if "remus" in name else ("CUSV" if "cusv" in name else name)
+    return f"{fam} · {kind} ({hull})"
+
+
+def _discover_twins():
+    """The dashboard's twin picker: every vehicle_twins/<name>/profile.json, so an
+    operator can switch the vehicle under test from the browser. Selecting one
+    reboots the stack with that profile (see /cmd/relocate)."""
+    out = []
+    tw_dir = os.path.join(_REPO, "vehicle_twins")
+    try:
+        for name in sorted(os.listdir(tw_dir)):
+            pj = os.path.join(tw_dir, name, "profile.json")
+            if os.path.isfile(pj):
+                p = json.load(open(pj))
+                pid = p.get("name", name)
+                out.append({"id": pid, "name": _twin_label(pid, p.get("domain", "")),
+                            "domain": p.get("domain", "")})
+    except Exception:
+        pass
+    return out
+
+
+TWINS = _discover_twins()
 _last_warning = None   # set by detector_thread if a profile/sim domain mismatch is seen
 RUN_DIR = os.environ.get("MCR_RUN_DIR", f"/tmp/mcr_run/{PROFILE}")
 RELAY_FIFO = os.path.join(RUN_DIR, "relay.fifo")
@@ -763,9 +810,10 @@ def _on_client_disconnect():
 @app.route('/')
 def index():
     return render_template('index.html',
-                           site_id=constants.SITE_ID or "",
+                           site_id=constants.SITE_ID or "kochi",
+                           twin_id=PROFILE,
                            home_lat=constants.HOME_LAT, home_lon=constants.HOME_LON,
-                           sites=SITES)
+                           sites=SITES, twins=TWINS)
 
 
 @app.route('/cmd/attack', methods=['POST'])
@@ -782,22 +830,39 @@ def cmd_stop():
     return jsonify(ok=True, msg=stop_attacks())
 
 
-@app.route('/cmd/site', methods=['POST'])
-def cmd_site():
-    """Relocate the whole sim to an Indian test site (or back to default) by
-    rebooting this stack with MCR_SITE. Detached (setsid) so it survives the
-    reboot that kills this very dashboard; the browser reconnects + reloads."""
-    site = ((request.get_json(silent=True) or {}).get('site') or "").strip()
-    valid = {s['id'] for s in SITES}
-    if site and site not in valid:
+@app.route('/cmd/relocate', methods=['POST'])
+def cmd_relocate():
+    """Reboot the whole stack at a chosen digital twin + test site. Either
+    dropdown posts BOTH current values, so the vehicle (profile), the map/home,
+    and the water-body physics (density/current/sound-speed) all move together.
+    Detached (setsid) so it survives the reboot that kills this very dashboard;
+    the browser polls for the stack to come back, then reloads."""
+    body = request.get_json(silent=True) or {}
+    site = (body.get('site') or "").strip()
+    twin = (body.get('twin') or "").strip()
+    valid_sites = {s['id'] for s in SITES}
+    valid_twins = {t['id'] for t in TWINS}
+    if site and site not in valid_sites:
         return jsonify(ok=False, msg=f"unknown site '{site}'"), 400
+    if twin and twin not in valid_twins:
+        return jsonify(ok=False, msg=f"unknown twin '{twin}'"), 400
+    profile = twin or PROFILE
+    # Boot a twin by its SELF-CONTAINED folder path, not a bare profile name:
+    # run_demo.sh re-creates the profiles/<name>.json symlink from the folder on
+    # every boot, so twin-switching works even if the shipped image carries a
+    # stale/absolute profiles/ symlink from build time (the bare-name path would
+    # fail on a broken symlink). Falls back to the current profile name if no
+    # twin was chosen.
+    profile_arg = f"vehicle_twins/{twin}" if twin else PROFILE
+    # empty site -> run_demo.sh/run_sim.sh default MCR_SITE to kochi themselves,
+    # so geometry and physics still agree; pass it explicitly when chosen.
     env_prefix = f"MCR_SITE={site} " if site else ""
     cmd = (f"cd {REPO_DIR}; source /opt/ros/jazzy/setup.bash 2>/dev/null; "
            f"source {REPO_DIR}/ros2_ws/install/setup.bash 2>/dev/null; "
-           f"{env_prefix}tools/run_demo.sh {PROFILE} up")
+           f"{env_prefix}tools/run_demo.sh {profile_arg} up")
     subprocess.Popen(["setsid", "bash", "-c", cmd], stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    return jsonify(ok=True, msg=f"relocating to {site or 'default (Sydney Regatta)'} — reloading when up")
+    return jsonify(ok=True, msg=f"reconfiguring → {profile} @ {site or 'kochi'} — reloading when up")
 
 
 @app.route('/cmd/goto', methods=['POST'])
@@ -941,6 +1006,16 @@ def whoami():
 
 
 if __name__ == '__main__':
+    # Security banner: say plainly whether the control plane is open, and if a
+    # token is required, print the ready-to-use URL so the operator can reach it.
+    base = f"http://localhost:{DASHBOARD_PORT}"
+    if CONTROL_TOKEN:
+        where = "auto-generated (non-loopback bind)" if _TOKEN_AUTOGEN else "from MCR_DASHBOARD_TOKEN"
+        print(f"[dashboard] control endpoints REQUIRE a token ({where}).", flush=True)
+        print(f"[dashboard] open: {base}/?token={CONTROL_TOKEN}", flush=True)
+    elif _IS_LOOPBACK:
+        print(f"[dashboard] control endpoints OPEN (bound to {DASHBOARD_HOST}, this machine only). "
+              f"Set MCR_DASHBOARD_TOKEN to require a secret. open: {base}", flush=True)
     for fn in (gz_pose_thread, legit_gps_feeder, legit_vision_feeder, believed_thread, ais_thread, detector_thread, overhead_emitter):
         threading.Thread(target=fn, daemon=True).start()
-    socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)
+    socketio.run(app, host=DASHBOARD_HOST, port=DASHBOARD_PORT, allow_unsafe_werkzeug=True)

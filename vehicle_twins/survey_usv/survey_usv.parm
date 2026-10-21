@@ -1,0 +1,18 @@
+# Small coastal/harbour survey USV digital-twin ArduRover defaults.
+#
+# Represents a small (~4-6 m) Indian autonomous hydrographic-survey catamaran
+# (the class used for harbour-approach / coastal survey work; modelled on a
+# BlueBoat-class differential-thrust catamaran, since no single named Indian
+# platform publishes full specs). Representative specs in README.md.
+#
+# FIDELITY NOTE: HULL represented by the BlueBoat Gazebo body (small twin-hull
+# differential-thrust catamaran). Real survey-hull hydrodynamics are documented,
+# not reproduced in the SDF (Tier-A body). Command-authentication findings are
+# firmware-accurate.
+#
+# Stock as-fielded command-link posture (ArduRover defaults).
+#
+# Twin-thruster skid-steer output mapping (ThrottleLeft / ThrottleRight --
+# ArduRover's skid-steer functions for a differential catamaran):
+SERVO1_FUNCTION 73
+SERVO3_FUNCTION 74

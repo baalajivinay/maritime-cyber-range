@@ -42,6 +42,7 @@ import json
 import math
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -217,9 +218,29 @@ def run_c2_mode_change_test(conn, target_cfg, baseline, out_dir, det_suite, aler
         return "INCONCLUSIVE", {"reason": "never received a HEARTBEAT during baseline -- can't establish preconditions"}
 
     pre_mode = baseline["mode"]
-    mode_id = conn.mode_mapping().get(forged_mode)
-    if mode_id is None:
+    mm = conn.mode_mapping() or {}
+    requested_mode = forged_mode
+    if forged_mode not in mm:
         return "INCONCLUSIVE", {"reason": f"target has no mode named '{forged_mode}' to forge"}
+    # If the vehicle is ALREADY in the mode we'd forge, a SET_MODE to it is a
+    # no-op: "mode didn't change" would then be mis-read as RESILIENT -- a
+    # false negative that depends purely on the boot mode (no INITIAL_MODE is
+    # pinned, so SITL's default decides it). Substitute a DISTINCT mode so the
+    # test actually exercises an unauthenticated mode CHANGE regardless of
+    # which mode the target happened to boot into. Prefer simple modes
+    # ArduPilot accepts without preconditions -- AUTO/GUIDED/RTL can be refused
+    # for non-security reasons (no mission/position), which would itself look
+    # like a false RESILIENT.
+    if forged_mode == pre_mode:
+        prefs = ["MANUAL", "HOLD", "ACRO", "STABILIZE", "STEERING", "ALT_HOLD",
+                 "DEPTH_HOLD", "LOITER", "CIRCLE"]
+        alt = next((m for m in prefs if m in mm and m != pre_mode), None)
+        if alt is None:
+            alt = next((m for m in mm if m != pre_mode), None)
+        if alt is None:
+            return "INCONCLUSIVE", {"reason": f"target only exposes one mode ('{pre_mode}') -- cannot test a mode CHANGE"}
+        forged_mode = alt
+    mode_id = mm[forged_mode]
     t_inject = time.time()
     # Sent directly (not via attacks/c2_replay.py's inject_forged_mode_change)
     # because that helper also writes to the SHARED attack_logs/
@@ -243,8 +264,12 @@ def run_c2_mode_change_test(conn, target_cfg, baseline, out_dir, det_suite, aler
         heartbeats_after += 1
         post_mode = baseline["mode_map"].get(msg.custom_mode, str(msg.custom_mode))
 
-    evidence = {"pre_mode": pre_mode, "forged_mode": forged_mode, "post_mode": post_mode,
-                "heartbeats_seen_after": heartbeats_after}
+    evidence = {"pre_mode": pre_mode, "forged_mode": forged_mode, "requested_mode": requested_mode,
+                "post_mode": post_mode, "heartbeats_seen_after": heartbeats_after}
+    if forged_mode != requested_mode:
+        evidence["note"] = (f"configured target_mode_for_injection '{requested_mode}' equalled the vehicle's "
+                            f"current mode, so a distinct mode '{forged_mode}' was forged to make this a real "
+                            "mode-change test (otherwise a no-op SET_MODE would read as a false RESILIENT).")
 
     if heartbeats_after == 0:
         evidence["reason"] = "target stopped heartbeating after injection -- possible crash/DoS, not a mode-change result"
@@ -774,6 +799,138 @@ def run_gps_spoof_test(conn, target_cfg, out_dir, det_suite, alerts):
     return run_gps_spoof_gps_input(conn, target_cfg, out_dir, det_suite, alerts)
 
 
+def run_acoustic_spoof_test(conn, target_cfg, out_dir, det_suite, alerts):
+    """Underwater analog of the GPS-spoof check. A submerged AUV has no GPS;
+    its horizontal fix comes from an acoustic-positioning feed delivered to
+    ArduPilot as VISION_POSITION_ESTIMATE (ExternalNav). This function plays
+    the legitimate USBL provider (feeds the AUV's TRUE Gazebo position) long
+    enough to establish a fix, then becomes the attacker (TRUE + a forged
+    offset), and measures whether the target's FUSED belief
+    (GLOBAL_POSITION_INT) walks off by ~the offset while the hull is idle --
+    the acoustic analog of walking a surface vessel's GPS off.
+
+    It reuses attacks/acoustic_spoof.py's tested feed (site-range capping and
+    the ENU->NED yaw fix) rather than reimplementing the Gazebo-odometry
+    parsing, redirecting that module's ground-truth log into THIS run's
+    out_dir so the run stays isolated (same convention as the C2/GPS helpers).
+    """
+    domain = target_cfg["domain"]
+    acfg = target_cfg["attacks"]["acoustic_spoof"]
+    endpoint = acfg.get("endpoint") or os.environ.get("MCR_ACOUSTIC_ENDPOINT", "tcp:127.0.0.1:5762")
+    window_s = target_cfg["timing"]["window_s"]
+    offset = acfg.get("step_offset_m", 50.0)
+    bearing = acfg.get("bearing_deg", 90.0)
+
+    try:
+        import acoustic_spoof as AC
+    except Exception as e:
+        return "INCONCLUSIVE", {"reason": f"could not import attacks/acoustic_spoof.py: {e}"}
+
+    # The feed's Gazebo odometry topic is derived from constants.MODEL_NAME,
+    # which in THIS process defaults to 'wamv' (MCR_VEHICLE_PROFILE is unset
+    # for the tester). Point it at the AUV's real model: an explicit target
+    # override wins, else the target's own profile world.model_name.
+    model_name = acfg.get("model_name")
+    if not model_name:
+        try:
+            import constants
+            prof = constants.load_profile(target_cfg["name"])
+            model_name = prof.get("world", {}).get("model_name", target_cfg["name"])
+        except Exception:
+            model_name = target_cfg["name"]
+    AC.ODOM_TOPIC = acfg.get("odom_topic") or f"/model/{model_name}/odometry"
+    AC.ATTACK_LOG_PATH = os.path.join(out_dir, "acoustic_spoof_ground_truth.csv")
+
+    # best-effort disarm: an earlier c2_replay check may have left the hull
+    # armed/actuating, which would add real motion on top of the spoof.
+    try:
+        conn.mav.command_long_send(conn.target_system, conn.target_component,
+                                   mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                                   0, 0, 0, 0, 0, 0, 0, 0)
+    except Exception:
+        pass
+
+    try:
+        feed_conn = mavutil.mavlink_connection(endpoint, source_system=1, source_component=197)
+        if feed_conn.wait_heartbeat(timeout=20) is None:
+            return "INCONCLUSIVE", {"reason": f"no heartbeat on acoustic endpoint {endpoint} -- is the AUV SITL up?",
+                                    "endpoint": endpoint}
+    except Exception as e:
+        return "INCONCLUSIVE", {"reason": f"cannot open acoustic endpoint {endpoint}: {e}", "endpoint": endpoint}
+
+    AC.state.step_offset_m = offset
+    AC.state.direction_deg = bearing
+    AC.state.active = False
+    threading.Thread(target=AC.run_feed, args=(feed_conn,), daemon=True).start()
+
+    # let a transparent (true-position) fix establish; capture the pre-spoof belief
+    pre_lat = pre_lon = None
+    end = time.time() + max(6.0, target_cfg["timing"].get("settle_s", 5.0))
+    while time.time() < end:
+        msg = conn.recv_match(blocking=True, timeout=1)
+        if msg is None:
+            continue
+        _tap(det_suite, alerts, msg, domain)
+        if msg.get_type() == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0):
+            pre_lat, pre_lon = msg.lat / 1e7, msg.lon / 1e7
+
+    evidence = {"method": "vision_position_estimate", "endpoint": endpoint,
+                "odom_topic": AC.ODOM_TOPIC, "expected_offset_m": offset, "bearing_deg": bearing}
+    if pre_lat is None:
+        evidence["reason"] = ("AUV never produced a non-zero fix from the transparent acoustic feed -- the "
+                              "external-nav path did not ingest it (check EK3_SRC1_POSXY=6, the odom topic, and "
+                              "the endpoint). Not a demonstrated security property.")
+        return "N/A", evidence
+
+    # become the attacker: inject the forged offset for the attack window
+    t_inject = time.time()
+    with AC._lock:
+        AC.state.mode = "step"
+        AC.state.start_time = time.time()
+        AC.state.active = True
+    _log_ground_truth(out_dir, "acoustic_spoof_ground_truth.csv", t_inject, "step",
+                      f"vision_position_estimate step +{offset}m @ {bearing}deg")
+    peak_delta = 0.0
+    try:
+        end = time.time() + window_s
+        while time.time() < end:
+            msg = conn.recv_match(blocking=True, timeout=1)
+            if msg is None:
+                continue
+            _tap(det_suite, alerts, msg, domain)
+            if msg.get_type() == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0):
+                lat, lon = msg.lat / 1e7, msg.lon / 1e7
+                peak_delta = max(peak_delta, _horiz_m(pre_lat, pre_lon, lat, lon))
+    finally:
+        with AC._lock:
+            AC.state.active = False
+        time.sleep(0.5)
+
+    evidence.update({"pre_lat": pre_lat, "pre_lon": pre_lon})
+    return _gps_verdict(peak_delta, offset, True, True, evidence)
+
+
+def _git_sha():
+    """Short HEAD sha so a saved verdict records exactly which code produced
+    it -- part of making a run reproducible from its artifact alone."""
+    try:
+        return subprocess.check_output(["git", "-C", REPO, "rev-parse", "--short", "HEAD"],
+                                       stderr=subprocess.DEVNULL, text=True).strip()
+    except Exception:
+        return None
+
+
+def _alerts_by_type(alerts):
+    """Per-attack-family alert tally -- a deterministic 'which detector fired'
+    signal, more interpretable than a single raw count."""
+    out = {}
+    for a in alerts:
+        d = a.as_dict() if hasattr(a, "as_dict") else a
+        k = d.get("attack_type", "unknown")
+        out[k] = out.get(k, 0) + 1
+    return out
+
+
 # --- orchestration -------------------------------------------------------
 
 def run_target_test(target_name, requested_attacks=None):
@@ -800,28 +957,17 @@ def run_target_test(target_name, requested_attacks=None):
             reason = enabled.get(a, {}).get("reason", "not enabled in this target's config")
             print(f"[test_target] skipping '{a}' (requested but disabled for this target): {reason}")
 
-    ais_stop = threading.Event()
-    ais_thread = None
-    ais_bind_error = []
-    # AIS disabled globally for now
-    if False and "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
-        udp_addr = tuple(enabled["ais_spoof"].get("udp_addr", ["127.0.0.1", 10110]))
-        ais_thread = threading.Thread(target=_ais_tap_loop, args=(udp_addr, det_suite, alerts, ais_stop, ais_bind_error), daemon=True)
-        ais_thread.start()
-        time.sleep(0.2)  # let a bind failure surface before claiming the tap is listening
-        if ais_bind_error:
-            print(f"[test_target] WARNING: AIS detectability tap could not bind {udp_addr}: "
-                  f"{ais_bind_error[0]} -- likely the dashboard (run_demo.sh) is already listening "
-                  f"there. ais_spoof detectability below will be unreliable (not a real 0.0); "
-                  f"re-run headless via run_vehicle.sh for an accurate score.")
-        else:
-            print(f"[test_target] AIS detectability tap listening on {udp_addr}")
-
     print(f"[test_target] connected, sampling baseline for {target['timing']['settle_s']}s ...")
     baseline = snapshot_state(conn, target["timing"]["settle_s"], det_suite, alerts, target["domain"])
     print(f"[test_target] baseline: {baseline}")
 
+    # Stamp the environment into the verdict so a saved run is reproducible from
+    # its artifact alone -- the multi-site framework means the same twin yields
+    # the same security verdict at different water bodies, so without the site a
+    # verdicts.json could not say which one it came from.
     results = {"target": target["name"], "domain": target["domain"], "run_ts": run_ts,
+               "site": os.environ.get("MCR_SITE", "kochi"),
+               "git_sha": _git_sha(),
                "baseline": {k: v for k, v in baseline.items() if k != "mode_map"},
                "attacks": {}}
 
@@ -838,16 +984,25 @@ def run_target_test(target_name, requested_attacks=None):
         results["attacks"]["gps_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}
         print(f"[test_target]   vulnerability: {verdict}")
 
-    # AIS disabled globally for now
-    if False and "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
-        print("[test_target] running ais_spoof (vulnerability N/A by design; scoring detectability) ...")
-        verdict, evidence = run_ais_spoof_test(target, out_dir, conn, det_suite, alerts, baseline)
-        results["attacks"]["ais_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}
+    if "acoustic_spoof" in to_run and enabled.get("acoustic_spoof", {}).get("enabled"):
+        print("[test_target] running acoustic_spoof vulnerability check (method=vision_position_estimate) ...")
+        verdict, evidence = run_acoustic_spoof_test(conn, target, out_dir, det_suite, alerts)
+        results["attacks"]["acoustic_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}
         print(f"[test_target]   vulnerability: {verdict}")
 
-    ais_stop.set()
-    if ais_thread:
-        ais_thread.join(timeout=2)
+    # ais_spoof is structurally N/A against a bare ArduPilot target (ArduPilot
+    # never consumes AIS on any vehicle) -- it is an ECDIS/operator-layer concern
+    # exercised live on the dashboard, not a vehicle-vulnerability check. Every
+    # attack the target DECLARED but left disabled is recorded explicitly as N/A
+    # (with the target's own reason) so a verdicts.json accounts for all of them,
+    # rather than silently omitting them or carrying a dead `if False` branch.
+    for a, acfg in enabled.items():
+        if a in results["attacks"]:
+            continue
+        if not acfg.get("enabled"):
+            results["attacks"][a] = {"vulnerability": {"verdict": "N/A", "evidence":
+                {"reason": acfg.get("reason", "declared but disabled for this target -- structurally not applicable")}}}
+            print(f"[test_target]   {a}: N/A (disabled: {acfg.get('reason', 'not applicable')})")
 
     # Write out the raw alerts collected during the test run.
     # In this operational version of the cyber range, we do not calculate
@@ -857,14 +1012,16 @@ def run_target_test(target_name, requested_attacks=None):
         for a in alerts:
             f.write(json.dumps(a.as_dict()) + "\n")
             
-    # Store raw alert count instead of ML metrics
-    results["detectability"] = {"alerts_generated": len(alerts)}
-    
-    if ais_bind_error:
-        results["warnings"] = [f"AIS detectability tap could not bind udp {udp_addr} ({ais_bind_error[0]}) -- "
-                                f"another process (likely the dashboard) already owned that port."]
-    
-    print(f"[test_target] detectability: {len(alerts)} alerts generated")
+    # Raw alert count PLUS a per-attack-family breakdown: a deterministic
+    # "which detector fired, and how often" signal that is far more
+    # interpretable than a lone count (5 vs 7 vs 11 across runs told you
+    # nothing about WHICH attack was seen).
+    results["detectability"] = {
+        "alerts_generated": len(alerts),
+        "by_attack_type": _alerts_by_type(alerts),
+    }
+
+    print(f"[test_target] detectability: {len(alerts)} alerts generated {results['detectability']['by_attack_type']}")
 
     out_path = os.path.join(out_dir, "verdicts.json")
     with open(out_path, "w") as f:

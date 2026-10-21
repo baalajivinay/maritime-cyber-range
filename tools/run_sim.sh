@@ -24,6 +24,12 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE="${1:?usage: run_sim.sh <profile> up|down|status}"
 ACTION="${2:-up}"
 
+# Scale-up: the stack defaults to the Kochi test site (the old Sydney Regatta
+# origin was retired as the default). Exporting it here -- before read_profile
+# imports constants.py -- keeps the geometry (constants HOME) and the physics
+# (the world-patch block in do_up) in agreement. Override with MCR_SITE=... .
+export MCR_SITE="${MCR_SITE:-kochi}"
+
 export MCR_VEHICLE_PROFILE="$PROFILE"
 RUN_DIR="${MCR_RUN_DIR:-/tmp/mcr_run/$PROFILE}"
 mkdir -p "$RUN_DIR"
@@ -252,6 +258,30 @@ do_up() {
   #   sleep 2
   #   log "  AIS emulator started (broadcasting on UDP 10110)"
   # fi
+
+  # 6) Integrated 3D view (default OFF -> headless boot byte-unchanged). With
+  #    MCR_VIEW=1 and a display, launch the Gazebo GUI attached to the running
+  #    server and make its camera FOLLOW the vehicle (a chase / first-person
+  #    view over the real water world) -- the product's OWN display, no browser.
+  if [[ "${MCR_VIEW:-0}" == "1" ]]; then
+    if [[ -z "${DISPLAY:-}" ]]; then
+      log "MCR_VIEW=1 but \$DISPLAY is unset -- skipping 3D view (needs an X display)."
+    else
+      log "launching integrated 3D view (follow-cam on '$MODEL_NAME')..."
+      spawn "$LOG_DIR/gui.log" "gz sim -g" > "$RUN_DIR/gui.pid"
+      # The GUI takes a few seconds to connect to the server scene; then ask its
+      # camera to follow the vehicle and sit just behind+above it (chase/FPV).
+      ( for _ in $(seq 25); do
+          gz service -s /gui/follow --reqtype gz.msgs.StringMsg --reptype gz.msgs.Boolean \
+            --timeout 1000 --req "data: \"$MODEL_NAME\"" >/dev/null 2>&1 && break
+          sleep 1
+        done
+        gz service -s /gui/follow/offset --reqtype gz.msgs.Vector3d --reptype gz.msgs.Boolean \
+          --timeout 2000 --req "x: -3.0 y: 0.0 z: 1.2" >/dev/null 2>&1 ) &
+      log "  3D view up: the window follows '$MODEL_NAME'. Scroll to zoom, drag to look around;"
+      log "  right-click the vehicle -> Follow/Track to re-lock, or close the window to stop viewing."
+    fi
+  fi
 
   log "STACK UP. Send spoof commands to the relay via:  echo step > $FIFO"
   log "Teardown:  tools/run_sim.sh $PROFILE down"
