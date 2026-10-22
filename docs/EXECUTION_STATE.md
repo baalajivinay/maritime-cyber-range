@@ -1709,3 +1709,13 @@ Legend: [x] done · [~] in progress · [ ] not started
   * **Cross-verification:** 25/25 offline tests; 4-twin × attack matrix all
     correct (USVs: C2+GPS VULNERABLE; AUVs: C2+acoustic VULNERABLE, GPS/AIS N/A);
     twin×site verdicts INVARIANT across kochi/mumbai/visakhapatnam.
+
+- 2026-10-22 (follow-up): **AUV-150 flies straight at ~1.8 m/s cruise.** Root-caused
+  two residual control issues (erratic heading; depth creeping deeper run-over-run)
+  to one bug: the scenario's port/starboard sides are mirrored from ArduSub
+  SIMPLEROV_5, so BOTH differential thruster pairs had positive feedback — roll
+  (vertical pair) and yaw (horizontal pair). Swapped both in the MCR map; added a
+  dense keel (CG below CB) + neutral-buoyancy tail fins for passive self-righting.
+  Validated 3/3 consistent: depth-hold drift <0.2 m while cruising at 1.8 m/s (no
+  creep), heading turns ~30 deg and holds ~12 deg, forward ~1.8 m/s. Acoustic ramp
+  spoof still VULNERABLE. Commit a431410.
