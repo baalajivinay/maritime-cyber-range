@@ -322,6 +322,7 @@ func _lbl(parent: Node, txt: String, pos: Vector2, size := 14, col := Color(0.82
 	var l := Label.new()
 	l.text = txt
 	l.position = pos
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE   # labels never swallow clicks
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
 	parent.add_child(l)
@@ -338,13 +339,20 @@ func _btn(parent: Node, txt: String, pos: Vector2, sz: Vector2, cb: Callable) ->
 
 func _build_hud():
 	var layer := CanvasLayer.new()
+	layer.layer = 5
 	add_child(layer)
 	hud = Control.new()
 	hud.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# CRITICAL: a full-rect Control defaults to MOUSE_FILTER_STOP and would
+	# swallow every click across the whole screen -- blocking the 3D destination
+	# raycast (_unhandled_input) and the menu. IGNORE lets clicks through; the
+	# Button children keep their own STOP filter so they still work.
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(hud)
 	var panel := Panel.new()
 	panel.position = Vector2(get_viewport().size.x - 300, 0)
 	panel.size = Vector2(300, get_viewport().size.y)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(panel)
 	var px := panel.position.x + 16
 	labels["title"] = _lbl(hud, "MARITIME CYBER RANGE", Vector2(18, 12), 16, Color(0.8, 0.9, 1.0))
@@ -402,13 +410,35 @@ func _update_hud():
 	labels["ARMED"].text = "ARMED" if tele.get("armed", false) else "SAFE"
 	labels["ARMED"].add_theme_color_override("font_color",
 		Color(0.85, 0.4, 0.4) if tele.get("armed", false) else Color(0.4, 0.8, 0.55))
-	if dest_rel:
+	if setting_dest:
+		labels["DEST"].text = "click the water…"
+		labels["DEST"].add_theme_color_override("font_color", Color(0.5, 0.9, 0.6))
+	elif dest_rel:
 		labels["DEST"].text = "%.0f m" % dest_rel.length()
+		labels["DEST"].add_theme_color_override("font_color", Color(0.82, 0.86, 0.9))
 	labels["evt"].text = str(tele.get("event", ""))
 
 # ---------------- menu ----------------
+var site_btns := []
+var twin_btns := []
+
+func _pick_site(idx: int):
+	sel_site = idx
+	_refresh_menu_sel()
+
+func _pick_twin(idx: int):
+	sel_twin = idx
+	_refresh_menu_sel()
+
+func _refresh_menu_sel():
+	for i in site_btns.size():
+		site_btns[i].modulate = Color(0.5, 1.0, 0.6) if i == sel_site else Color(1, 1, 1)
+	for i in twin_btns.size():
+		twin_btns[i].modulate = Color(0.5, 1.0, 0.6) if i == sel_twin else Color(1, 1, 1)
+
 func _build_menu():
 	var layer := CanvasLayer.new()
+	layer.layer = 10          # above the HUD (layer 5) so it is unambiguously on top
 	add_child(layer)
 	menu = Control.new()
 	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -417,16 +447,19 @@ func _build_menu():
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	menu.add_child(bg)
 	_lbl(menu, "MARITIME CYBER RANGE", Vector2(80, 70), 24, Color(0.5, 0.9, 0.6))
-	_lbl(menu, "Select a test site and a vehicle.", Vector2(80, 110), 14, Color(0.6, 0.7, 0.75))
+	_lbl(menu, "Select a test site and a vehicle, then START RUN.", Vector2(80, 110), 14, Color(0.6, 0.7, 0.75))
 	_lbl(menu, "SITE", Vector2(80, 160), 12, Color(0.55, 0.62, 0.70))
 	for i in SITES.size():
-		var idx := i
-		_btn(menu, SITES[i].capitalize(), Vector2(80 + i * 200, 185), Vector2(180, 40), func(): sel_site = idx)
+		var b := _btn(menu, SITES[i].capitalize(), Vector2(80 + i * 200, 185), Vector2(180, 40),
+			_pick_site.bind(i))
+		site_btns.append(b)
 	_lbl(menu, "VEHICLE", Vector2(80, 245), 12, Color(0.55, 0.62, 0.70))
 	for i in TWINS.size():
-		var idx := i
-		_btn(menu, TWINS[i]["name"], Vector2(80 + (i % 2) * 360, 270 + (i / 2) * 54), Vector2(340, 44), func(): sel_twin = idx)
+		var b := _btn(menu, TWINS[i]["name"], Vector2(80 + (i % 2) * 360, 270 + (i / 2) * 54), Vector2(340, 44),
+			_pick_twin.bind(i))
+		twin_btns.append(b)
 	_btn(menu, "START RUN", Vector2(80, 420), Vector2(240, 48), func(): _start())
+	_refresh_menu_sel()
 
 func _start():
 	var tw = TWINS[sel_twin]
