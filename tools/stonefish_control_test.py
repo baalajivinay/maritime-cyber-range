@@ -89,13 +89,24 @@ def main():
           (round(depth(), 2) if depth() is not None else "?",
            round(true_yaw_deg(), 1) if true_yaw_deg() is not None else "?"))
 
-    # ---- arm in MANUAL ----
+    # ---- arm in MANUAL (robust: retry until the heartbeat confirms armed) ----
+    def is_armed():
+        hb = m.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
+        return hb is not None and bool(hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+
     setmode("MANUAL"); time.sleep(0.5)
-    m.mav.command_long_send(m.target_system, m.target_component,
-                            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-                            0, 1, 0, 0, 0, 0, 0, 0)
-    ack = m.recv_match(type="COMMAND_ACK", blocking=True, timeout=5)
-    print("[ctl] arm: %s" % ("OK" if ack and ack.result == 0 else ack))
+    armed = False
+    for attempt in range(5):
+        m.mav.command_long_send(m.target_system, m.target_component,
+                                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                                0, 1, 0, 0, 0, 0, 0, 0)
+        m.recv_match(type="COMMAND_ACK", blocking=True, timeout=3)
+        # stream a little neutral input so it does not idle-disarm, then confirm
+        drive(0, 0, 500, 0, 1.0)
+        if is_armed():
+            armed = True
+            break
+    print("[ctl] arm: %s (after %d attempt(s))" % ("OK" if armed else "FAILED", attempt + 1))
 
     # ---- DIVE to depth in ALT_HOLD (realistic: controller manages the descent) ----
     TARGET = 5.0

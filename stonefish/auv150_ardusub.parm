@@ -54,12 +54,12 @@ PSC_ACCZ_I 0.1
 # yaw = differential); they are sized for ~1.5 m/s cruise, so a little
 # differential is a lot of yaw torque. Keep the rate loop gentle and cap the
 # commanded yaw rate/accel hard so heading stays stable at that thrust level.
-ATC_ANG_YAW_P 2.0
-ATC_RAT_YAW_P 0.07
-ATC_RAT_YAW_I 0.010
-ATC_RAT_YAW_D 0.004
-ATC_ACCEL_Y_MAX 6000
-ACRO_YAW_P 0.6
+ATC_ANG_YAW_P 2.7
+ATC_RAT_YAW_P 0.15
+ATC_RAT_YAW_I 0.018
+ATC_RAT_YAW_D 0.016
+ATC_ACCEL_Y_MAX 6500
+ACRO_YAW_P 0.65
 
 # Sim-bridge conveniences: relax arming prechecks, no battery failsafe.
 ARMING_CHECK 0

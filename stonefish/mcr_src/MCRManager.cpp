@@ -24,7 +24,13 @@ struct ServoPacket {
 
 // SERVO1..SERVO5 (ArduSub SIMPLEROV_5 / FRAME_CONFIG=6) -> Stonefish thruster names.
 // pwm[0]=MOT1..pwm[4]=MOT5, matched to the auv150.scn thruster layout.
-static const char* THR_NAMES[5] = {"ThrPortFwd", "ThrStbdFwd", "ThrVertPort", "ThrVertStbd", "ThrLat"};
+// The scenario's port/starboard sides are mirrored from ArduSub's SIMPLEROV_5
+// convention, so both differential pairs must be swapped or their feedback is
+// positive (the hull diverges): yaw (MOT1 yaw_fac=-1 / MOT2=+1 -> MOT2 must be
+// the PORT horizontal thruster) and roll (MOT3 roll_fac=+1 / MOT4=-1 -> MOT3
+// must be the STARBOARD vertical thruster). Order below is MOT1..MOT5:
+//   MOT1=ThrStbdFwd MOT2=ThrPortFwd  MOT3=ThrVertStbd MOT4=ThrVertPort MOT5=ThrLat
+static const char* THR_NAMES[5] = {"ThrStbdFwd", "ThrPortFwd", "ThrVertStbd", "ThrVertPort", "ThrLat"};
 
 MCRManager::MCRManager(sf::Scalar sps, const std::string& scnPath, bool fdm, int fdmPort)
  : SimulationManager(sps, sf::Solver::SI, sf::CollisionFilter::EXCLUSIVE),

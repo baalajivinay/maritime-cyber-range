@@ -22,17 +22,23 @@ attacks run against it exactly like the Gazebo stack.
 `tools/stonefish_control_test.py` arms ArduSub and commands dive / depth-hold /
 heading / forward via `MANUAL_CONTROL`, measuring the response. Validated,
 repeatable across runs:
-- **depth-hold**: drift < 0.8 m, wobble < 1 m at cruise speed (ALT_HOLD; < 0.1 m
-  while stationary)
-- **heading-hold**: wobble 4–12 deg over 6 s (compass heading)
-- **forward cruise**: ~1.1–1.5 m/s (the AUV-150's real spec)
-- responds on all axes (dive/climb, yaw, forward, lateral)
+- **depth-hold**: drift < 0.2 m, wobble < 0.3 m *while cruising at 1.8 m/s*
+  (ALT_HOLD); holds through the forward leg with no creep
+- **heading-hold**: turns ~30 deg on command and settles to ~11–13 deg wobble;
+  flies level (roll/pitch within a few deg)
+- **forward cruise**: ~1.8 m/s (meets/exceeds the AUV-150's ~1.5 m/s spec)
+- all consistent run-to-run; robust arm
 
-The two horizontal thrusters are dual-purpose (SIMPLEROV_5: common-mode = surge,
-differential = yaw), so cruise thrust is sized for ~1.5 m/s while the tail fins
-(horizontal = pitch/heave damping, vertical = yaw damping) are sized to keep
-depth/heading stable at that thrust, and the yaw gains are kept gentle so the
-large differential authority does not oscillate heading.
+**Static stability + correct sign conventions are what make it fly straight.**
+The scenario's port/starboard sides are mirrored from ArduSub's SIMPLEROV_5
+convention, so BOTH differential thruster pairs must be swapped in the MCR map
+(`stonefish/mcr_src/MCRManager.cpp`) or the feedback is positive and the hull
+diverges — roll (vertical pair) and yaw (horizontal pair). The hull also carries
+a dense **keel ballast** low in the body (CG below CB) for passive roll/pitch
+self-righting, and the tail **fins are neutrally buoyant** (so the tail does not
+float up and pitch the nose down). The horizontal thrusters are dual-purpose
+(common-mode = surge, differential = yaw), so cruise thrust is sized for ~1.8 m/s
+with the fins sized for damping and the yaw gains kept moderate.
 
 ## Build (one-time)
 ```bash
