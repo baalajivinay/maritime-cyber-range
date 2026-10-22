@@ -41,6 +41,7 @@ class StonefishSource:
         self.active_attack = None
         self.conn = None
         self._stop = False
+        self._goto_target = None
         self._spoof = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     # ---- helpers -------------------------------------------------------
@@ -129,17 +130,38 @@ class StonefishSource:
         self.log("disarm")
 
     def goto(self, lat, lon):
-        """GUIDED waypoint. ArduSub holds depth; horizontal nav to the target."""
+        """GUIDED waypoint. ArduSub holds depth; horizontal nav to the target.
+        Runs in a thread, re-sending the target (GUIDED needs it sustained) and
+        re-arming if the hull idle-disarms, until it arrives or is superseded."""
         if not self.conn:
             return
+        self.log("destination set -- %.5f, %.5f" % (lat, lon))
+        self._goto_target = (lat, lon)
+        threading.Thread(target=self._drive, args=(lat, lon), daemon=True).start()
+
+    def _drive(self, lat, lon):
+        import math
+        c = self.conn
+        hold_depth = max(2.0, self.state.get("depth", 0.0))  # keep it submerged
         self._set_mode("GUIDED")
-        time.sleep(0.3)
-        self.conn.mav.set_position_target_global_int_send(
-            0, self.conn.target_system, self.conn.target_component,
-            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-            0b0000111111111000, int(lat * 1e7), int(lon * 1e7), -self.state["depth"],
-            0, 0, 0, 0, 0, 0, 0, 0)
-        self.log(f"goto {lat:.5f},{lon:.5f}")
+        end = time.time() + 120
+        while c and self._goto_target == (lat, lon) and time.time() < end:
+            if not self.state.get("armed"):
+                c.mav.command_long_send(c.target_system, c.target_component,
+                                        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                                        0, 1, 0, 0, 0, 0, 0, 0)
+                self._set_mode("GUIDED")
+            c.mav.set_position_target_global_int_send(
+                0, c.target_system, c.target_component,
+                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                0b0000111111111000, int(lat * 1e7), int(lon * 1e7), -hold_depth,
+                0, 0, 0, 0, 0, 0, 0, 0)
+            clat, clon = self.state.get("lat"), self.state.get("lon")
+            if clat:
+                if 111320.0 * math.hypot(clat - lat, (clon - lon) * math.cos(math.radians(lat))) < 3.0:
+                    self.log("arrived at destination")
+                    break
+            time.sleep(1.0)
 
     def attack(self, name):
         """Attack surface of the submerged Stonefish AUV. Accepts both the

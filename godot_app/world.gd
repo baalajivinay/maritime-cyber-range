@@ -27,6 +27,8 @@ var cam_f := 0.0
 var cam_target := 0.0
 var heading := 0.0
 var dest_rel = null          # Vector2 east,north relative to vehicle
+var dest_world = null         # Vector3 world position of the waypoint marker
+var dest_marker: MeshInstance3D
 var setting_dest := false
 var seabed: MeshInstance3D
 var snow: GPUParticles3D
@@ -111,10 +113,11 @@ func _build_world():
 
 	# ocean: large subdivided plane with the Gerstner shader
 	var ocean := MeshInstance3D.new()
+	ocean.name = "OceanMesh"
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(600, 600)
-	pm.subdivide_width = 200
-	pm.subdivide_depth = 200
+	pm.size = Vector2(900, 900)
+	pm.subdivide_width = 220
+	pm.subdivide_depth = 220
 	ocean.mesh = pm
 	ocean_mat = ShaderMaterial.new()
 	ocean_mat.shader = load("res://ocean.gdshader")
@@ -129,19 +132,31 @@ func _build_world():
 	snow.visible = false
 	add_child(snow)
 
+	# destination waypoint marker (a bright floating pylon)
+	dest_marker = MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.4; cyl.bottom_radius = 0.4; cyl.height = 6.0
+	dest_marker.mesh = cyl
+	var mm := StandardMaterial3D.new()
+	mm.albedo_color = Color(0.2, 1.0, 0.5)
+	mm.emission_enabled = true; mm.emission = Color(0.2, 1.0, 0.5); mm.emission_energy_multiplier = 2.0
+	dest_marker.material_override = mm
+	dest_marker.visible = false
+	add_child(dest_marker)
+
 	cam = Camera3D.new()
 	cam.fov = 64
-	cam.far = 2000
+	cam.far = 3000
 	add_child(cam)
 
 func _make_seabed() -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(300, 300)
-	pm.subdivide_width = 60
-	pm.subdivide_depth = 60
+	pm.size = Vector2(900, 900)
+	pm.subdivide_width = 80
+	pm.subdivide_depth = 80
 	mi.mesh = pm
-	mi.position.y = -16
+	mi.position.y = -45
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.32, 0.29, 0.21)
 	m.roughness = 0.95
@@ -285,13 +300,46 @@ func _apply_domain_visuals():
 		seabed.visible = false
 		snow.visible = false
 
+var veh_pos := Vector3.ZERO    # smoothed world position of the vehicle
+
+# Telemetry lat/lon (+depth) -> world metres. World: x=east, z=-north, y=-depth.
+func _tele_world() -> Vector3:
+	var lat: float = float(tele.get("lat")) if tele.get("lat") != null else home.x
+	var lon: float = float(tele.get("lon")) if tele.get("lon") != null else home.y
+	var north: float = (lat - home.x) * DEG_M
+	var east: float = (lon - home.y) * DEG_M * cos(deg_to_rad(home.x))
+	var y: float = (-float(tele.get("depth", 0.0))) if domain == "underwater" else 0.0
+	return Vector3(east, y, -north)
+
 func _update_vehicle():
 	if not vehicle:
 		return
 	heading = float(tele.get("hdg", 0.0))
 	vehicle.rotation_degrees = Vector3(0, -heading, 0)
-	# bob with the wave height at origin (cheap: sample via time-less approx 0)
-	vehicle.position.y = 0.0 if domain == "underwater" else 0.0
+	# move the vehicle to its telemetry position (smoothed so UDP jitter is calm)
+	var target := _tele_world()
+	veh_pos = veh_pos.lerp(target, 0.15) if connected else target
+	vehicle.position = veh_pos
+	# keep the ocean/seabed/particles centred on the vehicle so it never sails
+	# off the finite meshes (waves are world-space in the shader, so this reads
+	# as the vehicle moving through the water, not the water following it).
+	var c := Vector3(veh_pos.x, 0, veh_pos.z)
+	_recenter_world(c)
+	if dest_marker:
+		dest_marker.visible = dest_world != null
+		if dest_world != null:
+			dest_marker.position = Vector3(dest_world.x, 0.5, dest_world.z)
+
+func _recenter_world(c: Vector3):
+	for n in [seabed, snow]:
+		if n:
+			n.position.x = c.x
+			n.position.z = c.z
+	# ocean mesh is large; recentre it too so its edges never show
+	var ocean := get_node_or_null("OceanMesh")
+	if ocean:
+		ocean.position.x = c.x
+		ocean.position.z = c.z
 
 func _update_camera(delta):
 	var hd := deg_to_rad(heading)
@@ -311,8 +359,9 @@ func _update_camera(delta):
 		cam_f = min(cam_target, cam_f + delta / 1.6)
 	elif cam_f > cam_target:
 		cam_f = max(cam_target, cam_f - delta / 1.0)
-	var eye = eye_3rd.lerp(eye_fpv, cam_f)
-	var ctr = ctr_3rd.lerp(ctr_fpv, cam_f)
+	# camera offsets are relative to the vehicle, so the camera follows it
+	var eye = veh_pos + eye_3rd.lerp(eye_fpv, cam_f)
+	var ctr = veh_pos + ctr_3rd.lerp(ctr_fpv, cam_f)
 	cam.position = eye
 	cam.look_at(ctr, Vector3.UP)
 	cam.fov = 64 - 6 * cam_f
@@ -486,14 +535,18 @@ func _pick_destination(mp: Vector2):
 	if t < 0:
 		return
 	var hit = from + dir * t          # world (x=east, z=-north)
-	var east = hit.x
-	var north = -hit.z
-	var d = Vector2(east, north)
+	# offset of the click from the VEHICLE's current world position
+	var d := Vector2(hit.x - veh_pos.x, (-hit.z) - (-veh_pos.z))
 	if d.length() > 300:
 		d = d.normalized() * 300
 	dest_rel = d
-	var vlat = float(tele.get("lat", home.x))
-	var vlon = float(tele.get("lon", home.y))
+	dest_world = Vector3(veh_pos.x + d.x, 0, veh_pos.z - d.y)
+	if dest_marker:
+		dest_marker.visible = true
+		dest_marker.position = Vector3(dest_world.x, 0.5, dest_world.z)
+	# convert the offset to an absolute lat/lon from the vehicle's fix
+	var vlat = float(tele.get("lat")) if tele.get("lat") != null else home.x
+	var vlon = float(tele.get("lon")) if tele.get("lon") != null else home.y
 	var lat = vlat + d.y / DEG_M
 	var lon = vlon + d.x / (DEG_M * cos(deg_to_rad(vlat)))
 	_send({"cmd": "goto", "lat": lat, "lon": lon})
