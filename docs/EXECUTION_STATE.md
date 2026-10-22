@@ -1678,3 +1678,34 @@ Legend: [x] done · [~] in progress · [ ] not started
     an SDR + shielded enclosure) nor the autopilot (needs a Pixhawk).
   * Honesty: items needing external data/HW (PX4 SITL, GEBCO, Bellhop binary,
     SDR) ship as adapter + working fallback, tier-marked, never faked.
+
+- 2026-10-22: **Stonefish + Godot engines — active control + combined physics.**
+  * **Thruster namespace fix:** the MCR bridge looked up thrusters by short name
+    but Stonefish registers robot actuators as `<robot>/<name>`
+    (e.g. `AUV150/ThrPortFwd`), so no thrust was ever applied (body only drifted
+    on buoyancy). Fixed to prefix with the robot name — all 5 thrusters now drive.
+  * **AUV-150 scenario:** rebuilt to ArduSub SIMPLEROV_5 (`FRAME_CONFIG=6`):
+    2 horizontal forward+yaw (short outriggers for yaw arm), 2 vertical
+    throttle+roll, 1 lateral; near-neutral buoyancy (~541 vs ~543 kg); tail fins
+    sized for heave/yaw damping.
+  * **Realistic + stable nav split:** horizontal POSITION from ExternalNav/USBL
+    (what the acoustic spoof forges), HEADING from the compass/INS
+    (`EK3_SRC1_YAW=1`, `COMPASS_USE=1` — a real AUV does not take yaw from USBL;
+    using it was the heading-instability source), DEPTH from pressure. Conservative
+    stock ArduSub PID gains (high gains oscillate on the low-drag hull).
+  * **Validated active control** (`tools/stonefish_control_test.py`, repeatable):
+    depth-hold drift <0.01 m / wobble <0.1 m; heading-hold wobble 1–8 deg;
+    responds on all axes. Fly in ALT_HOLD throughout (not MANUAL-then-switch) for
+    the tight hold; dive momentum from a hard MANUAL descent overshoots.
+  * **Acoustic spoof vs the depth-holding AUV:** the realistic RAMP walk-off
+    (0.5 m/s) walks the believed position steadily off the true Stonefish track
+    (~11 m / 40 s) while depth holds — VULNERABLE. A 50 m STEP is correctly
+    EKF-gated in this compass config (the Gazebo twins' step still reads
+    VULNERABLE — EKF-config dependent).
+  * **Both softwares combined:** `tools/godot_relay.py --source stonefish`
+    (via `tools/stonefish_source.py`) makes the Godot front-end render the live
+    Stonefish physics; Acoustic/C2 attacks are driven from the Godot HUD.
+    Launch: `tools/godot_app.sh stonefish` (after `tools/stonefish_bridge.sh up`).
+  * **Cross-verification:** 25/25 offline tests; 4-twin × attack matrix all
+    correct (USVs: C2+GPS VULNERABLE; AUVs: C2+acoustic VULNERABLE, GPS/AIS N/A);
+    twin×site verdicts INVARIANT across kochi/mumbai/visakhapatnam.
