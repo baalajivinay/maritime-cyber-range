@@ -50,14 +50,16 @@ PSC_VELZ_I 0.5
 PSC_ACCZ_P 0.5
 PSC_ACCZ_I 0.1
 
-# Heading (yaw): ArduSub stock gains (stable); cap commanded yaw rate/accel so
-# a hard stick cannot spin the hull faster than the controller can arrest.
-ATC_ANG_YAW_P 2.7
-ATC_RAT_YAW_P 0.18
-ATC_RAT_YAW_I 0.018
-ATC_RAT_YAW_D 0.0
-ATC_ACCEL_Y_MAX 18000
-ACRO_YAW_P 2.5
+# Heading (yaw). The forward thrusters do double-duty (forward = common mode,
+# yaw = differential); they are sized for ~1.5 m/s cruise, so a little
+# differential is a lot of yaw torque. Keep the rate loop gentle and cap the
+# commanded yaw rate/accel hard so heading stays stable at that thrust level.
+ATC_ANG_YAW_P 2.0
+ATC_RAT_YAW_P 0.07
+ATC_RAT_YAW_I 0.010
+ATC_RAT_YAW_D 0.004
+ATC_ACCEL_Y_MAX 6000
+ACRO_YAW_P 0.6
 
 # Sim-bridge conveniences: relax arming prechecks, no battery failsafe.
 ARMING_CHECK 0

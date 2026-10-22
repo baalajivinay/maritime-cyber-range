@@ -22,9 +22,17 @@ attacks run against it exactly like the Gazebo stack.
 `tools/stonefish_control_test.py` arms ArduSub and commands dive / depth-hold /
 heading / forward via `MANUAL_CONTROL`, measuring the response. Validated,
 repeatable across runs:
-- **depth-hold**: drift < 0.01 m, wobble < 0.1 m over 12 s (ALT_HOLD)
-- **heading-hold**: wobble 1–8 deg over 6 s (compass heading)
-- responds on all axes (dive/climb, yaw, forward, lateral); forward ~0.4–0.7 m/s
+- **depth-hold**: drift < 0.8 m, wobble < 1 m at cruise speed (ALT_HOLD; < 0.1 m
+  while stationary)
+- **heading-hold**: wobble 4–12 deg over 6 s (compass heading)
+- **forward cruise**: ~1.1–1.5 m/s (the AUV-150's real spec)
+- responds on all axes (dive/climb, yaw, forward, lateral)
+
+The two horizontal thrusters are dual-purpose (SIMPLEROV_5: common-mode = surge,
+differential = yaw), so cruise thrust is sized for ~1.5 m/s while the tail fins
+(horizontal = pitch/heave damping, vertical = yaw damping) are sized to keep
+depth/heading stable at that thrust, and the yaw gains are kept gentle so the
+large differential authority does not oscillate heading.
 
 ## Build (one-time)
 ```bash

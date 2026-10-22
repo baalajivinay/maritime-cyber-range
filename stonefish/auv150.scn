@@ -70,28 +70,28 @@
                 <compound_transform rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
             </external_part>
             <external_part name="FinTop" type="box" physics="submerged" buoyant="true">
-                <dimensions xyz="0.55 0.03 0.45"/>
+                <dimensions xyz="0.75 0.03 0.6"/>
                 <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
                 <material name="Shell"/>
                 <look name="dark"/>
                 <compound_transform rpy="0.0 0.0 0.0" xyz="-1.1 0.0 -0.28"/>
             </external_part>
             <external_part name="FinBot" type="box" physics="submerged" buoyant="true">
-                <dimensions xyz="0.55 0.03 0.45"/>
+                <dimensions xyz="0.75 0.03 0.6"/>
                 <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
                 <material name="Shell"/>
                 <look name="dark"/>
                 <compound_transform rpy="0.0 0.0 0.0" xyz="-1.1 0.0 0.28"/>
             </external_part>
             <external_part name="FinPort" type="box" physics="submerged" buoyant="true">
-                <dimensions xyz="0.55 0.45 0.03"/>
+                <dimensions xyz="0.75 0.6 0.03"/>
                 <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
                 <material name="Shell"/>
                 <look name="dark"/>
                 <compound_transform rpy="0.0 0.0 0.0" xyz="-1.1 -0.28 0.0"/>
             </external_part>
             <external_part name="FinStbd" type="box" physics="submerged" buoyant="true">
-                <dimensions xyz="0.55 0.45 0.03"/>
+                <dimensions xyz="0.75 0.6 0.03"/>
                 <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
                 <material name="Shell"/>
                 <look name="dark"/>
@@ -104,20 +104,20 @@
              Mounted on a short outrigger (y=-0.5) for a usable yaw moment arm. -->
         <actuator name="ThrPortFwd" type="thruster">
             <link name="Vehicle"/>
-            <origin rpy="0.0 0.0 0.0" xyz="-1.3 -0.5 0.0"/>
-            <specs max_setpoint="160.0" inverted_setpoint="false" normalized_setpoint="true"/>
-            <propeller diameter="0.18" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
+            <origin rpy="0.0 0.0 0.0" xyz="-1.3 -0.3 0.0"/>
+            <specs max_setpoint="250.0" inverted_setpoint="false" normalized_setpoint="true"/>
+            <propeller diameter="0.20" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
             <rotor_dynamics type="mechanical_pi"><kp value="1.0"/><ki value="0.5"/><ilimit value="2.0"/></rotor_dynamics>
-            <thrust_model type="fluid_dynamics"><thrust_coeff forward="1.1" reverse="1.0"/><torque_coeff value="0.05"/></thrust_model>
+            <thrust_model type="fluid_dynamics"><thrust_coeff forward="2.3" reverse="1.8"/><torque_coeff value="0.05"/></thrust_model>
         </actuator>
         <!-- SERVO2 MOT2: horizontal stbd, thrust +X, y>0 gives yaw(+) -->
         <actuator name="ThrStbdFwd" type="thruster">
             <link name="Vehicle"/>
-            <origin rpy="0.0 0.0 0.0" xyz="-1.3 0.5 0.0"/>
-            <specs max_setpoint="160.0" inverted_setpoint="false" normalized_setpoint="true"/>
-            <propeller diameter="0.18" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
+            <origin rpy="0.0 0.0 0.0" xyz="-1.3 0.3 0.0"/>
+            <specs max_setpoint="250.0" inverted_setpoint="false" normalized_setpoint="true"/>
+            <propeller diameter="0.20" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
             <rotor_dynamics type="mechanical_pi"><kp value="1.0"/><ki value="0.5"/><ilimit value="2.0"/></rotor_dynamics>
-            <thrust_model type="fluid_dynamics"><thrust_coeff forward="1.1" reverse="1.0"/><torque_coeff value="0.05"/></thrust_model>
+            <thrust_model type="fluid_dynamics"><thrust_coeff forward="2.3" reverse="1.8"/><torque_coeff value="0.05"/></thrust_model>
         </actuator>
         <!-- SERVO3 MOT3: vertical port, thrust +Z (down), y<0 gives roll(+) -->
         <actuator name="ThrVertPort" type="thruster">
