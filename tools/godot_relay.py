@@ -34,14 +34,18 @@ try:
 except Exception:
     load_site = None
 
-SOURCE = "stonefish" if "--source" in sys.argv and sys.argv[sys.argv.index("--source") + 1] == "stonefish" else "gazebo"
+SOURCE = sys.argv[sys.argv.index("--source") + 1] if "--source" in sys.argv else "unified"
 
 
 def make_backend():
     if SOURCE == "stonefish":
         from stonefish_source import StonefishSource
         return StonefishSource()
-    return M.Backend()
+    if SOURCE == "gazebo":
+        return M.Backend()
+    # default: route each vehicle to its best physics engine (all engines in one)
+    from unified_backend import UnifiedBackend
+    return UnifiedBackend()
 
 TELE_ADDR = ("127.0.0.1", 14650)
 CMD_PORT = 14651

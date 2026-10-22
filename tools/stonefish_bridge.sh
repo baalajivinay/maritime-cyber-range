@@ -21,10 +21,18 @@ do_down() {
 }
 [[ "$ACTION" == "down" ]] && { do_down; exit 0; }
 [[ -x "$MCR" && -x "$ARDUSUB" ]] || { echo "[stonefish] MCR or ardusub binary missing"; exit 1; }
-[[ -n "${DISPLAY:-}" ]] || { echo "[stonefish] no \$DISPLAY (Stonefish needs a display)"; exit 1; }
 
-echo "[stonefish] 1) Stonefish physics+render (RTX), FDM on :9002 ..."
-__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia setsid "$MCR" "$SCN" --fdm 9002 >"$RUN/mcr.log" 2>&1 &
+# MCR_HEADLESS=1 runs Stonefish as pure physics (no window) so Godot can be the
+# single renderer (the integrated app.sh path). Otherwise Stonefish opens its own
+# high-fidelity render window on the RTX (needs a display).
+if [[ "${MCR_HEADLESS:-0}" == "1" ]]; then
+  echo "[stonefish] 1) Stonefish physics (headless), FDM on :9002 ..."
+  setsid "$MCR" "$SCN" --fdm 9002 --headless >"$RUN/mcr.log" 2>&1 &
+else
+  [[ -n "${DISPLAY:-}" ]] || { echo "[stonefish] no \$DISPLAY (Stonefish render needs a display; or set MCR_HEADLESS=1)"; exit 1; }
+  echo "[stonefish] 1) Stonefish physics+render (RTX), FDM on :9002 ..."
+  __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia setsid "$MCR" "$SCN" --fdm 9002 >"$RUN/mcr.log" 2>&1 &
+fi
 sleep 6
 echo "[stonefish] 2) ArduSub SITL on the JSON FDM (home $SITE_LAT,$SITE_LON, ExternalNav) ..."
 PARM="$REPO/stonefish/auv150_ardusub.parm"

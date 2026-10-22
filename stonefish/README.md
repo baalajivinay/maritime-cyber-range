@@ -59,7 +59,18 @@ python3 tools/stonefish_control_test.py   # verify active depth/heading/forward 
 echo ramp | nc -u -w1 127.0.0.1 10120     # acoustic spoof ON (ramp = realistic walk-off)
 echo off  | nc -u -w1 127.0.0.1 10120     # spoof OFF (transparent USBL)
 tools/stonefish_bridge.sh down
+
+# MCR_HEADLESS=1 runs Stonefish as pure physics (no window) -- this is how the
+# integrated app uses it, so Godot is the only window:
+MCR_HEADLESS=1 tools/stonefish_bridge.sh up
 ```
+
+## One app, all the physics
+`tools/app.sh` launches the Godot console with every engine integrated: it
+auto-routes each vehicle to its best physics via `tools/unified_backend.py` --
+the AUV-150 onto this Stonefish stack (started headless on demand) and the other
+twins onto the Gazebo + real-data models -- all feeding the one Godot window.
+Force a single engine with `tools/app.sh stonefish` or `tools/app.sh gazebo`.
 Verified end-to-end: ArduSub holds depth/heading on Stonefish's 6-DOF
 hydrodynamics (the combined-physics closed loop), and the acoustic **ramp**
 spoof walks the AUV's believed position steadily off its true Stonefish track

@@ -17,12 +17,15 @@ SOURCE="${1:-gazebo}"
 [[ -x "$GODOT" ]] || { echo "[godot_app] Godot binary not found at $GODOT (set \$GODOT)"; exit 1; }
 [[ -n "${DISPLAY:-}" ]] || { echo "[godot_app] no \$DISPLAY"; exit 1; }
 
+# No arg -> the relay's default "unified" router (auto-routes each vehicle to its
+# best engine and manages the headless Stonefish bridge itself). An explicit
+# source ("stonefish" | "gazebo" | "unified") forces that engine for all vehicles.
 RELAY_ARGS=""
-if [[ "$SOURCE" == "stonefish" ]]; then
-  RELAY_ARGS="--source stonefish"
-  echo "[godot_app] source=stonefish -- Godot will render the running Stonefish physics."
-  pgrep -x MCR >/dev/null || echo "[godot_app] WARNING: MCR (Stonefish) not running; start tools/stonefish_bridge.sh up first."
-fi
+case "${1:-}" in
+  stonefish|gazebo|unified) RELAY_ARGS="--source $1"
+    echo "[godot_app] forcing physics source = $1" ;;
+  *) echo "[godot_app] physics = unified (auto-route per vehicle)" ;;
+esac
 
 echo "[godot_app] starting relay (physics bridge) ..."
 python3 "$REPO/tools/godot_relay.py" $RELAY_ARGS &
