@@ -12,6 +12,12 @@ attacks, the AUV USBL/ExternalNav feed) and speaks JSON/UDP to Godot:
 
 Commands: {"cmd":"boot","site","twin","domain"} | {"cmd":"goto","lat","lon"}
           {"cmd":"arm"|"disarm"|"stop"|"quit"} | {"cmd":"attack","name"}
+
+Sources (pick the physics engine Godot renders):
+  --source gazebo     (default) boots a Gazebo world via mcr_app.Backend
+  --source stonefish  attaches to a running tools/stonefish_bridge.sh stack, so
+                      Godot renders Stonefish's high-fidelity physics (both
+                      softwares combined).
 """
 import json
 import os
@@ -27,6 +33,15 @@ try:
     from scaleup.sites import load_site
 except Exception:
     load_site = None
+
+SOURCE = "stonefish" if "--source" in sys.argv and sys.argv[sys.argv.index("--source") + 1] == "stonefish" else "gazebo"
+
+
+def make_backend():
+    if SOURCE == "stonefish":
+        from stonefish_source import StonefishSource
+        return StonefishSource()
+    return M.Backend()
 
 TELE_ADDR = ("127.0.0.1", 14650)
 CMD_PORT = 14651
@@ -44,7 +59,8 @@ def waves_for(site):
 
 
 def main():
-    be = M.Backend()
+    be = make_backend()
+    print(f"[relay] physics source = {SOURCE}", flush=True)
     rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     rx.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     rx.bind(("127.0.0.1", CMD_PORT))
@@ -63,9 +79,9 @@ def main():
             if c == "boot":
                 site = d.get("site", "kochi")
                 be.teardown()
-                be = M.Backend()
+                be = make_backend()
                 be.boot(site, d["twin"], d.get("domain", "surface"))
-                print(f"[relay] boot {d['twin']} @ {site}", flush=True)
+                print(f"[relay] boot {d['twin']} @ {site} (source={SOURCE})", flush=True)
             elif c == "goto":
                 be.goto(float(d["lat"]), float(d["lon"]))
             elif c == "arm":

