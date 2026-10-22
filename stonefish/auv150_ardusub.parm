@@ -12,17 +12,52 @@ AHRS_EKF_TYPE 3
 GPS_TYPE 0
 SIM_GPS_DISABLE 1
 
-# EKF source set 1: horizontal position/velocity + yaw from ExternalNav,
-# depth from the pressure/baro channel.
+# EKF source set 1 -- realistic AUV navigation split:
+#   horizontal POSITION from ExternalNav (acoustic USBL)  <- this is what the
+#                                                            acoustic spoof forges
+#   HEADING from the compass/INS (a real AUV does NOT get yaw from USBL), and
+#   DEPTH from the pressure sensor.
+# Using the compass for yaw (not ExternalNav) removes the heading instability
+# that the laggy USBL yaw feed was injecting, and is how real AUVs navigate.
 VISO_TYPE 1
 EK3_SRC1_POSXY 6
 EK3_SRC1_VELXY 6
 EK3_SRC1_POSZ 1
-EK3_SRC1_VELZ 6
-EK3_SRC1_YAW 6
-COMPASS_USE 0
+EK3_SRC1_VELZ 0
+EK3_SRC1_YAW 1
+COMPASS_USE 1
 COMPASS_USE2 0
 COMPASS_USE3 0
+
+# Frame: SIMPLEROV_5 (5 thrusters) -- matches the Stonefish auv150.scn layout
+# (2 horizontal forward+yaw, 2 vertical throttle+roll, 1 lateral sway).
+FRAME_CONFIG 6
+
+# Flight modes on the mode channel so we can command MANUAL/STABILIZE/ALT_HOLD.
+# Depth hold (ALT_HOLD) is what we tune: the vertical pair must hold a set depth.
+# Rate-limit the pilot so strong stick inputs cannot build runaway momentum on
+# this low-drag torpedo hull (keeps depth/heading hold robust to how it is driven).
+PILOT_SPEED_DN 60
+PILOT_SPEED_UP 60
+PILOT_ACCEL_Z 40
+
+# Vertical (throttle/depth) controller. Conservative, known-stable ArduSub
+# values -- high gains oscillate on this low-damping hull. Enough to hold
+# against the small residual buoyancy, not enough to ring.
+PSC_POSZ_P 1.0
+PSC_VELZ_P 5.0
+PSC_VELZ_I 0.5
+PSC_ACCZ_P 0.5
+PSC_ACCZ_I 0.1
+
+# Heading (yaw): ArduSub stock gains (stable); cap commanded yaw rate/accel so
+# a hard stick cannot spin the hull faster than the controller can arrest.
+ATC_ANG_YAW_P 2.7
+ATC_RAT_YAW_P 0.18
+ATC_RAT_YAW_I 0.018
+ATC_RAT_YAW_D 0.0
+ATC_ACCEL_Y_MAX 18000
+ACRO_YAW_P 2.5
 
 # Sim-bridge conveniences: relax arming prechecks, no battery failsafe.
 ARMING_CHECK 0

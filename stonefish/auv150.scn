@@ -1,7 +1,14 @@
 <?xml version="1.0"?>
 <!-- Maritime Cyber Range: CSIR-CMERI AUV-150 digital twin in Stonefish.
-     Torpedo hull (~2.6 m), 5 thrusters (surge/heave/sway, matching the real
-     5-DOF layout), DVL/IMU/pressure/USBL/GPS. Environment = Kochi site. -->
+     Torpedo hull (~2.6 m) + fins, near-neutral buoyancy, and 5 thrusters laid
+     out to match ArduSub's SIMPLEROV_5 frame (FRAME_CONFIG=6) so ArduSub can
+     actively control depth/heading/forward:
+       SERVO1 ThrPortFwd  : horizontal, port  -> forward + yaw(-)
+       SERVO2 ThrStbdFwd  : horizontal, stbd  -> forward + yaw(+)
+       SERVO3 ThrVertPort : vertical,  port   -> throttle + roll(+)
+       SERVO4 ThrVertStbd : vertical,  stbd   -> throttle + roll(-)
+       SERVO5 ThrLat      : lateral          -> sway
+     Sensors: DVL/IMU/pressure/GPS. Environment = Kochi site. -->
 <scenario>
     <solver>
         <multithreading max_physics_threads="8"/>
@@ -23,15 +30,20 @@
 
     <materials>
         <material name="Neutral" density="1000.0" restitution="0.5"/>
+        <material name="Shell" density="1019.0" restitution="0.5"/>
         <material name="Fiberglass" density="1500.0" restitution="0.3"/>
         <material name="Rock" density="3000.0" restitution="0.8"/>
         <friction_table>
             <friction material1="Neutral" material2="Neutral" static="0.5" dynamic="0.2"/>
+            <friction material1="Shell" material2="Shell" static="0.5" dynamic="0.2"/>
             <friction material1="Fiberglass" material2="Fiberglass" static="0.5" dynamic="0.2"/>
             <friction material1="Rock" material2="Rock" static="0.9" dynamic="0.7"/>
+            <friction material1="Shell" material2="Neutral" static="0.5" dynamic="0.2"/>
             <friction material1="Fiberglass" material2="Neutral" static="0.5" dynamic="0.2"/>
-            <friction material1="Rock" material2="Fiberglass" static="0.6" dynamic="0.4"/>
+            <friction material1="Rock" material2="Shell" static="0.6" dynamic="0.4"/>
             <friction material1="Rock" material2="Neutral" static="0.6" dynamic="0.4"/>
+            <friction material1="Rock" material2="Fiberglass" static="0.6" dynamic="0.4"/>
+            <friction material1="Fiberglass" material2="Shell" static="0.5" dynamic="0.2"/>
         </friction_table>
     </materials>
 
@@ -53,91 +65,86 @@
             <external_part name="Hull" type="cylinder" physics="submerged" buoyant="true">
                 <dimensions radius="0.25" height="2.6"/>
                 <origin rpy="0.0 1.5708 0.0" xyz="0.0 0.0 0.0"/>
-                <material name="Fiberglass"/>
+                <material name="Shell"/>
                 <look name="yellow"/>
                 <compound_transform rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
             </external_part>
-            <external_part name="FinTop" type="box" physics="submerged" buoyant="false">
-                <dimensions xyz="0.5 0.03 0.35"/>
+            <external_part name="FinTop" type="box" physics="submerged" buoyant="true">
+                <dimensions xyz="0.55 0.03 0.45"/>
                 <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-                <material name="Fiberglass"/>
+                <material name="Shell"/>
                 <look name="dark"/>
                 <compound_transform rpy="0.0 0.0 0.0" xyz="-1.1 0.0 -0.28"/>
             </external_part>
-            <external_part name="FinBot" type="box" physics="submerged" buoyant="false">
-                <dimensions xyz="0.5 0.03 0.35"/>
+            <external_part name="FinBot" type="box" physics="submerged" buoyant="true">
+                <dimensions xyz="0.55 0.03 0.45"/>
                 <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-                <material name="Fiberglass"/>
+                <material name="Shell"/>
                 <look name="dark"/>
                 <compound_transform rpy="0.0 0.0 0.0" xyz="-1.1 0.0 0.28"/>
             </external_part>
-            <external_part name="FinPort" type="box" physics="submerged" buoyant="false">
-                <dimensions xyz="0.5 0.35 0.03"/>
+            <external_part name="FinPort" type="box" physics="submerged" buoyant="true">
+                <dimensions xyz="0.55 0.45 0.03"/>
                 <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-                <material name="Fiberglass"/>
+                <material name="Shell"/>
                 <look name="dark"/>
                 <compound_transform rpy="0.0 0.0 0.0" xyz="-1.1 -0.28 0.0"/>
             </external_part>
-            <external_part name="FinStbd" type="box" physics="submerged" buoyant="false">
-                <dimensions xyz="0.5 0.35 0.03"/>
+            <external_part name="FinStbd" type="box" physics="submerged" buoyant="true">
+                <dimensions xyz="0.55 0.45 0.03"/>
                 <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-                <material name="Fiberglass"/>
+                <material name="Shell"/>
                 <look name="dark"/>
                 <compound_transform rpy="0.0 0.0 0.0" xyz="-1.1 0.28 0.0"/>
             </external_part>
-            <internal_part name="Ballast" type="cylinder" physics="submerged" buoyant="true">
-                <dimensions radius="0.12" height="2.0"/>
-                <origin rpy="0.0 1.5708 0.0" xyz="0.0 0.0 0.0"/>
-                <material name="Neutral"/>
-                <look name="dark"/>
-                <compound_transform rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-            </internal_part>
         </base_link>
 
-        <!-- 5 thrusters mapped to ArduSub SERVO1..SERVO5 by the FDM bridge -->
-        <actuator name="ThrSurge" type="thruster">
+        <!-- SIMPLEROV_5 (FRAME_CONFIG=6) thruster layout -->
+        <!-- SERVO1 MOT1: horizontal port, thrust +X (forward), y<0 gives yaw(-).
+             Mounted on a short outrigger (y=-0.5) for a usable yaw moment arm. -->
+        <actuator name="ThrPortFwd" type="thruster">
             <link name="Vehicle"/>
-            <origin rpy="0.0 0.0 0.0" xyz="-1.35 0.0 0.0"/>
-            <specs max_setpoint="104.7" inverted_setpoint="false" normalized_setpoint="true"/>
-            <propeller diameter="0.18" right="true">
-                <mesh filename="propeller.obj" scale="1.0"/>
-                <material name="Neutral"/>
-                <look name="propeller"/>
-            </propeller>
+            <origin rpy="0.0 0.0 0.0" xyz="-1.3 -0.5 0.0"/>
+            <specs max_setpoint="160.0" inverted_setpoint="false" normalized_setpoint="true"/>
+            <propeller diameter="0.18" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
             <rotor_dynamics type="mechanical_pi"><kp value="1.0"/><ki value="0.5"/><ilimit value="2.0"/></rotor_dynamics>
-            <thrust_model type="fluid_dynamics"><thrust_coeff forward="0.48" reverse="0.48"/><torque_coeff value="0.05"/></thrust_model>
+            <thrust_model type="fluid_dynamics"><thrust_coeff forward="1.1" reverse="1.0"/><torque_coeff value="0.05"/></thrust_model>
         </actuator>
-        <actuator name="ThrHeaveBow" type="thruster">
+        <!-- SERVO2 MOT2: horizontal stbd, thrust +X, y>0 gives yaw(+) -->
+        <actuator name="ThrStbdFwd" type="thruster">
             <link name="Vehicle"/>
-            <origin rpy="0.0 1.5708 0.0" xyz="0.9 0.0 0.0"/>
-            <specs max_setpoint="104.7" inverted_setpoint="false" normalized_setpoint="true"/>
-            <propeller diameter="0.12" right="true"><mesh filename="propeller.obj" scale="0.7"/><material name="Neutral"/><look name="propeller"/></propeller>
+            <origin rpy="0.0 0.0 0.0" xyz="-1.3 0.5 0.0"/>
+            <specs max_setpoint="160.0" inverted_setpoint="false" normalized_setpoint="true"/>
+            <propeller diameter="0.18" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
             <rotor_dynamics type="mechanical_pi"><kp value="1.0"/><ki value="0.5"/><ilimit value="2.0"/></rotor_dynamics>
-            <thrust_model type="fluid_dynamics"><thrust_coeff forward="0.48" reverse="0.48"/><torque_coeff value="0.05"/></thrust_model>
+            <thrust_model type="fluid_dynamics"><thrust_coeff forward="1.1" reverse="1.0"/><torque_coeff value="0.05"/></thrust_model>
         </actuator>
-        <actuator name="ThrHeaveStern" type="thruster">
+        <!-- SERVO3 MOT3: vertical port, thrust +Z (down), y<0 gives roll(+) -->
+        <actuator name="ThrVertPort" type="thruster">
             <link name="Vehicle"/>
-            <origin rpy="0.0 1.5708 0.0" xyz="-0.9 0.0 0.0"/>
-            <specs max_setpoint="104.7" inverted_setpoint="false" normalized_setpoint="true"/>
-            <propeller diameter="0.12" right="true"><mesh filename="propeller.obj" scale="0.7"/><material name="Neutral"/><look name="propeller"/></propeller>
+            <origin rpy="0.0 -1.5708 0.0" xyz="0.0 -0.25 0.0"/>
+            <specs max_setpoint="160.0" inverted_setpoint="false" normalized_setpoint="true"/>
+            <propeller diameter="0.18" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
             <rotor_dynamics type="mechanical_pi"><kp value="1.0"/><ki value="0.5"/><ilimit value="2.0"/></rotor_dynamics>
-            <thrust_model type="fluid_dynamics"><thrust_coeff forward="0.48" reverse="0.48"/><torque_coeff value="0.05"/></thrust_model>
+            <thrust_model type="fluid_dynamics"><thrust_coeff forward="1.1" reverse="1.0"/><torque_coeff value="0.05"/></thrust_model>
         </actuator>
-        <actuator name="ThrSwayBow" type="thruster">
+        <!-- SERVO4 MOT4: vertical stbd, thrust +Z, y>0 gives roll(-) -->
+        <actuator name="ThrVertStbd" type="thruster">
             <link name="Vehicle"/>
-            <origin rpy="1.5708 0.0 0.0" xyz="0.9 0.0 0.0"/>
-            <specs max_setpoint="104.7" inverted_setpoint="false" normalized_setpoint="true"/>
-            <propeller diameter="0.12" right="true"><mesh filename="propeller.obj" scale="0.7"/><material name="Neutral"/><look name="propeller"/></propeller>
+            <origin rpy="0.0 -1.5708 0.0" xyz="0.0 0.25 0.0"/>
+            <specs max_setpoint="160.0" inverted_setpoint="false" normalized_setpoint="true"/>
+            <propeller diameter="0.18" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
             <rotor_dynamics type="mechanical_pi"><kp value="1.0"/><ki value="0.5"/><ilimit value="2.0"/></rotor_dynamics>
-            <thrust_model type="fluid_dynamics"><thrust_coeff forward="0.48" reverse="0.48"/><torque_coeff value="0.05"/></thrust_model>
+            <thrust_model type="fluid_dynamics"><thrust_coeff forward="1.1" reverse="1.0"/><torque_coeff value="0.05"/></thrust_model>
         </actuator>
-        <actuator name="ThrSwayStern" type="thruster">
+        <!-- SERVO5 MOT5: lateral, thrust +Y (sway) -->
+        <actuator name="ThrLat" type="thruster">
             <link name="Vehicle"/>
-            <origin rpy="1.5708 0.0 0.0" xyz="-0.9 0.0 0.0"/>
-            <specs max_setpoint="104.7" inverted_setpoint="false" normalized_setpoint="true"/>
-            <propeller diameter="0.12" right="true"><mesh filename="propeller.obj" scale="0.7"/><material name="Neutral"/><look name="propeller"/></propeller>
+            <origin rpy="0.0 0.0 1.5708" xyz="0.0 0.0 0.0"/>
+            <specs max_setpoint="160.0" inverted_setpoint="false" normalized_setpoint="true"/>
+            <propeller diameter="0.18" right="true"><mesh filename="propeller.obj" scale="1.0"/><material name="Neutral"/><look name="propeller"/></propeller>
             <rotor_dynamics type="mechanical_pi"><kp value="1.0"/><ki value="0.5"/><ilimit value="2.0"/></rotor_dynamics>
-            <thrust_model type="fluid_dynamics"><thrust_coeff forward="0.48" reverse="0.48"/><torque_coeff value="0.05"/></thrust_model>
+            <thrust_model type="fluid_dynamics"><thrust_coeff forward="1.1" reverse="1.0"/><torque_coeff value="0.05"/></thrust_model>
         </actuator>
 
         <sensor name="dynamics" type="odometry" rate="100.0"><link name="Vehicle"/><origin rpy="0 0 0" xyz="0 0 0"/></sensor>

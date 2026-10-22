@@ -22,7 +22,9 @@ struct ServoPacket {
 };
 #pragma pack(pop)
 
-static const char* THR_NAMES[5] = {"ThrSurge", "ThrHeaveBow", "ThrHeaveStern", "ThrSwayBow", "ThrSwayStern"};
+// SERVO1..SERVO5 (ArduSub SIMPLEROV_5 / FRAME_CONFIG=6) -> Stonefish thruster names.
+// pwm[0]=MOT1..pwm[4]=MOT5, matched to the auv150.scn thruster layout.
+static const char* THR_NAMES[5] = {"ThrPortFwd", "ThrStbdFwd", "ThrVertPort", "ThrVertStbd", "ThrLat"};
 
 MCRManager::MCRManager(sf::Scalar sps, const std::string& scnPath, bool fdm, int fdmPort)
  : SimulationManager(sps, sf::Solver::SI, sf::CollisionFilter::EXCLUSIVE),
@@ -93,14 +95,27 @@ void MCRManager::fdmStep(sf::Scalar dt)
     if(got)
     {
         static bool first = true;
-        if(first) { cInfo("MCR-FDM: ArduSub connected -- receiving servo PWM, driving thrusters."); first = false; }
+        // Stonefish registers robot actuators under the "<robot>/<name>" namespace
+        // (e.g. "AUV150/ThrPortFwd"), so we must look them up with that prefix.
+        sf::Robot* r0 = getRobot((unsigned int)0);
+        std::string prefix = r0 ? (r0->getName() + "/") : std::string();
+        if(first)
+        {
+            int found = 0;
+            for(int i = 0; i < 5; ++i)
+                if(getActuator(prefix + THR_NAMES[i])) ++found;
+            cInfo("MCR-FDM: ArduSub connected -- driving %d/5 thrusters (namespace '%s').",
+                  found, prefix.c_str());
+            first = false;
+        }
         for(int i = 0; i < 5; ++i)
         {
-            sf::Thruster* t = dynamic_cast<sf::Thruster*>(getActuator(THR_NAMES[i]));
+            sf::Thruster* t = dynamic_cast<sf::Thruster*>(getActuator(prefix + THR_NAMES[i]));
             if(t)
             {
                 sf::Scalar s = (sf::Scalar(sp.pwm[i]) - 1500.0) / 400.0;  // -1..1
-                if(s > 1.0) s = 1.0; if(s < -1.0) s = -1.0;
+                if(s > 1.0) s = 1.0;
+                if(s < -1.0) s = -1.0;
                 t->setSetpoint(s);
             }
         }
