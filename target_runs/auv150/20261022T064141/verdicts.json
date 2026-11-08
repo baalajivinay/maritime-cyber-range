@@ -1,0 +1,80 @@
+{
+  "target": "auv150",
+  "domain": "underwater",
+  "run_ts": "20261022T064141",
+  "site": "visakhapatnam",
+  "git_sha": "4fbe2c6",
+  "baseline": {
+    "lat": null,
+    "lon": null,
+    "mode": "MANUAL",
+    "armed": false,
+    "servo1": 1500,
+    "servo3": 1500,
+    "servo5": 1500,
+    "heartbeats": 5
+  },
+  "attacks": {
+    "c2_replay": {
+      "mode_change": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "ALT_HOLD",
+          "requested_mode": "ALT_HOLD",
+          "post_mode": "ALT_HOLD",
+          "heartbeats_seen_after": 6
+        }
+      },
+      "rc_override": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "armed_confirmed": true,
+          "armed_during_injection": true,
+          "watched_channel": "servo5",
+          "pre_servo5": 1500,
+          "peak_servo5_during_injection": 1300,
+          "forged_throttle_pwm": 1700
+        }
+      }
+    },
+    "acoustic_spoof": {
+      "vulnerability": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "method": "vision_position_estimate",
+          "endpoint": "tcp:127.0.0.1:5762",
+          "odom_topic": "/model/bluerov2/odometry",
+          "expected_offset_m": 50.0,
+          "bearing_deg": 90.0,
+          "pre_lat": 17.68,
+          "pre_lon": 83.33,
+          "peak_delta_m": 50.01
+        }
+      }
+    },
+    "gps_spoof": {
+      "vulnerability": {
+        "verdict": "N/A",
+        "evidence": {
+          "reason": "N/A while submerged -- GPS RF does not penetrate water (the AUV has no GPS fix underwater)"
+        }
+      }
+    },
+    "ais_spoof": {
+      "vulnerability": {
+        "verdict": "N/A",
+        "evidence": {
+          "reason": "N/A -- submerged AUV, no AIS transponder in the water column"
+        }
+      }
+    }
+  },
+  "detectability": {
+    "alerts_generated": 6,
+    "by_attack_type": {
+      "c2_replay": 4,
+      "acoustic_spoof": 2
+    }
+  }
+}

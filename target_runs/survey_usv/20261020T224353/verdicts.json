@@ -1,0 +1,48 @@
+{
+  "target": "survey_usv",
+  "domain": "surface",
+  "run_ts": "20261020T224353",
+  "site": "mumbai",
+  "git_sha": "c199576",
+  "baseline": {
+    "lat": 9.900253,
+    "lon": 76.1997688,
+    "mode": "MANUAL",
+    "armed": true,
+    "servo1": 1500,
+    "servo3": 1500,
+    "servo5": 0,
+    "heartbeats": 5
+  },
+  "attacks": {
+    "c2_replay": {
+      "mode_change": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "HOLD",
+          "requested_mode": "HOLD",
+          "post_mode": "HOLD",
+          "heartbeats_seen_after": 6
+        }
+      },
+      "rc_override": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "armed_confirmed": true,
+          "armed_during_injection": true,
+          "watched_channel": "servo3",
+          "pre_servo3": 1500,
+          "peak_servo3_during_injection": 1680,
+          "forged_throttle_pwm": 1700
+        }
+      }
+    }
+  },
+  "detectability": {
+    "alerts_generated": 3,
+    "by_attack_type": {
+      "c2_replay": 3
+    }
+  }
+}

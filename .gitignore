@@ -4,6 +4,7 @@ ros2_ws/log/
 *.log
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Run-time artifacts these scripts regenerate every session -- not source
 *.tlog
@@ -20,9 +21,18 @@ evidence/live_session_alerts.jsonl
 # Personal/understanding-only docs -- not part of the shipped package
 *.docx
 
-# Built application artifacts (multi-GB) -- ignore the binaries, keep the docs
-dist/*
-!dist/README.md
-!dist/SHA256SUMS.txt
+# Built application artifacts (multi-GB) -- packages are built on demand by
+# app/build-*.sh into dist/; never commit the outputs.
+dist/
 *.run
 mcr-image.tar.gz
+
+# Godot editor/import cache -- auto-regenerated when the project is opened.
+godot_app/.godot/
+
+# External upstream build trees, consolidated under the project (moved here from
+# $HOME so everything lives in one folder; compat symlinks remain at $HOME).
+# These are multi-GB third-party checkouts (ArduPilot, ardupilot_gazebo,
+# SITL_Models, the dave AUV ws, the ardupilot build venv) with their own .git --
+# never commit them; they are rebuilt by sim_config/install_*.sh.
+external/

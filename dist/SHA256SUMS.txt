@@ -1,2 +1,0 @@
-4c8d42b3b194a874ac4552748418ba7df87228093e7197355f189661a2bf6243  MaritimeCyberRange-linux.run
-488bbd32878644f41df1a774d309c6ea5bd8d9c69178b8292b06edab74a772bf  MaritimeCyberRange-windows.zip

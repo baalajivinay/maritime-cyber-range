@@ -1,0 +1,6 @@
+{"t": 1792630312.1525037, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "underwater", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1792630315.2283788, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "underwater", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1792630318.307, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "underwater", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1792630321.3737326, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "underwater", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1792630331.3721285, "detector": "AcousticDivergenceDetector", "attack_type": "acoustic_spoof", "domain": "underwater", "detail": "believed position drifting 0.15 m/s while UNPROPELLED (disarmed) -- external-nav/acoustic spoof"}
+{"t": 1792630334.3731031, "detector": "AcousticDivergenceDetector", "attack_type": "acoustic_spoof", "domain": "underwater", "detail": "believed position drifting 0.19 m/s while UNPROPELLED (disarmed) -- external-nav/acoustic spoof"}

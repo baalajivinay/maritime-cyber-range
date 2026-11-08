@@ -28,9 +28,9 @@
 // <mavlink/ardupilotmega/mavlink.h> instead.
 #include <MAVLink.h>
 
-static const char* WIFI_SSID = "mcr-range";
-static const char* WIFI_PASS = "range-test-only";
-static const char* TARGET_IP = "192.168.4.1";   // host running mav_bridge/SITL
+static const char* WIFI_SSID = "Amritaaw";             // host's hotspot (PSK); 2.4 GHz, ESP32-compatible
+static const char* WIFI_PASS = "vforvinay";            // hotspot password (temporary, test only)
+static const char* TARGET_IP = "10.142.171.123"; // host running mav_bridge/SITL (this machine, wlp0s20f3)
 static const uint16_t TARGET_PORT = 14550;       // a mav_bridge fan-out / SITL out
 static const uint8_t  TARGET_SYS = 1, TARGET_COMP = 1;
 

@@ -74,3 +74,5 @@ wall_ts,attack_type,description
 1786549245.0315294,inject_disarm,forged disarm
 1786549752.4779146,inject_disarm,forged disarm
 1786549927.203478,inject_rc_override,"throttle=1900, steering=1500, 8.0s"
+1790270777.5688825,inject_disarm,forged disarm
+1790631089.1142628,inject_mode,forged mode change to HOLD

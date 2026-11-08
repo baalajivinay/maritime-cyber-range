@@ -193,10 +193,14 @@ func _build_vehicle(kind: String):
 	vehicle = Node3D.new()
 	add_child(vehicle)
 	vkind = kind
-	if domain == "underwater":
-		_make_torpedo(kind == "auv150")
-	else:
-		_make_boat(kind == "interceptor_usv")
+	match kind:
+		"auv150": _make_auv(3.4, 0.42, true)
+		"maya_auv": _make_auv(1.9, 0.19, false)
+		"interceptor_usv": _make_interceptor()
+		"survey_usv": _make_catamaran()
+		_:
+			if domain == "underwater": _make_auv(2.4, 0.3, false)
+			else: _make_interceptor()
 
 func _mat(c: Color, rough := 0.5, metal := 0.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -214,43 +218,161 @@ func _add(mesh: Mesh, mat: StandardMaterial3D, pos: Vector3, rot := Vector3.ZERO
 	mi.scale = scl
 	vehicle.add_child(mi)
 
-func _make_boat(longhull: bool):
-	var L := 7.0 if longhull else 5.0
-	var W := 1.7 if longhull else 2.2
-	var hull := BoxMesh.new(); hull.size = Vector3(W, 1.0, L)
-	_add(hull, _mat(Color(0.86, 0.88, 0.91), 0.45), Vector3(0, 0, 0))
-	var bow := PrismMesh.new(); bow.size = Vector3(W, 1.0, L * 0.35)
-	_add(bow, _mat(Color(0.82, 0.84, 0.88), 0.45), Vector3(0, 0, L * 0.5), Vector3(90, 180, 0))
-	var deck := BoxMesh.new(); deck.size = Vector3(W * 0.8, 0.1, L * 0.8)
-	_add(deck, _mat(Color(0.7, 0.73, 0.77), 0.5), Vector3(0, 0.55, 0))
-	var cab := BoxMesh.new(); cab.size = Vector3(W * 0.6, 0.7, L * 0.3)
-	_add(cab, _mat(Color(0.8, 0.82, 0.85), 0.4), Vector3(0, 0.9, -L * 0.05))
-	if longhull:
-		var ws := BoxMesh.new(); ws.size = Vector3(W * 0.5, 0.4, 0.08)
-		_add(ws, _mat(Color(0.25, 0.4, 0.55, 1.0), 0.1, 0.0), Vector3(0, 1.1, L * 0.1))
-	var mast := BoxMesh.new(); mast.size = Vector3(0.1, 1.4, 0.1)
-	_add(mast, _mat(Color(0.5, 0.52, 0.55), 0.6), Vector3(0, 1.8, -L * 0.05))
-	# waterline stripe
-	var wl := BoxMesh.new(); wl.size = Vector3(W + 0.04, 0.12, L)
-	_add(wl, _mat(Color(0.12, 0.3, 0.45), 0.3), Vector3(0, 0.0, 0))
+func _emit_mat(c: Color, e: float, rough := 0.4) -> StandardMaterial3D:
+	var m := _mat(c, rough, 0.0)
+	m.emission_enabled = true
+	m.emission = c
+	m.emission_energy_multiplier = e
+	return m
 
-func _make_torpedo(big: bool):
-	var r := 0.42 if big else 0.28
-	var L := 2.6 if big else 2.0
-	var body := CapsuleMesh.new(); body.radius = r; body.height = L
-	_add(body, _mat(Color(0.93, 0.66, 0.16), 0.4), Vector3(0, 0, 0), Vector3(90, 0, 0))
-	var nose := CylinderMesh.new(); nose.top_radius = 0.0; nose.bottom_radius = r; nose.height = r * 2.0
-	_add(nose, _mat(Color(0.2, 0.22, 0.25), 0.3), Vector3(0, 0, L * 0.5), Vector3(90, 0, 0))
-	for k in range(4):
-		var fin := BoxMesh.new(); fin.size = Vector3(0.05, r * 2.0, L * 0.2)
-		_add(fin, _mat(Color(0.75, 0.52, 0.12), 0.4), Vector3(0, 0, -L * 0.33), Vector3(0, 0, 45 + 90 * k))
-	var prop := CylinderMesh.new(); prop.top_radius = r * 0.35; prop.bottom_radius = r * 0.35; prop.height = 0.12
-	_add(prop, _mat(Color(0.3, 0.3, 0.33), 0.6, 0.4), Vector3(0, 0, -L * 0.5), Vector3(90, 0, 0))
+# surface of revolution about the Z (length) axis; profile = [Vector2(z, radius), ...]
+func _revolved(profile: Array, radial := 26) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in range(profile.size() - 1):
+		var zA: float = profile[i].x
+		var rA: float = profile[i].y
+		var zB: float = profile[i + 1].x
+		var rB: float = profile[i + 1].y
+		for j in range(radial):
+			var a0 := TAU * float(j) / float(radial)
+			var a1 := TAU * float(j + 1) / float(radial)
+			var pA0 := Vector3(cos(a0) * rA, sin(a0) * rA, zA)
+			var pA1 := Vector3(cos(a1) * rA, sin(a1) * rA, zA)
+			var pB0 := Vector3(cos(a0) * rB, sin(a0) * rB, zB)
+			var pB1 := Vector3(cos(a1) * rB, sin(a1) * rB, zB)
+			st.add_vertex(pA0); st.add_vertex(pB0); st.add_vertex(pB1)
+			st.add_vertex(pA0); st.add_vertex(pB1); st.add_vertex(pA1)
+	st.generate_normals()
+	return st.commit()
+
+# loft a series of equal-size closed rings (Array of Array[Vector3])
+func _lofted(sections: Array) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n: int = sections[0].size()
+	for i in range(sections.size() - 1):
+		var A: Array = sections[i]
+		var B: Array = sections[i + 1]
+		for j in range(n):
+			var k := (j + 1) % n
+			st.add_vertex(A[j]); st.add_vertex(B[j]); st.add_vertex(B[k])
+			st.add_vertex(A[j]); st.add_vertex(B[k]); st.add_vertex(A[k])
+	st.generate_normals()
+	return st.commit()
+
+# ---- AUV (torpedo): smooth ogive hull + X-fins + ducted prop; big => AUV-150 ----
+func _make_auv(L: float, r: float, big: bool):
+	var hz := L * 0.5
+	var profile := [Vector2(-hz, 0.0), Vector2(-hz + r * 0.45, r * 0.6), Vector2(-hz + L * 0.22, r)]
+	var nose0 := hz - L * 0.30
+	profile.append(Vector2(nose0, r))
+	var steps := 7
+	for i in range(1, steps + 1):
+		var t := float(i) / float(steps)
+		profile.append(Vector2(lerp(nose0, hz, t), r * sqrt(max(0.0, 1.0 - t * t))))
+	var hull_mat := _emit_mat(Color(0.96, 0.74, 0.11), 0.30, 0.45)   # high-vis survey yellow
+	_add(_revolved(profile, 30), hull_mat, Vector3.ZERO)
+	var dark := _mat(Color(0.12, 0.13, 0.15), 0.35, 0.2)
+	# nose sonar cap
+	_add(_revolved([Vector2(hz - r * 0.35, r * 0.78), Vector2(hz - r * 0.05, r * 0.5), Vector2(hz + 0.01, 0.0)], 24), dark, Vector3.ZERO)
+	# dark instrument bands
+	for zf in [-0.05, 0.12]:
+		var band := CylinderMesh.new(); band.top_radius = r * 1.01; band.bottom_radius = r * 1.01; band.height = r * 0.18
+		_add(band, dark, Vector3(0, 0, L * zf), Vector3(90, 0, 0))
+	# X-tail fins
+	var fin_mat := _mat(Color(0.2, 0.22, 0.26), 0.4, 0.1)
+	for kk in range(4):
+		var fin := BoxMesh.new(); fin.size = Vector3(0.03, r * 2.3, L * 0.13)
+		_add(fin, fin_mat, Vector3(0, 0, -hz + L * 0.15), Vector3(0, 0, 45 + 90 * kk))
+	# ducted aft propeller
+	var duct := TorusMesh.new(); duct.inner_radius = r * 0.5; duct.outer_radius = r * 0.72
+	_add(duct, _mat(Color(0.25, 0.26, 0.29), 0.5, 0.4), Vector3(0, 0, -hz + 0.02), Vector3(90, 0, 0))
+	var hub := CylinderMesh.new(); hub.top_radius = r * 0.16; hub.bottom_radius = r * 0.16; hub.height = r * 0.5
+	_add(hub, _mat(Color(0.3, 0.3, 0.33), 0.5, 0.5), Vector3(0, 0, -hz + 0.04), Vector3(90, 0, 0))
+	for kk in range(4):
+		var bl := BoxMesh.new(); bl.size = Vector3(r * 0.5, 0.02, r * 0.14)
+		_add(bl, _mat(Color(0.33, 0.33, 0.36), 0.5, 0.4), Vector3(0, 0, -hz + 0.04), Vector3(0, 0, 45 + 90 * kk))
 	if big:
-		for k in range(4):
-			var nac := CapsuleMesh.new(); nac.radius = 0.1; nac.height = 0.6
-			var ang := deg_to_rad(90 * k)
-			_add(nac, _mat(Color(0.78, 0.55, 0.14), 0.4), Vector3(cos(ang) * r * 1.2, sin(ang) * r * 1.2, L * 0.1), Vector3(90, 0, 0))
+		# AUV-150: lateral thruster pods + dorsal sensor mast/beacon
+		for s in [-1.0, 1.0]:
+			var pod := _revolved([Vector2(-0.3, 0.0), Vector2(-0.24, 0.08), Vector2(0.24, 0.08), Vector2(0.3, 0.0)], 16)
+			_add(pod, dark, Vector3(s * (r + 0.15), -r * 0.2, -hz + L * 0.34), Vector3(0, 90, 0))
+		var mast := BoxMesh.new(); mast.size = Vector3(0.05, r * 0.9, 0.1)
+		_add(mast, fin_mat, Vector3(0, r + r * 0.4, hz - L * 0.4))
+		var bcn := SphereMesh.new(); bcn.radius = 0.055; bcn.height = 0.11
+		_add(bcn, _emit_mat(Color(1.0, 0.3, 0.22), 3.0), Vector3(0, r + r * 0.95, hz - L * 0.4))
+
+# ---- interceptor USV: sleek naval monohull, lofted hull + console + mast ----
+func _make_interceptor():
+	var L := 7.5
+	var hb := 0.95
+	var outline := [
+		Vector2(-1.00, 0.55), Vector2(-1.00, 0.08), Vector2(-0.9, -0.10),
+		Vector2(-0.5, -0.30), Vector2(0.0, -0.36), Vector2(0.5, -0.30),
+		Vector2(0.9, -0.10), Vector2(1.00, 0.08), Vector2(1.00, 0.55), Vector2(0.0, 0.55)
+	]
+	var stations := [
+		[-L * 0.5, 0.82, 0.0], [-L * 0.25, 1.0, 0.03], [0.0, 1.0, 0.06],
+		[L * 0.25, 0.8, 0.17], [L * 0.42, 0.45, 0.35], [L * 0.5, 0.06, 0.52]
+	]
+	var sections := []
+	for stn in stations:
+		var ring := []
+		for p in outline:
+			ring.append(Vector3(p.x * hb * stn[1], p.y + stn[2], stn[0]))
+		sections.append(ring)
+	_add(_lofted(sections), _mat(Color(0.32, 0.37, 0.43), 0.4), Vector3.ZERO)        # naval grey
+	# transom plate (stern cap)
+	var transom := BoxMesh.new(); transom.size = Vector3(hb * 1.64, 0.9, 0.05)
+	_add(transom, _mat(Color(0.28, 0.32, 0.37), 0.4), Vector3(0, 0.1, -L * 0.5))
+	# deck
+	var deck := BoxMesh.new(); deck.size = Vector3(hb * 1.5, 0.06, L * 0.74)
+	_add(deck, _mat(Color(0.74, 0.77, 0.80), 0.5), Vector3(0, 0.5, -L * 0.03))
+	# waterline accent stripe
+	var stripe := BoxMesh.new(); stripe.size = Vector3(hb * 2.04, 0.1, L * 0.92)
+	_add(stripe, _mat(Color(0.74, 0.16, 0.16), 0.3), Vector3(0, 0.14, 0))
+	# center console + raked windshield
+	var cab := BoxMesh.new(); cab.size = Vector3(hb * 1.1, 0.6, L * 0.18)
+	_add(cab, _mat(Color(0.26, 0.3, 0.36), 0.4), Vector3(0, 0.82, -L * 0.02))
+	var ws := BoxMesh.new(); ws.size = Vector3(hb * 1.0, 0.34, 0.06)
+	_add(ws, _mat(Color(0.3, 0.45, 0.6), 0.1, 0.1), Vector3(0, 1.02, L * 0.07), Vector3(-22, 0, 0))
+	# radar mast + scanner
+	var mast := BoxMesh.new(); mast.size = Vector3(0.08, 1.1, 0.08)
+	_add(mast, _mat(Color(0.12, 0.13, 0.15), 0.4), Vector3(0, 1.5, -L * 0.08))
+	var radar := BoxMesh.new(); radar.size = Vector3(0.75, 0.06, 0.16)
+	_add(radar, _mat(Color(0.8, 0.82, 0.85), 0.5), Vector3(0, 2.05, -L * 0.08))
+
+# ---- survey USV: twin-hull catamaran + survey gear + downward sonar pole ----
+func _make_catamaran():
+	var L := 4.4
+	var sep := 1.05
+	var r := 0.3
+	var hull_mat := _emit_mat(Color(0.95, 0.66, 0.11), 0.12, 0.4)     # survey orange
+	var dark := _mat(Color(0.12, 0.13, 0.15), 0.4)
+	var hz := L * 0.5
+	var prof := [Vector2(-hz, 0.0), Vector2(-hz + 0.3, r * 0.7), Vector2(-hz + L * 0.2, r), Vector2(hz - L * 0.32, r)]
+	var n0 := hz - L * 0.32
+	for i in range(1, 6):
+		var t := float(i) / 5.0
+		prof.append(Vector2(lerp(n0, hz, t), r * sqrt(max(0.0, 1.0 - t * t))))
+	for s in [-1.0, 1.0]:
+		_add(_revolved(prof, 22), hull_mat, Vector3(s * sep, -0.05, 0))
+		var hub := CylinderMesh.new(); hub.top_radius = 0.06; hub.bottom_radius = 0.06; hub.height = 0.1
+		_add(hub, _mat(Color(0.3, 0.3, 0.33), 0.5, 0.5), Vector3(s * sep, -0.05, -hz + 0.02), Vector3(90, 0, 0))
+	# cross deck
+	var deck := BoxMesh.new(); deck.size = Vector3(sep * 2 + r * 1.6, 0.12, L * 0.62)
+	_add(deck, _mat(Color(0.2, 0.22, 0.26), 0.5), Vector3(0, r * 0.9, 0))
+	# equipment box + antenna mast
+	var eq := BoxMesh.new(); eq.size = Vector3(sep * 0.9, 0.5, L * 0.28)
+	_add(eq, _mat(Color(0.8, 0.82, 0.85), 0.5), Vector3(0, r * 0.9 + 0.3, -L * 0.02))
+	var mast := BoxMesh.new(); mast.size = Vector3(0.06, 0.8, 0.06)
+	_add(mast, dark, Vector3(0, r * 0.9 + 0.9, -L * 0.08))
+	# downward multibeam sonar pole between the hulls
+	var pole := CylinderMesh.new(); pole.top_radius = 0.05; pole.bottom_radius = 0.05; pole.height = 0.7
+	_add(pole, dark, Vector3(0, -r * 0.6, L * 0.05))
+	var head := BoxMesh.new(); head.size = Vector3(0.18, 0.12, 0.25)
+	_add(head, _mat(Color(0.15, 0.16, 0.18), 0.4, 0.2), Vector3(0, -r * 1.0, L * 0.05))
 
 # ---------------- per-frame ----------------
 func _process(delta):
@@ -277,6 +399,10 @@ func _poll_net():
 		if d.has("twin") and d["twin"] != vkind:
 			_build_vehicle(d["twin"])
 			_apply_domain_visuals()
+			# keep the attack menu in sync with the (possibly new) domain, so a
+			# backend-driven twin switch matches what the menu-driven path does
+			if not labels.is_empty() and labels.has("_atk_base_y"):
+				_rebuild_attack_buttons(int(get_viewport().size.x - 300 + 16), labels["_atk_base_y"])
 		if d.has("waves") and ocean_mat:
 			ocean_mat.set_shader_parameter("hs", d["waves"].get("hs", 1.2))
 			ocean_mat.set_shader_parameter("tp", d["waves"].get("tp", 7.0))

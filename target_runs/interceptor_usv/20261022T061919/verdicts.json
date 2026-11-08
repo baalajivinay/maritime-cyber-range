@@ -1,0 +1,61 @@
+{
+  "target": "interceptor_usv",
+  "domain": "surface",
+  "run_ts": "20261022T061919",
+  "site": "kochi",
+  "git_sha": "4fbe2c6",
+  "baseline": {
+    "lat": 9.9,
+    "lon": 76.1999999,
+    "mode": "MANUAL",
+    "armed": false,
+    "servo1": 1500,
+    "servo3": 1500,
+    "servo5": 0,
+    "heartbeats": 5
+  },
+  "attacks": {
+    "c2_replay": {
+      "mode_change": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "HOLD",
+          "requested_mode": "HOLD",
+          "post_mode": "HOLD",
+          "heartbeats_seen_after": 6
+        }
+      },
+      "rc_override": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "armed_confirmed": true,
+          "armed_during_injection": true,
+          "watched_channel": "servo3",
+          "pre_servo3": 1500,
+          "peak_servo3_during_injection": 1680,
+          "forged_throttle_pwm": 1700
+        }
+      }
+    },
+    "gps_spoof": {
+      "vulnerability": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_lat": 9.9,
+          "pre_lon": 76.2000453,
+          "method": "fdm_relay",
+          "peak_delta_m": 55.94,
+          "expected_offset_m": 50.0
+        }
+      }
+    }
+  },
+  "detectability": {
+    "alerts_generated": 6,
+    "by_attack_type": {
+      "c2_replay": 3,
+      "gps_spoof": 3
+    }
+  }
+}

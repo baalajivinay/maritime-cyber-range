@@ -5,123 +5,71 @@
 [![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic-F58113?style=flat-square)](https://gazebosim.org/)
 [![ArduPilot](https://img.shields.io/badge/ArduPilot-SITL%2FMAVLink-CC2936?style=flat-square)](https://ardupilot.org/)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
-[![Flask-SocketIO](https://img.shields.io/badge/Flask--SocketIO-black?style=flat-square&logo=flask&logoColor=white)](https://flask-socketio.readthedocs.io/)
 
-Real-physics vehicle simulation (ArduPilot SITL + Gazebo) with GPS/AIS/C2
-attack modules, a live monitoring dashboard, and a CLI resilience-testing
-tool, for **both surface (MASS) and underwater (AUV) vehicles** --
-dual-domain by design, not surface-only, both tracks verified end-to-end.
+A simulation-based cyber range for autonomous maritime vehicles. Real
+ArduPilot/ArduSub autopilot firmware (SITL) is coupled to a real physics engine
+(Gazebo, or the higher-fidelity Stonefish underwater engine) to form **digital
+twins** of real, named Indian platforms — two USVs (an autonomous fast
+interceptor and a coastal-survey catamaran) and two AUVs (CSIR's **AUV-150**
+and **Maya**) — then attacked with GPS spoofing, AIS spoofing, C2 hijack, and
+acoustic-positioning spoofing. A Godot 3D console, a live browser dashboard, and
+a vehicle-agnostic CLI tester report, per attack, whether the vehicle was fooled
+and whether a blind monitor would have caught it.
 
-Four self-contained digital twins under `vehicle_twins/` are ready to run
-today -- copies of real, individually-named Navy/research hardware (the
-Textron Fleet-class CUSV and the REMUS-100 AUV), one vulnerable and one
-GCS-link-hardened per pair -- see
-[`docs/TWIN_DEMO_GUIDE.md`](docs/TWIN_DEMO_GUIDE.md) for the full
-step-by-step (boot, attack, read the verdict, tear down) and
-[`docs/TARGET_TESTING.md`](docs/TARGET_TESTING.md) for `tools/test_target.py`,
-the vehicle-agnostic resilience tester this project's real deliverable is
-built around (point it at any ArduPilot SITL, not just these 4 twins). See
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the component map, port
-topology, and running order, and
-[`docs/EXECUTION_STATE.md`](docs/EXECUTION_STATE.md) for the dated,
-blow-by-blow build history (start there for full project context).
+The range runs at real **Indian naval waters** — **Kochi** (default), Mumbai,
+and Visakhapatnam — each reproducing that water body's cited oceanography
+(density, ocean current, sound-speed profile). Pick the twin and the site from
+the console/dashboard header; everything relocates and re-physics around the choice.
 
-## Documentation map
+## Documentation — just two files
 
-| Start here | For |
+| Read | For |
 |---|---|
-| [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md) | **Read this first if you're new** (including a fresh AI session) -- the complete, current-state picture of the whole project in one file: why it exists, how it's built, every component, all 4 twins' verified results, known issues, how to run everything. |
-| [`docs/TWIN_DEMO_GUIDE.md`](docs/TWIN_DEMO_GUIDE.md) | Boot a twin, run attacks, read the verdict, tear down -- the fastest path to seeing the whole product work. |
-| [`docs/TARGET_TESTING.md`](docs/TARGET_TESTING.md) | `tools/test_target.py`, the vehicle-agnostic resilience tester -- point it at any ArduPilot SITL, not just this repo's own twins. |
-| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Docker packaging (`./launch.sh`) -- no native ROS/Gazebo/ArduPilot install needed. |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Component map, port topology, vehicle-profile schema. |
-| [`docs/VEHICLE_TWIN_CONTRACT.md`](docs/VEHICLE_TWIN_CONTRACT.md) | **Bring your own vehicle**: the `vehicle_twins/<name>/` folder contract (`profile.json`/`target.json` schemas, model.sdf requirements) and how to validate, boot, attack, and score it in this environment. |
-| [`docs/DESIGNER_GUIDE.md`](docs/DESIGNER_GUIDE.md) | Deeper reference: attacks, detection/scoring internals, adding a new vehicle. |
-| [`docs/NEW_AUV_QUICKSTART.md`](docs/NEW_AUV_QUICKSTART.md) | Full worked example: clone an existing AUV model into a genuinely new one. |
-| [`docs/EXECUTION_STATE.md`](docs/EXECUTION_STATE.md) | Dated, blow-by-blow build history -- read this to resume in-flight work. |
+| **[`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md)** | The complete picture: what it is, the architecture, the multi-site framework, the 4 twins, verified results, verdict methodology, known limits. **Start here.** |
+| **[`docs/RUNNING.md`](docs/RUNNING.md)** | Every command: run the operator app, run from source, build a shareable package, pick a twin/site, fire attacks, run the resilience tester, reproduce the attack matrix, scripted scenarios, native setup. |
 
-## Layout
-
-- `vehicle_twins/` -- the 4 ready-to-run digital twins (2 MASS + 2 AUV,
-  one vulnerable/one hardened each); each is a self-contained folder
-  (`profile.json`, `target.json`, `README.md`, `hardened.parm` where
-  applicable) -- see `docs/TWIN_DEMO_GUIDE.md`
-- `sim_config/` -- SDF vehicle models/worlds, install/build/start shell
-  scripts
-- `profiles/` -- one JSON file per vehicle (home coords, AIS identity,
-  ports, applicable attack set); select which one is active with the
-  `MCR_VEHICLE_PROFILE` env var (defaults to `wamv`) -- see
-  `docs/ARCHITECTURE.md`'s "Vehicle profiles" section for the schema
-- `attacks/` -- GPS spoofing, AIS spoofing, C2 replay/injection, autonomous
-  mission demo
-- `detection/` -- blind rule-based detectors + offline scoring
-- `nodes/` -- AIS emulator, monitoring dashboard (Flask-SocketIO + Leaflet)
-- `tools/` -- orchestration: `run_sim.sh`/`run_demo.sh`/`run_vehicle.sh`
-  (boot), `test_target.py` (resilience tester, one target), `test_all_4.py`
-  (boot → attack → tear down every twin in turn, aggregates each one's
-  `verdicts.json`), `validate_vehicle.py`
-- `targets/` -- connection-only target configs for `test_target.py` against
-  *any* ArduPilot SITL (not tied to this repo's own vehicle models)
-- `ros2_ws/` -- colcon workspace (`src/vrx`, the vendored WAM-V/VRX
-  simulator, is a git submodule; `build/`/`install/`/`log/` are gitignored
-  and must be regenerated locally, see below)
-- `deploy/` -- Docker packaging (`Dockerfile`, `entrypoint.sh`) -- see
-  `docs/DEPLOY.md`
-- `attack_logs/` -- ground-truth CSVs written by each attack module
-- `target_runs/` -- per-run verdicts/evidence from `test_target.py`
-- `evidence/` -- screenshots/video/logs from demo runs
-- `constants.py` -- loads the active vehicle profile and exposes it as the
-  single source of truth every script imports (home coordinates, AIS MMSI,
-  every port)
-
-## First-time setup
-
-```bash
-git clone --recurse-submodules <this repo>
-# or, if already cloned:
-git submodule update --init --recursive
-
-sim_config/install_ros2.sh          # ROS 2 Jazzy
-sim_config/install_gazebo.sh        # Gazebo Harmonic
-sim_config/install_ardupilot.sh     # ArduPilot SITL build prerequisites
-sim_config/build_ardupilot.sh       # builds ardurover + ardusub
-sim_config/install_sim_assets.sh    # ArduPilotPlugin, SITL_Models, BlueROV2 (dave)
-cd ros2_ws && colcon build && cd .. # builds the vendored VRX (WAM-V) workspace
-```
-
-No GPU required for the CLI resilience tester or the web dashboard; a GPU
-desktop is only needed to view the Gazebo 3D window itself
-(`tools/view_3d.sh`).
-
-Don't want to install any of this natively? See
-[`docs/DEPLOY.md`](docs/DEPLOY.md) for the one-command Docker path
-(`./launch.sh build && ./launch.sh up`) instead.
+(`docs/EXECUTION_STATE.md` is the dated engineering log; `docs/reference/`
+holds the founding brief, research PDFs, and the slide deck.)
 
 ## Quick start
 
-Boot the vulnerable CUSV twin, run the full attack suite against it, read
-the verdict, tear down:
+**Operator application (Godot 3D console)** — needs a graphical display:
 
 ```bash
-tools/run_vehicle.sh vehicle_twins/mass_vulnerable_cusv up
-python3 tools/test_target.py --target vehicle_twins/mass_vulnerable_cusv/target.json
-tools/run_vehicle.sh vehicle_twins/mass_vulnerable_cusv down
+tools/app.sh                             # pick a site + twin, watch, attack
 ```
 
-Prints a verdict per attack, then writes
-`target_runs/mass_vulnerable_cusv/<timestamp>/verdicts.json`. Want to watch
-it happen live in a browser instead of the terminal? Swap `run_vehicle.sh`
-for `run_demo.sh` and open `http://localhost:8080` -- see
-[`docs/TWIN_DEMO_GUIDE.md`](docs/TWIN_DEMO_GUIDE.md) for the full walkthrough,
-all 4 twins, and how to read the results.
+**From source (Docker build, browser dashboard):**
 
-## Action items from the pre-consolidation audit
+```bash
+./launch.sh build && ./launch.sh up      # then open http://localhost:8080
+```
 
-- **Rotate the machine's sudo password.** It was previously hardcoded in
-  plaintext in `build_vrx.sh`/`install_ardupilot.sh` (now removed from both
-  -- they prompt interactively instead). If this password is still in use
-  anywhere, change it.
-- After this reorg, `ros2_ws/build`, `ros2_ws/install`, and `ros2_ws/log`
-  were intentionally not carried over (they contain absolute paths baked
-  in by CMake that would silently break if moved) -- run `colcon build`
-  fresh inside `ros2_ws/` before launching the sim.
+**Headless resilience test of one twin:**
+
+```bash
+tools/run_vehicle.sh vehicle_twins/interceptor_usv up
+python3 tools/test_target.py --target vehicle_twins/interceptor_usv/target.json
+tools/run_vehicle.sh vehicle_twins/interceptor_usv down
+```
+
+A shareable, toolchain-free package (`.run` / `.zip`) is **built on demand** via
+`app/build-*.sh` — the repo no longer ships a prebuilt copy.
+
+## Layout
+
+- `vehicle_twins/` — the 4 ready-to-run twins (2 USV + 2 AUV: `interceptor_usv`, `survey_usv`, `auv150`, `maya_auv`), self-contained folders.
+- `stonefish/` — the Stonefish underwater engine integration (AUV-150 scenario + C++ runner).
+- `godot_app/` — the Godot 4 operator console.
+- `scaleup/` — the multi-site framework (`sites/` cited ocean physics) + the scripted scenario engine (`scenario/`) + the additive generic/real-physics layer.
+- `attacks/` — GPS / AIS / C2 / acoustic attack modules.
+- `detection/` — blind rule-based detectors.
+- `nodes/monitor/` — the Flask + Socket.IO + Leaflet browser dashboard; `nodes/app/` — the legacy pygame console.
+- `tools/` — orchestration (`app`/`run_sim`/`run_demo`/`run_vehicle`/`stonefish_bridge`), `test_target.py`, `test_all_4.py`, `run_scenario.py`, site utilities.
+- `profiles/` / `targets/` — vehicle and target configs.
+- `sim_config/` — Gazebo SDF models/worlds + install/build scripts.
+- `hardware/` — ESP32 hardware-in-the-loop firmware (C2 node + NMEA spoofer).
+- `deploy/` — Docker packaging (`Dockerfile`, `Dockerfile.dev`).
+- `app/` — single-file Ubuntu `.run` + Windows `.zip` builders.
+- `external/` — consolidated upstream build trees (ArduPilot, Gazebo plugin, SITL_Models, DAVE, build venv); gitignored, with compat symlinks at `$HOME`.
+- `constants.py` — the profile + site loader every script imports.

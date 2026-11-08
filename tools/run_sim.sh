@@ -94,7 +94,14 @@ fail() { echo "[run_sim:$PROFILE] FAIL: $*" >&2; exit 1; }
 
 spawn() { # spawn <logfile> <cmd...>  -> detached, PID echoed
   local lf="$1"; shift
-  setsid bash -c "$*" >"$lf" 2>&1 < /dev/null &
+  # stdbuf -oL -eL: force line-buffered output. Without it, output redirected
+  # to a file (not a TTY) is fully block-buffered, so a process that crashes
+  # early (e.g. gz sim failing to resolve a model:// URI) can exit with its
+  # diagnostic lines still sitting in the buffer -- the log is left empty and
+  # a real, fast failure looks identical to "still starting up" to anything
+  # tailing it (observed live: gz sim's "Unable to find uri[model://cusv]"
+  # error was completely invisible in world.log until this fix).
+  setsid stdbuf -oL -eL bash -c "$*" >"$lf" 2>&1 < /dev/null &
   echo $!
 }
 
@@ -204,7 +211,14 @@ do_up() {
     log "starting gz world '$WORLD_SDF' (density source: $(basename "$WORLD_LAUNCH"))..."
     spawn "$LOG_DIR/world.log" "gz sim -v4 -s -r '$WORLD_LAUNCH'" > "$RUN_DIR/world.pid"
   fi
-  wait_gz_model "$MODEL_NAME" 60 || fail "Gazebo model '$MODEL_NAME' never appeared (world didn't boot)"
+  # 100s, not 60: gz-transport's pub/sub discovery (what `gz topic -l` reads)
+  # can take noticeably longer to register a freshly-started world's topics
+  # right after a PREVIOUS world was torn down with SIGKILL (no graceful
+  # deregistration, so peers' discovery caches take a beat to catch up) --
+  # observed live, back-to-back Gazebo twin boots (e.g. interceptor_usv then
+  # survey_usv) intermittently needed more than 60s even though the world
+  # process itself was healthy and well under 60s on a cold start.
+  wait_gz_model "$MODEL_NAME" 100 || fail "Gazebo model '$MODEL_NAME' never appeared (world didn't boot)"
   log "  world up, model '$MODEL_NAME' present [OK]"
 
   # The VRX world can't <include> our ground-station model, so spawn it at

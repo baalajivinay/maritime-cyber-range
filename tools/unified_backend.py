@@ -17,6 +17,7 @@ Backend, delegating to whichever engine is active, and switches engines when the
 operator switches to a vehicle that belongs to the other one.
 """
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -30,6 +31,48 @@ from stonefish_source import StonefishSource
 
 # Twins that have a tuned Stonefish scenario (stonefish/<twin>.scn) + bridge.
 STONEFISH_TWINS = {"auv150"}
+
+# Ports the Gazebo-routed underwater twins (ArduSub SITL via run_sim.sh) and
+# the Stonefish bridge's ArduSub BOTH bind by default (ArduPilot SITL always
+# uses 5760/5762/5763 for its GCS/SERIAL links regardless of vehicle, and this
+# project's own FDM relay for Gazebo underwater twins defaults to UDP 9002 --
+# see vehicle_twins/maya_auv/profile.json "fdm_relay_bind"). Switching from one
+# engine to the other without waiting for these to actually free lets the new
+# stack silently fail to bind them (the old process is still shutting down),
+# which previously showed up as "boot: connected + position fix" timing out
+# with no error anywhere (mav_bridge/ArduSub looked alive; they just couldn't
+# reach each other on the ports they expected).
+_SHARED_TCP_PORTS = (5760, 5762, 5763)
+_SHARED_UDP_PORTS = (9002,)
+
+
+def _port_free(port, kind):
+    fam = socket.SOCK_STREAM if kind == "tcp" else socket.SOCK_DGRAM
+    s = socket.socket(socket.AF_INET, fam)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind(("0.0.0.0", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _wait_ports_free(timeout=20.0, log=None):
+    """Poll until the ports the NEXT engine needs are actually free (or give
+    up after `timeout` and proceed anyway -- best effort, logged)."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        busy = [p for p in _SHARED_TCP_PORTS if not _port_free(p, "tcp")]
+        busy += [p for p in _SHARED_UDP_PORTS if not _port_free(p, "udp")]
+        if not busy:
+            return True
+        time.sleep(0.5)
+    if log:
+        log(f"WARNING: ports still busy after {timeout:.0f}s ({busy}) -- "
+            f"booting anyway, the new stack may fail to bind them")
+    return False
 
 
 class UnifiedBackend:
@@ -110,17 +153,50 @@ class UnifiedBackend:
             self._bridge_started = False
 
     # ---- lifecycle ----------------------------------------------------------
+    def _teardown_current(self):
+        """Tear down whatever engine/twin is currently running and BLOCK until
+        the ports (and processes) the next stack needs are actually free.
+
+        Both engines' own teardown is fire-and-forget: Backend.teardown()
+        (Gazebo) launches `run_vehicle.sh down` via subprocess.Popen and
+        returns immediately, without waiting for the `gz sim` WORLD SERVER
+        process (not just the SITL binary) to actually exit -- and two
+        different Gazebo twins can share the identical world SDF/world_name
+        (e.g. interceptor_usv and survey_usv both use cusv_world.sdf /
+        "surface_harbor"), so a still-dying old world can block the new one
+        from starting at all. Observed live: interceptor_usv -> survey_usv
+        consistently failed to boot (150s timeout, empty gz world.log) right
+        after interceptor_usv tore down, even though its own ArduSub ports
+        were confirmed free -- the stale `gz sim` process was the blocker,
+        not the ports tools/run_sim.sh's own SITL serial links use.
+        tools/teardown_all.sh is this project's already-proven comprehensive
+        reaper (kills gz sim, ardusub/ardurover, mav_bridge.py and the rest,
+        explicitly including the world-server process); run it SYNCHRONOUSLY
+        here instead of relying on the async per-engine teardown alone."""
+        if self.engine is None:
+            return
+        try:
+            self.engine.teardown()
+        except Exception:
+            pass
+        subprocess.run(["bash", os.path.join(REPO, "tools", "teardown_all.sh")],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if self.engine_kind == "stonefish":
+            self._stop_stonefish_bridge()
+        self.engine = None
+        _wait_ports_free(timeout=20.0, log=self._log)
+        # gz-transport's pub/sub discovery (what `gz topic -l` reads to decide
+        # a Gazebo world has booted) takes a beat to flush a SIGKILLed world's
+        # stale registration -- raw ports being free (checked above) doesn't
+        # guarantee discovery has caught up yet. A short settle here is much
+        # cheaper than occasionally eating tools/run_sim.sh's full model-wait
+        # timeout on the next boot (see its wait_gz_model call).
+        time.sleep(3.0)
+
     def boot(self, site, twin, domain):
         kind = "stonefish" if twin in STONEFISH_TWINS else "gazebo"
-        # switching engines -> tear the old one (and its bridge) down first
-        if self.engine is not None and self.engine_kind != kind:
-            try:
-                self.engine.teardown()
-            except Exception:
-                pass
-            if self.engine_kind == "stonefish":
-                self._stop_stonefish_bridge()
-            self.engine = None
+        if self.engine is not None:
+            self._teardown_current()
 
         if kind == "stonefish":
             if not self._ensure_stonefish_bridge(site):
@@ -134,7 +210,9 @@ class UnifiedBackend:
             self._boot_gazebo(site, twin, domain)
 
     def _boot_gazebo(self, site, twin, domain):
-        # a fresh Gazebo Backend per boot (its own teardown is per-twin)
+        # _teardown_current() (called from boot() above) already tore down and
+        # port-waited for any previous engine; this only still fires for the
+        # Stonefish-bridge-failed fallback path, where nothing is up yet.
         if self.engine is not None and self.engine_kind == "gazebo":
             try:
                 self.engine.teardown()

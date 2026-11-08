@@ -21,6 +21,11 @@ dist
 *.run
 *.zip
 mcr-image.tar.gz
+# external upstream build trees consolidated under the repo (6+ GB, host-built):
+# the image builds its OWN ArduPilot/Gazebo/VRX, so these must never enter the
+# build context -- that would balloon it by gigabytes. (Compat symlinks for the
+# native run path live at $HOME; see .gitignore.)
+external
 # heavy source docs not needed at runtime (keep the .md guides; drop the binaries)
 docs/*.pdf
 docs/*.docx
