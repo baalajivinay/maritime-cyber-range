@@ -20,6 +20,11 @@ import time
 
 from pymavlink import mavutil
 
+try:
+    from scaleup.sites import load_site
+except Exception:
+    load_site = None
+
 # ArduSub in the Stonefish stack: SERIAL2 TCP (free; 5760=mav_bridge, 5762=extnav)
 MAVLINK = os.environ.get("MCR_STONEFISH_MAVLINK", "tcp:127.0.0.1:5763")
 EXTNAV_CTRL = ("127.0.0.1", 10120)   # stonefish_extnav.py spoof toggle
@@ -63,6 +68,13 @@ class StonefishSource:
         self.site = site or "kochi"
         self.twin = twin or "auv150"
         self.domain = "underwater"
+        if load_site:
+            try:
+                s = load_site(self.site)
+                if s and s.position:
+                    self.home = tuple(s.position)
+            except Exception:
+                pass
         self.booting = True
         self.log(f"attaching to Stonefish stack ({MAVLINK}) ...")
         self.conn = mavutil.mavlink_connection(MAVLINK, source_system=255)
@@ -98,6 +110,8 @@ class StonefishSource:
                 if t == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0):
                     self.state["lat"] = msg.lat / 1e7
                     self.state["lon"] = msg.lon / 1e7
+                    if abs(self.state["lat"] - self.home[0]) > 0.5:
+                        self.home = (self.state["lat"], self.state["lon"])
                     if msg.hdg != 65535:
                         self.state["hdg"] = msg.hdg / 100.0
                     self.state["depth"] = max(0.0, -msg.relative_alt / 1000.0)

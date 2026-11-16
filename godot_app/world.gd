@@ -720,7 +720,9 @@ func _start():
 	_rebuild_attack_buttons(int(get_viewport().size.x - 300 + 16), labels["_atk_base_y"])
 	_send({"cmd": "boot", "site": SITES[sel_site], "twin": tw["id"], "domain": tw["dom"]})
 	menu.visible = false
-	cam_f = 0.0; cam_target = 0.0; dest_rel = null; setting_dest = false
+	cam_f = 0.0; cam_target = 0.0; dest_rel = null; dest_world = null; setting_dest = false
+	if dest_marker:
+		dest_marker.visible = false
 
 # ---------------- input (destination picking) ----------------
 func _unhandled_input(ev):
@@ -735,7 +737,7 @@ func _pick_destination(mp: Vector2):
 	var hit: Vector3
 	if abs(dir.y) > 0.02:
 		var t: float = (plane_y - from.y) / dir.y
-		if t > 0.0 and t < 3500.0:
+		if t > 0.0 and t < 600.0:
 			hit = from + dir * t
 		else:
 			hit = from + dir * 250.0
@@ -745,8 +747,8 @@ func _pick_destination(mp: Vector2):
 	var d := Vector2(hit.x - veh_pos.x, (-hit.z) - (-veh_pos.z))
 	if d.length() < 10.0:
 		d = Vector2(sin(deg_to_rad(heading)), cos(deg_to_rad(heading))) * 120.0
-	elif d.length() > 3000.0:
-		d = d.normalized() * 3000.0
+	elif d.length() > 500.0:
+		d = d.normalized() * 500.0
 	dest_rel = d
 	dest_world = Vector3(veh_pos.x + d.x, plane_y, veh_pos.z - d.y)
 	if dest_marker:
