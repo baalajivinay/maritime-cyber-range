@@ -1532,7 +1532,7 @@ Legend: [x] done · [~] in progress · [ ] not started
     plan's 2-day buffer (unused), real-hardware support, a "legitimate
     GPS_INPUT bridge" for testing gps_input against a real-physics reference
     vehicle simultaneously, fixing the ArduSub channel-mapping gap itself.
-  - Full rationale/design history: `~/.claude/plans/crystalline-frolicking-thompson.md`.
+  - Full rationale/design history: documented in project execution logs.
 - 2026-08-07 (evening): **PIVOT** -- the project's primary deliverable is now
   a vehicle-agnostic resilience-testing TOOL (point it at any ArduPilot
   vehicle, ours or someone else's, and get a vulnerability/detectability
@@ -1541,8 +1541,7 @@ Legend: [x] done · [~] in progress · [ ] not started
   `targets/`, `tools/test_target.py`, `tools/validate_target.py`. Phase 0+1
   done and verified live against 3 independent ArduPilot instances
   (commit 564caf5). Along the way, root-caused and fixed the C2 RC-override
-  bug noted just below (commit adae412). Full plan at
-  `~/.claude/plans/crystalline-frolicking-thompson.md`. Phases 2-5 (AIS +
+  bug noted just below (commit adae412). Full plan documented in design logs. Phases 2-5 (AIS +
   detectability, GPS_INPUT injection, unified report, docs) remain.
 - 2026-08-07: Dashboard upgrade -- /cmd/report now renders the same rich
   precision/recall/FP-rate/latency + overhead tables as generate_report.py

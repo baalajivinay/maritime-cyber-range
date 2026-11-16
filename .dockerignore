@@ -33,4 +33,3 @@ docs/*.pptx
 docs/examples
 # editor / OS cruft
 .DS_Store
-.claude
