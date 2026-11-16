@@ -42,6 +42,11 @@ var sel_twin := 0
 var active_attack := ""
 
 const SITES := ["kochi", "mumbai", "visakhapatnam"]
+const SITE_COORDS := {
+	"kochi": Vector2(9.9, 76.2),
+	"mumbai": Vector2(18.95, 72.8),
+	"visakhapatnam": Vector2(17.7, 83.3)
+}
 const TWINS := [
 	{"id": "interceptor_usv", "dom": "surface", "name": "Fast Interceptor USV"},
 	{"id": "survey_usv", "dom": "surface", "name": "Coastal Survey USV"},
@@ -451,6 +456,12 @@ func _poll_net():
 		booting = d.get("booting", false)
 		if d.has("home"):
 			home = Vector2(d["home"][0], d["home"][1])
+		if d.has("lat") and d["lat"] != null:
+			var tlat: float = float(d["lat"])
+			var tlon: float = float(d["lon"])
+			if abs(tlat - home.x) > 0.5:
+				home = Vector2(tlat, tlon)
+				veh_pos = Vector3.ZERO
 		if d.has("domain") and d["domain"] != domain:
 			domain = d["domain"]
 		if d.has("twin") and d["twin"] != vkind:
@@ -715,10 +726,14 @@ func _build_menu():
 func _start():
 	var tw = TWINS[sel_twin]
 	domain = tw["dom"]
+	var sname: String = SITES[sel_site]
+	if SITE_COORDS.has(sname):
+		home = SITE_COORDS[sname]
+	veh_pos = Vector3.ZERO
 	_build_vehicle(tw["id"])
 	_apply_domain_visuals()
 	_rebuild_attack_buttons(int(get_viewport().size.x - 300 + 16), labels["_atk_base_y"])
-	_send({"cmd": "boot", "site": SITES[sel_site], "twin": tw["id"], "domain": tw["dom"]})
+	_send({"cmd": "boot", "site": sname, "twin": tw["id"], "domain": tw["dom"]})
 	menu.visible = false
 	cam_f = 0.0; cam_target = 0.0; dest_rel = null; dest_world = null; setting_dest = false
 	if dest_marker:
