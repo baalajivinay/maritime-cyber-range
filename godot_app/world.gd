@@ -35,6 +35,7 @@ var seabed: MeshInstance3D
 var snow: GPUParticles3D
 
 var hud: Control
+var panel: Panel
 var labels := {}
 var menu: Control
 var sel_site := 0
@@ -586,39 +587,61 @@ func _build_hud():
 	add_child(layer)
 	hud = Control.new()
 	hud.set_anchors_preset(Control.PRESET_FULL_RECT)
-	# CRITICAL: a full-rect Control defaults to MOUSE_FILTER_STOP and would
-	# swallow every click across the whole screen -- blocking the 3D destination
-	# raycast (_unhandled_input) and the menu. IGNORE lets clicks through; the
-	# Button children keep their own STOP filter so they still work.
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(hud)
-	var panel := Panel.new()
-	panel.position = Vector2(get_viewport().size.x - 300, 0)
-	panel.size = Vector2(300, get_viewport().size.y)
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	panel = Panel.new()
+	panel.anchor_left = 1.0
+	panel.anchor_top = 0.0
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = -300
+	panel.offset_top = 0
+	panel.offset_right = 0
+	panel.offset_bottom = 0
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	hud.add_child(panel)
-	var px := panel.position.x + 16
+
 	labels["title"] = _lbl(hud, "MARITIME CYBER RANGE", Vector2(18, 12), 16, Color(0.8, 0.9, 1.0))
-	labels["status"] = _lbl(hud, "IDLE", Vector2(get_viewport().size.x - 110, 14), 13, Color(0.9, 0.8, 0.5))
-	var y := 20
+	labels["status"] = _lbl(panel, "IDLE", Vector2(16, 10), 13, Color(0.9, 0.8, 0.5))
+
+	var px := 16
+	var y := 30
 	for k in ["LAT", "LON", "HDG", "SOG", "DEPTH", "MODE", "ARMED", "DEST"]:
-		_lbl(hud, k, Vector2(px, y), 11, Color(0.55, 0.62, 0.70))
-		labels[k] = _lbl(hud, "--", Vector2(px + 72, y), 13)
+		_lbl(panel, k, Vector2(px, y), 11, Color(0.55, 0.62, 0.70))
+		labels[k] = _lbl(panel, "--", Vector2(px + 72, y), 13)
 		y += 22
 	y += 10
-	_btn(hud, "ARM", Vector2(px, y), Vector2(84, 30), func(): _send({"cmd": "arm"}))
-	_btn(hud, "DISARM", Vector2(px + 92, y), Vector2(84, 30), func(): _send({"cmd": "disarm"}))
-	_btn(hud, "SWITCH", Vector2(px + 184, y), Vector2(84, 30), func(): menu.visible = true)
+	_btn(panel, "ARM", Vector2(px, y), Vector2(84, 30), func(): _send({"cmd": "arm"}))
+	_btn(panel, "DISARM", Vector2(px + 92, y), Vector2(84, 30), func(): _send({"cmd": "disarm"}))
+	_btn(panel, "SWITCH", Vector2(px + 184, y), Vector2(84, 30), func(): menu.visible = true)
 	y += 38
-	_btn(hud, "SET DESTINATION", Vector2(px, y), Vector2(268, 30), func(): setting_dest = not setting_dest)
+	_btn(panel, "SET DESTINATION", Vector2(px, y), Vector2(268, 30), func(): setting_dest = not setting_dest)
 	y += 42
-	labels["atk_y"] = _lbl(hud, "ATTACKS", Vector2(px, y), 11, Color(0.55, 0.62, 0.70))
+	labels["atk_y"] = _lbl(panel, "ATTACKS", Vector2(px, y), 11, Color(0.55, 0.62, 0.70))
 	y += 20
-	labels["_atk_base"] = Label.new(); labels["_atk_base_y"] = y   # store base for attack buttons rebuilt per domain
+	labels["_atk_base"] = Label.new()
+	labels["_atk_base_y"] = y   # store base for attack buttons rebuilt per domain
 	_rebuild_attack_buttons(px, y)
-	# event/status line
-	labels["evt"] = _lbl(hud, "", Vector2(px, get_viewport().size.y - 60), 12, Color(0.7, 0.8, 0.85))
-	_btn(hud, "STOP & QUIT", Vector2(px, get_viewport().size.y - 36), Vector2(268, 28), func(): _quit())
+
+	# event/status line & quit button anchored to bottom of panel
+	var el := _lbl(panel, "", Vector2(px, 0), 12, Color(0.7, 0.8, 0.85))
+	el.anchor_top = 1.0
+	el.anchor_bottom = 1.0
+	el.offset_top = -74
+	el.offset_bottom = -46
+	el.offset_left = 16
+	el.offset_right = 284
+	el.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	labels["evt"] = el
+
+	var qb := _btn(panel, "STOP & QUIT", Vector2(px, 0), Vector2(268, 28), func(): _quit())
+	qb.anchor_top = 1.0
+	qb.anchor_bottom = 1.0
+	qb.offset_top = -40
+	qb.offset_bottom = -12
+	qb.offset_left = 16
+	qb.offset_right = 284
 
 var atk_buttons := []
 func _rebuild_attack_buttons(px: int, y0: int):
@@ -629,10 +652,10 @@ func _rebuild_attack_buttons(px: int, y0: int):
 		else ["GPS spoof", "C2 mode", "C2 override", "AIS ghost"])
 	var y := y0
 	for a in atks:
-		var b := _btn(hud, a, Vector2(px, y), Vector2(268, 30), _attack_cb(a))
+		var b := _btn(panel, a, Vector2(px, y), Vector2(268, 30), _attack_cb(a))
 		atk_buttons.append(b)
 		y += 34
-	var sb := _btn(hud, "STOP ATTACK", Vector2(px, y), Vector2(268, 28), func(): _send({"cmd": "stop"}))
+	var sb := _btn(panel, "STOP ATTACK", Vector2(px, y), Vector2(268, 28), func(): _send({"cmd": "stop"}))
 	atk_buttons.append(sb)
 
 func _attack_cb(name: String) -> Callable:
@@ -705,22 +728,35 @@ func _build_menu():
 	menu = Control.new()
 	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(menu)
-	var bg := ColorRect.new(); bg.color = Color(0.05, 0.07, 0.09, 0.96)
+	var bg := ColorRect.new()
+	bg.color = Color(0.05, 0.07, 0.09, 0.96)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	menu.add_child(bg)
-	_lbl(menu, "MARITIME CYBER RANGE", Vector2(80, 70), 24, Color(0.5, 0.9, 0.6))
-	_lbl(menu, "Select a test site and a vehicle, then START RUN.", Vector2(80, 110), 14, Color(0.6, 0.7, 0.75))
-	_lbl(menu, "SITE", Vector2(80, 160), 12, Color(0.55, 0.62, 0.70))
+
+	var m_box := Control.new()
+	m_box.anchor_left = 0.5
+	m_box.anchor_right = 0.5
+	m_box.anchor_top = 0.5
+	m_box.anchor_bottom = 0.5
+	m_box.offset_left = -400
+	m_box.offset_right = 400
+	m_box.offset_top = -250
+	m_box.offset_bottom = 250
+	menu.add_child(m_box)
+
+	_lbl(m_box, "MARITIME CYBER RANGE", Vector2(0, 0), 24, Color(0.5, 0.9, 0.6))
+	_lbl(m_box, "Select a test site and a vehicle, then START RUN.", Vector2(0, 40), 14, Color(0.6, 0.7, 0.75))
+	_lbl(m_box, "SITE", Vector2(0, 90), 12, Color(0.55, 0.62, 0.70))
 	for i in SITES.size():
-		var b := _btn(menu, SITES[i].capitalize(), Vector2(80 + i * 200, 185), Vector2(180, 40),
+		var b := _btn(m_box, SITES[i].capitalize(), Vector2(i * 220, 115), Vector2(200, 40),
 			_pick_site.bind(i))
 		site_btns.append(b)
-	_lbl(menu, "VEHICLE", Vector2(80, 245), 12, Color(0.55, 0.62, 0.70))
+	_lbl(m_box, "VEHICLE", Vector2(0, 175), 12, Color(0.55, 0.62, 0.70))
 	for i in TWINS.size():
-		var b := _btn(menu, TWINS[i]["name"], Vector2(80 + (i % 2) * 360, 270 + (i / 2) * 54), Vector2(340, 44),
+		var b := _btn(m_box, TWINS[i]["name"], Vector2((i % 2) * 380, 200 + (i / 2) * 54), Vector2(360, 44),
 			_pick_twin.bind(i))
 		twin_btns.append(b)
-	_btn(menu, "START RUN", Vector2(80, 420), Vector2(240, 48), func(): _start())
+	_btn(m_box, "START RUN", Vector2(0, 340), Vector2(260, 48), func(): _start())
 	_refresh_menu_sel()
 
 func _start():
@@ -732,7 +768,7 @@ func _start():
 	veh_pos = Vector3.ZERO
 	_build_vehicle(tw["id"])
 	_apply_domain_visuals()
-	_rebuild_attack_buttons(int(get_viewport().size.x - 300 + 16), labels["_atk_base_y"])
+	_rebuild_attack_buttons(16, labels["_atk_base_y"])
 	_send({"cmd": "boot", "site": sname, "twin": tw["id"], "domain": tw["dom"]})
 	menu.visible = false
 	cam_f = 0.0; cam_target = 0.0; dest_rel = null; dest_world = null; setting_dest = false
@@ -745,8 +781,8 @@ func _input(ev):
 		# Don't pick destination if menu is open
 		if menu and menu.visible:
 			return
-		# Don't pick destination if clicking inside the right HUD panel (HUD buttons)
-		if ev.position.x > get_viewport().size.x - 300:
+		# Don't pick destination if clicking inside the right HUD panel
+		if panel and panel.get_global_rect().has_point(ev.position):
 			return
 		# Direct left-click anywhere on the water sets the waypoint
 		_pick_destination(ev.position)
