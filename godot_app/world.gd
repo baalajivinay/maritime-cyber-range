@@ -725,10 +725,16 @@ func _start():
 		dest_marker.visible = false
 
 # ---------------- input (destination picking) ----------------
-func _unhandled_input(ev):
+func _input(ev):
 	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-		if setting_dest and connected:
-			_pick_destination(ev.position)
+		# Don't pick destination if menu is open
+		if menu and menu.visible:
+			return
+		# Don't pick destination if clicking inside the right HUD panel (HUD buttons)
+		if ev.position.x > get_viewport().size.x - 300:
+			return
+		# Direct left-click anywhere on the water sets the waypoint
+		_pick_destination(ev.position)
 
 func _pick_destination(mp: Vector2):
 	var from = cam.project_ray_origin(mp)
@@ -737,7 +743,7 @@ func _pick_destination(mp: Vector2):
 	var hit: Vector3
 	if abs(dir.y) > 0.02:
 		var t: float = (plane_y - from.y) / dir.y
-		if t > 0.0 and t < 600.0:
+		if t > 0.0 and t < 1500.0:
 			hit = from + dir * t
 		else:
 			hit = from + dir * 250.0
@@ -763,6 +769,7 @@ func _pick_destination(mp: Vector2):
 	cam_target = 1.0                   # smooth transition to first-person
 	if not labels.is_empty() and labels.has("DEST"):
 		labels["DEST"].text = "%.1f m" % d.length()
+	print("[world] waypoint set at lat=%.5f, lon=%.5f (distance=%.1f m)" % [lat, lon, d.length()])
 
 func _quit():
 	_send({"cmd": "quit"})
