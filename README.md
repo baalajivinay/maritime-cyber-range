@@ -1,75 +1,135 @@
 # Autonomous Maritime Cyber Range
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![ROS 2](https://img.shields.io/badge/ROS_2-Jazzy-22314E?style=flat-square&logo=ros&logoColor=white)](https://docs.ros.org/en/jazzy/)
+[![Godot Engine](https://img.shields.io/badge/Godot-4.3_Forward+-478CBF?style=flat-square&logo=godotengine&logoColor=white)](https://godotengine.org/)
+[![ArduPilot](https://img.shields.io/badge/ArduPilot-SITL%2FMAVLink_2-CC2936?style=flat-square)](https://ardupilot.org/)
 [![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic-F58113?style=flat-square)](https://gazebosim.org/)
-[![ArduPilot](https://img.shields.io/badge/ArduPilot-SITL%2FMAVLink-CC2936?style=flat-square)](https://ardupilot.org/)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Stonefish](https://img.shields.io/badge/Stonefish-6--DOF_Hydrodynamics-00B4D8?style=flat-square)](https://github.com/patrykcieslak/stonefish)
+[![Linux](https://img.shields.io/badge/Platform-Linux_x86__64-FCC624?style=flat-square&logo=linux&logoColor=black)](https://kernel.org/)
 
-A simulation-based cyber range for autonomous maritime vehicles. Real
-ArduPilot/ArduSub autopilot firmware (SITL) is coupled to a real physics engine
-(Gazebo, or the higher-fidelity Stonefish underwater engine) to form **digital
-twins** of real, named Indian platforms — two USVs (an autonomous fast
-interceptor and a coastal-survey catamaran) and two AUVs (CSIR's **AUV-150**
-and **Maya**) — then attacked with GPS spoofing, AIS spoofing, C2 hijack, and
-acoustic-positioning spoofing. A Godot 3D console, a live browser dashboard, and
-a vehicle-agnostic CLI tester report, per attack, whether the vehicle was fooled
-and whether a blind monitor would have caught it.
+An open-source **Software-in-the-Loop (SITL) Digital Twin & Cyber-Physical Resilience Testbed** for Unmanned Surface Vessels (USVs) and Autonomous Underwater Vehicles (AUVs). 
 
-The range runs at real **Indian naval waters** — **Kochi** (default), Mumbai,
-and Visakhapatnam — each reproducing that water body's cited oceanography
-(density, ocean current, sound-speed profile). Pick the twin and the site from
-the console/dashboard header; everything relocates and re-physics around the choice.
+Production autopilot firmware (**ArduPilot Rover** and **ArduSub**) runs alongside high-fidelity multi-engine physics (**Gazebo DART** for surface hydrodynamics and **Stonefish** for 6-DOF underwater added mass and damping). The platform visualizes missions in a real-time **Godot 4 Vulkan 3D front-end** and evaluates navigation stability against active cyber-physical attack injections (GNSS spoofing, AIS ghost vessels, MAVLink C2 hijack, and acoustic telemetry disruption).
 
-## Documentation — just two files
+---
 
-| Read | For |
-|---|---|
-| **[`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md)** | The complete picture: what it is, the architecture, the multi-site framework, the 4 twins, verified results, verdict methodology, known limits. **Start here.** |
-| **[`docs/RUNNING.md`](docs/RUNNING.md)** | Every command: run the operator app, run from source, build a shareable package, pick a twin/site, fire attacks, run the resilience tester, reproduce the attack matrix, scripted scenarios, native setup. |
+## 3D Application Showcase
 
-(`docs/EXECUTION_STATE.md` is the dated engineering log; `docs/reference/`
-holds the founding brief, research PDFs, and the slide deck.)
+<p align="center">
+  <img src="screenshots/godot_window_clean.png" width="48%" alt="Mission Setup & Site Selector" />
+  <img src="screenshots/godot_3d_interceptor_usv.png" width="48%" alt="Fast Interceptor USV in Godot 3D" />
+</p>
 
-## Quick start
+<p align="center">
+  <img src="screenshots/godot_3d_maya_auv.png" width="48%" alt="Maya AUV Subsea with Seabed Shader" />
+  <img src="screenshots/godot_3d_survey_usv.png" width="48%" alt="Coastal Survey Catamaran" />
+</p>
 
-**Operator application (Godot 3D console)** — needs a graphical display:
+---
+
+## System Architecture
+
+The testbed operates across six decoupled layers bridged by non-blocking UDP/JSON messaging:
+
+<p align="center">
+  <img src="screenshots/system_architecture_diagram.png" width="95%" alt="System Architecture Diagram" />
+</p>
+
+1. **Operator 3D Front-End (`godot_app/`):** Built on Godot 4 (Vulkan Forward+), rendering dynamic water shaders, sun glint, procedural seabed bathymetry, marine snow particulate effects, and live telemetry HUD.
+2. **Unified Routing Bus (`tools/godot_relay.py`):** Speaks JSON over UDP (`:14650` for telemetry, `:14651` for operator commands) with automatic sub-millisecond process lifecycle management.
+3. **Cyber-Physical Attack Suite (`attacks/`):** Injects GNSS pseudorange walk-off, AIS phantom vessel broadcasts, MAVLink C2 channel overrides, and acoustic USBL positioning shifts.
+4. **Autopilot SIL Core:** True production ArduPilot / ArduSub binaries executing real 24-state Extended Kalman Filter (EKF3) sensor fusion.
+5. **Dual Multi-Physics Engines:**
+   - **Surface USVs:** Gazebo Sim with DART physics solver, surface wave drag, and buoyancy tensors.
+   - **Subsurface AUVs:** Stonefish C++ hydrodynamics calculating 6-DOF added mass, cross-flow drag, and restoring buoyancy moments.
+6. **Real-Time Anomaly Detection (`detection/`):** Continuous innovation filtering using Page's Two-Sided CUSUM and kinematic consistency checking.
+
+---
+
+## 🚀 Quick Start: Running the 3D App
+
+### Prerequisites
+* **Operating System:** Ubuntu 22.04 / 24.04 LTS (x86_64)
+* **Graphics:** Vulkan-capable GPU (NVIDIA discrete GPU recommended)
+* **Engine:** Godot 4.3 binary located at `$HOME/godot/Godot_v4.3-stable_linux.x86_64` (or set `GODOT=/path/to/binary`)
+
+### Launching the Application
+
+Run the unified launcher:
 
 ```bash
-tools/app.sh                             # pick a site + twin, watch, attack
+# Launch the Godot 3D front-end and auto-routed physics backend
+tools/app.sh
 ```
 
-**From source (Docker build, browser dashboard):**
+### Controls & Operator Workflow:
+1. **Mission Setup:** Select a test harbor (**Kochi**, **Mumbai**, or **Visakhapatnam**) and pick a vehicle digital twin.
+2. **Start Mission:** Click **START RUN**. The application boots the SITL autopilot and initializes the 3D ocean environment.
+3. **Waypoint Navigation:** Left-click on the water surface to assign dynamic destination waypoints.
+4. **Attack Injection:** Trigger live cyber attacks from the on-screen console (GPS Spoof, AIS Spoof, C2 Override, Acoustic Spoof).
+5. **Observe Failsafes:** Watch the autopilot's Kalman filter react, detect anomalies, or diverge in real time.
+
+To shut down all background simulation processes cleanly:
+```bash
+tools/teardown_all.sh
+```
+
+---
+
+## 🚢 Calibrated Vehicle Twins
+
+| Vehicle Twin | Domain | Physics Engine | Dynamics & Role |
+| :--- | :--- | :--- | :--- |
+| **Fast Interceptor USV** | Surface | Gazebo DART | Monohull planing craft, twin waterjets, high-speed patrol ($\sim 30\text{ knots}$). |
+| **Coastal Survey USV** | Surface | Gazebo DART | Twin-demihull catamaran, high roll stability for hydrographic sonar survey. |
+| **Maya AUV** | Subsurface | Stonefish | Torpedo-class autonomous submersible with 3D waypoint following. |
+| **AUV-150** | Subsurface | Stonefish | Deep-rated survey submersible operating under closed-loop depth-hold control. |
+
+---
+
+## 🌊 Calibrated Naval Harbors
+
+Each geographical test harbor reproduces cited Indian regional oceanography:
+
+* **Kochi Naval Base (Littoral):** Water density $1022.4\text{ kg/m}^3$, tidal current $0.35\text{ m/s}$ ($160^\circ$), shallow-water acoustic multipath.
+* **Mumbai Offshore (Shipping Corridor):** Water density $1022.9\text{ kg/m}^3$, tidal current $0.60\text{ m/s}$ ($20^\circ$), high-density AIS traffic.
+* **Visakhapatnam (Eastern Fleet Basin):** Water density $1020.5\text{ kg/m}^3$, tidal current $0.45\text{ m/s}$ ($40^\circ$), deep-water approaches.
+
+---
+
+## 📁 Repository Structure
+
+```
+maritime-cyber-range/
+├── godot_app/          # Godot 4 3D tactical viewer (world.gd, shaders, assets)
+├── tools/              # Launchers (tools/app.sh, godot_relay.py, teardown_all.sh)
+├── vehicle_twins/      # Parameters & configurations for all 4 vehicle models
+├── attacks/            # Cyber-physical attack injection suite (GPS, AIS, C2, Acoustic)
+├── detection/          # Real-time statistical anomaly detectors (CUSUM, Kinematic)
+├── sim_config/         # Gazebo worlds, SDF vehicle models & hydrodynamic plugins
+├── stonefish/          # Stonefish 6-DOF hydrodynamics bridge & scenario definitions
+├── nodes/              # Backend MAVLink telemetry bridges & AIS avoidance logic
+├── scaleup/            # Oceanographic site definitions, acoustic physics & unit tests
+├── screenshots/        # High-resolution 3D app screenshots & architecture diagram
+└── docs/               # Detailed technical documentation & run guides
+```
+
+---
+
+## 🧪 Running the Verification Test Suite
+
+Run the full automated physics, adversarial, and detection test suite:
 
 ```bash
-./launch.sh build && ./launch.sh up      # then open http://localhost:8080
+python3 -m pytest scaleup/tests/
 ```
+*(All 58 test suites pass in sub-second execution verifying acoustic latency, CUSUM drift detection, hydrodynamic drag, and schema parity).*
 
-**Headless resilience test of one twin:**
+---
 
-```bash
-tools/run_vehicle.sh vehicle_twins/interceptor_usv up
-python3 tools/test_target.py --target vehicle_twins/interceptor_usv/target.json
-tools/run_vehicle.sh vehicle_twins/interceptor_usv down
-```
+## 👤 Author
 
-A shareable, toolchain-free package (`.run` / `.zip`) is **built on demand** via
-`app/build-*.sh` — the repo no longer ships a prebuilt copy.
-
-## Layout
-
-- `vehicle_twins/` — the 4 ready-to-run twins (2 USV + 2 AUV: `interceptor_usv`, `survey_usv`, `auv150`, `maya_auv`), self-contained folders.
-- `stonefish/` — the Stonefish underwater engine integration (AUV-150 scenario + C++ runner).
-- `godot_app/` — the Godot 4 operator console.
-- `scaleup/` — the multi-site framework (`sites/` cited ocean physics) + the scripted scenario engine (`scenario/`) + the additive generic/real-physics layer.
-- `attacks/` — GPS / AIS / C2 / acoustic attack modules.
-- `detection/` — blind rule-based detectors.
-- `nodes/monitor/` — the Flask + Socket.IO + Leaflet browser dashboard; `nodes/app/` — the legacy pygame console.
-- `tools/` — orchestration (`app`/`run_sim`/`run_demo`/`run_vehicle`/`stonefish_bridge`), `test_target.py`, `test_all_4.py`, `run_scenario.py`, site utilities.
-- `profiles/` / `targets/` — vehicle and target configs.
-- `sim_config/` — Gazebo SDF models/worlds + install/build scripts.
-- `hardware/` — ESP32 hardware-in-the-loop firmware (C2 node + NMEA spoofer).
-- `deploy/` — Docker packaging (`Dockerfile`, `Dockerfile.dev`).
-- `app/` — single-file Ubuntu `.run` + Windows `.zip` builders.
-- `external/` — consolidated upstream build trees (ArduPilot, Gazebo plugin, SITL_Models, DAVE, build venv); gitignored, with compat symlinks at `$HOME`.
-- `constants.py` — the profile + site loader every script imports.
+**Vinaybaalaji PNS** (CB.SC.U4CYS24061)  
+Department of TIFAC-CORE in Cyber Security  
+Amrita Vishwa Vidyapeetham, Coimbatore  
+GitHub: [@baalajivinay](https://github.com/baalajivinay)
