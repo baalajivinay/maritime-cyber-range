@@ -45,6 +45,7 @@ import subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import constants
 from pymavlink import mavutil
+from scaleup.physics.acoustic_channel import AcousticChannel
 
 # Scale-up (default OFF): if MCR_SITE is set, make the USBL/acoustic attack
 # site-aware -- bound the forged offset to the site's acoustic detection range
@@ -198,6 +199,7 @@ def run_feed(conn):
               f"~{_SITE_USBL_RANGE/1000:.1f} km (forged offset bounded to this).")
     holder = {}
     last_log = 0.0
+    acoustic_channel = AcousticChannel(sound_speed_mps=_SITE_C if _SITE_C else 1542.4)
     for (tn, te, td, tyaw) in read_true_ned(holder):
         off_n, off_e = compute_offset_m()
         # site acoustics: a forged fix beyond the USBL detection range is not
@@ -208,11 +210,11 @@ def run_feed(conn):
                 sc = _SITE_USBL_RANGE / mag
                 off_n, off_e = off_n * sc, off_e * sc
         fn, fe = tn + off_n, te + off_e
-        us = int(time.time() * 1e6)
-        # yaw is the AUV's real heading, never spoofed -- this attack forges
-        # position only (see module docstring); a false heading would corrupt
-        # navigation independent of and unrelated to the position offset.
-        conn.mav.vision_position_estimate_send(us, fn, fe, td, 0.0, 0.0, tyaw)
+        now = time.time()
+        acoustic_channel.send_position(now, fn, fe, td, (fn, fe, td, tyaw))
+        for (p_fn, p_fe, p_td, p_tyaw), r, tau in acoustic_channel.receive_ready(now):
+            us = int(time.time() * 1e6)
+            conn.mav.vision_position_estimate_send(us, p_fn, p_fe, p_td, 0.0, 0.0, p_tyaw)
         with _lock:
             active, mode = state.active, state.mode
         if active and time.time() - last_log > 0.5:

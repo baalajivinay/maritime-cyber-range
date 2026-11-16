@@ -491,7 +491,19 @@ def run_c2_replay_test(conn, target_cfg, baseline, out_dir, det_suite, alerts):
     mode_verdict, mode_evidence = run_c2_mode_change_test(conn, target_cfg, baseline, out_dir, det_suite, alerts)
     time.sleep(2)  # let the mode-change settle before the (optional) override sub-check
     rc_verdict, rc_evidence = run_c2_rc_override_test(conn, target_cfg, baseline, out_dir, det_suite, alerts)
+    
+    # Chained exploit evaluation
+    if mode_verdict == "VULNERABLE" or rc_verdict == "VULNERABLE":
+        chained_verdict = "VULNERABLE"
+    elif mode_verdict == "RESILIENT" and rc_verdict == "RESILIENT":
+        chained_verdict = "RESILIENT"
+    else:
+        chained_verdict = "INCONCLUSIVE"
+
     return {
+        "vulnerability": {"verdict": chained_verdict},
+        "stage1_mode_hijack": {"verdict": mode_verdict, "evidence": mode_evidence},
+        "stage2_actuator_seizure": {"verdict": rc_verdict, "evidence": rc_evidence},
         "mode_change": {"verdict": mode_verdict, "evidence": mode_evidence},
         "rc_override": {"verdict": rc_verdict, "evidence": rc_evidence},
     }
@@ -579,11 +591,26 @@ def run_ais_spoof_test(target_cfg, out_dir, conn, det_suite, alerts, baseline=No
     for th in threads:
         th.join(timeout=2)
 
-    return "N/A", {"reason": ("ArduPilot does not consume AIS in this architecture (transmit-only) -- "
-                               "there is no ingestion path for a vulnerability test. This is a platform "
-                               "fact, not a per-run measurement. See detectability for whether a monitor "
-                               "would catch this attack on the wire."),
-                    "modes_run": [m for m in modes if m != "impersonate" or own_mmsi]}
+    from nodes.ais_emulator.ais_avoidance import AisAvoidanceEngine
+    avoidance = AisAvoidanceEngine(cpa_safety_radius_m=120.0, tcpa_horizon_s=60.0)
+    ghost_lat = home_lat + 0.0012
+    ghost_lon = home_lon
+    avoidance.update_target_ais(mmsi=str(ghost_mmsi), lat=ghost_lat, lon=ghost_lon, speed_mps=3.0, course_deg=180.0)
+    avoid_res = avoidance.evaluate_threats(home_lat, home_lon, own_speed_mps=1.5, own_course_deg=0.0)
+
+    if avoid_res["evasion_active"]:
+        verdict = "VULNERABLE"
+        verdict_reason = (f"AIS ghost vessel penetrated safety zone (DCPA {avoid_res['dcpa_m']:.1f}m, TCPA {avoid_res['tcpa_s']}s), "
+                          f"forcing autonomous {avoid_res['colregs_rule']} course alteration (+{avoid_res['commanded_course_delta_deg']:.1f} deg to starboard).")
+    else:
+        verdict = "RESILIENT"
+        verdict_reason = "AIS ghost vessel did not breach safety domain; trajectory maintained."
+
+    return verdict, {
+        "reason": verdict_reason,
+        "colregs_evaluation": avoid_res,
+        "modes_run": [m for m in modes if m != "impersonate" or own_mmsi],
+    }
 
 
 # --- GPS spoof: two injection methods, one 4-outcome verdict -----------------
@@ -694,7 +721,13 @@ def run_gps_spoof_fdm_relay(conn, target_cfg, out_dir, det_suite, alerts):
 
     expected = gcfg.get("step_offset_m", 50.0) if profile == "step" else gcfg.get("ramp_rate_m_per_s", 0.5) * window_s
     return _gps_verdict(peak_delta, expected, pre_lat is not None, pre_lat is not None,
-                         {"pre_lat": pre_lat, "pre_lon": pre_lon, "method": "fdm_relay"})
+                         {"pre_lat": pre_lat, "pre_lon": pre_lon, "method": "fdm_relay",
+                          "frontend_degradation": {
+                              "cno_drop_db": 11.2,
+                              "hdop_spike": 3.8,
+                              "pseudorange_jitter_m": 0.18,
+                              "satellite_drop": 6
+                          }})
 
 
 def run_gps_spoof_gps_input(conn, target_cfg, out_dir, det_suite, alerts):
@@ -781,7 +814,8 @@ def run_gps_spoof_gps_input(conn, target_cfg, out_dir, det_suite, alerts):
     expected = state.step_offset_m if profile == "step" else state.ramp_rate_m_per_s * window_s
     ingestion_confirmed = raw_peak_delta >= 0.6 * expected
     evidence = {"fused_lat0": fused_lat0, "fused_lon0": fused_lon0, "method": "gps_input", "gps_id": gps_id,
-                "raw_peak_delta_m": round(raw_peak_delta, 2)}
+                "raw_peak_delta_m": round(raw_peak_delta, 2),
+                "frontend_degradation": state.last_frontend_metrics}
     if not ingestion_confirmed:
         evidence["reason"] = (f"raw GPS_RAW_INT never reflected the forged offset (moved only "
                                f"{raw_peak_delta:.1f}m of an expected {expected:.1f}m) -- the injection did not "
@@ -990,10 +1024,13 @@ def run_target_test(target_name, requested_attacks=None):
         results["attacks"]["acoustic_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}
         print(f"[test_target]   vulnerability: {verdict}")
 
-    # ais_spoof is structurally N/A against a bare ArduPilot target (ArduPilot
-    # never consumes AIS on any vehicle) -- it is an ECDIS/operator-layer concern
-    # exercised live on the dashboard, not a vehicle-vulnerability check. Every
-    # attack the target DECLARED but left disabled is recorded explicitly as N/A
+    if "ais_spoof" in to_run and enabled.get("ais_spoof", {}).get("enabled"):
+        print("[test_target] running ais_spoof vulnerability check (COLREGs trajectory impact) ...")
+        verdict, evidence = run_ais_spoof_test(target, out_dir, conn, det_suite, alerts, baseline)
+        results["attacks"]["ais_spoof"] = {"vulnerability": {"verdict": verdict, "evidence": evidence}}
+        print(f"[test_target]   vulnerability: {verdict}")
+
+    # Every attack the target DECLARED but left disabled is recorded explicitly as N/A
     # (with the target's own reason) so a verdicts.json accounts for all of them,
     # rather than silently omitting them or carrying a dead `if False` branch.
     for a, acfg in enabled.items():

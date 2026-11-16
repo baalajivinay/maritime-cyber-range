@@ -1,0 +1,112 @@
+{
+  "target": "interceptor_usv",
+  "domain": "surface",
+  "run_ts": "20261116T182729",
+  "site": "kochi",
+  "git_sha": "cfd8f06",
+  "baseline": {
+    "lat": 9.9,
+    "lon": 76.1999996,
+    "mode": "MANUAL",
+    "armed": false,
+    "servo1": 1500,
+    "servo3": 1500,
+    "servo5": 0,
+    "heartbeats": 5
+  },
+  "attacks": {
+    "c2_replay": {
+      "vulnerability": {
+        "verdict": "VULNERABLE"
+      },
+      "stage1_mode_hijack": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "HOLD",
+          "requested_mode": "HOLD",
+          "post_mode": "HOLD",
+          "heartbeats_seen_after": 6
+        }
+      },
+      "stage2_actuator_seizure": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "armed_confirmed": true,
+          "armed_during_injection": true,
+          "watched_channel": "servo3",
+          "pre_servo3": 1500,
+          "peak_servo3_during_injection": 1680,
+          "forged_throttle_pwm": 1700
+        }
+      },
+      "mode_change": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_mode": "MANUAL",
+          "forged_mode": "HOLD",
+          "requested_mode": "HOLD",
+          "post_mode": "HOLD",
+          "heartbeats_seen_after": 6
+        }
+      },
+      "rc_override": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "armed_confirmed": true,
+          "armed_during_injection": true,
+          "watched_channel": "servo3",
+          "pre_servo3": 1500,
+          "peak_servo3_during_injection": 1680,
+          "forged_throttle_pwm": 1700
+        }
+      }
+    },
+    "gps_spoof": {
+      "vulnerability": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "pre_lat": 9.9,
+          "pre_lon": 76.2000681,
+          "method": "fdm_relay",
+          "frontend_degradation": {
+            "cno_drop_db": 11.2,
+            "hdop_spike": 3.8,
+            "pseudorange_jitter_m": 0.18,
+            "satellite_drop": 6
+          },
+          "peak_delta_m": 77.08,
+          "expected_offset_m": 50.0
+        }
+      }
+    },
+    "ais_spoof": {
+      "vulnerability": {
+        "verdict": "VULNERABLE",
+        "evidence": {
+          "reason": "AIS ghost vessel penetrated safety zone (DCPA 0.0m, TCPA 29.7s), forcing autonomous Rule 14 (Head-on) course alteration (+30.0 deg to starboard).",
+          "colregs_evaluation": {
+            "evasion_active": true,
+            "threat_mmsi": "999999001",
+            "dcpa_m": 0.0,
+            "tcpa_s": 29.7,
+            "colregs_rule": "Rule 14 (Head-on)",
+            "commanded_course_delta_deg": 30.0,
+            "commanded_heading_deg": 30.0
+          },
+          "modes_run": [
+            "ghost",
+            "impersonate"
+          ]
+        }
+      }
+    }
+  },
+  "detectability": {
+    "alerts_generated": 19,
+    "by_attack_type": {
+      "gps_spoof": 16,
+      "c2_replay": 3
+    }
+  }
+}

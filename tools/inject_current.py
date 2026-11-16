@@ -16,6 +16,7 @@ Run it alongside a booted twin (same Gazebo transport domain):
 Scale-up tool -- not part of the shipped package's default boot.
 """
 import argparse
+import math
 import os
 import subprocess
 import sys
@@ -24,6 +25,7 @@ import time
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 from scaleup.sites import load_site
+from scaleup.physics.tides import demo_mumbai, TidalModel
 
 TOPIC = "/ocean_current"   # gz-sim-hydrodynamics default current topic
 
@@ -42,6 +44,7 @@ def main():
                     help="kochi | visakhapatnam | mumbai (or set MCR_SITE)")
     ap.add_argument("--off", action="store_true", help="zero the current and exit")
     ap.add_argument("--once", action="store_true", help="publish once and exit (plugin holds the value)")
+    ap.add_argument("--tides", action="store_true", help="enable dynamic harmonic M2 tidal stream modulation")
     ap.add_argument("--interval", type=float, default=2.0, help="republish period seconds (default 2)")
     ap.add_argument("--topic", default=TOPIC)
     args = ap.parse_args()
@@ -54,20 +57,36 @@ def main():
         ap.error("give --site <kochi|visakhapatnam|mumbai> or set MCR_SITE")
 
     site = load_site(args.site)
-    n, e = site.current_ne()                 # (north, east) m/s
-    spd = site.current["speed_mps"]
-    brg = site.current["bearing_deg"]
-    print(f"[inject_current] {site.name}: {spd:.2f} m/s @ {brg:.0f} deg "
-          f"-> ENU (E={e:.3f}, N={n:.3f}) on {args.topic}")
-    print(f"[inject_current] {site.current['type']}")
+    tidal_model = demo_mumbai() if (args.tides or args.site.lower() == "mumbai") else None
+
+    if tidal_model:
+        print(f"[inject_current] {site.name}: dynamic harmonic tidal constituent active (M2/S2/K1/O1)")
+    else:
+        spd = site.current["speed_mps"]
+        brg = site.current["bearing_deg"]
+        print(f"[inject_current] {site.name}: {spd:.2f} m/s @ {brg:.0f} deg (static vector)")
+
+    t0 = time.time()
+    def get_ne(elapsed):
+        if tidal_model:
+            spd, brg = tidal_model.current(elapsed)
+            rad = math.radians(brg)
+            return spd * math.cos(rad), spd * math.sin(rad), spd, brg
+        n, e = site.current_ne()
+        return n, e, site.current["speed_mps"], site.current["bearing_deg"]
+
+    n, e, spd, brg = get_ne(0.0)
+    print(f"[inject_current] initial -> ENU (E={e:.3f}, N={n:.3f}) on {args.topic}")
     publish(e, n, args.topic)
     if args.once:
         print("[inject_current] published once.")
         return
-    print("[inject_current] holding current (Ctrl-C to stop; run --off to zero) ...")
+    print("[inject_current] holding/modulating current (Ctrl-C to stop; run --off to zero) ...")
     try:
         while True:
             time.sleep(args.interval)
+            elapsed = time.time() - t0
+            n, e, spd, brg = get_ne(elapsed)
             publish(e, n, args.topic)
     except KeyboardInterrupt:
         print("\n[inject_current] stopped (current left at last value; run --off to zero).")

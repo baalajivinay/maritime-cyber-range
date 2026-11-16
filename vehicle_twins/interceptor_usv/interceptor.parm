@@ -20,3 +20,9 @@
 # ThrottleLeft/ThrottleRight, ArduRover's own skid-steer functions):
 SERVO1_FUNCTION 73
 SERVO3_FUNCTION 74
+
+# High-speed planing interceptor configuration (~15 m/s, ~30 kn cruise):
+CRUISE_SPEED 15.0
+WP_SPEED 15.0
+SPEED_TURN_GAIN 50.0
+ATC_STR_RAT_FF 0.2

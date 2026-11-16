@@ -36,7 +36,7 @@ def _boot_and_test(profile):
     time.sleep(10)  # let physics/EKF settle
     print(f"[*] Running test_target suite for {profile}...")
     target_path = f"vehicle_twins/{profile}/target.json"
-    subprocess.run(["python3", "tools/test_target.py", "--target", target_path], cwd=REPO)
+    subprocess.run([sys.executable, "tools/test_target.py", "--target", target_path], cwd=REPO)
     runs = sorted(glob.glob(f"{REPO}/target_runs/{profile}/*/verdicts.json"))
     res = None
     if runs:

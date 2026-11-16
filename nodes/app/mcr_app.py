@@ -73,8 +73,8 @@ class Backend:
     def __init__(self):
         self.site = "kochi"; self.twin = None; self.domain = "surface"
         self.conn = None; self.lock = threading.Lock()
-        self.state = dict(lat=None, lon=None, hdg=0.0, depth=0.0, speed=0.0,
-                          mode="--", armed=False, hb=0)
+        self.state = dict(lat=None, lon=None, hdg=0.0, roll=0.0, pitch=0.0, depth=0.0,
+                          speed=0.0, mode="--", armed=False, hb=0, sim_backend="gazebo")
         self.home = (9.9, 76.2); self.cur_ne = (0.0, 0.0); self.cur_spd = 0.0
         self.track = []; self.events = []
         self.booting = False; self.connected = False; self._stop = False
@@ -103,7 +103,7 @@ class Backend:
     def _loop(self):
         while not self._stop and self.conn is None:
             try:
-                c = mavutil.mavlink_connection("udpin:127.0.0.1:14554", source_system=250)
+                c = mavutil.mavlink_connection("udpin:127.0.0.1:14554", source_system=255)
                 if c.wait_heartbeat(timeout=5) is not None:
                     self.conn = c; break
             except Exception:
@@ -131,6 +131,9 @@ class Backend:
                     self.track.append((self.state["lat"], self.state["lon"])); self.track[:] = self.track[-500:]
                 elif t == "VFR_HUD":
                     self.state["speed"] = msg.groundspeed
+                elif t == "ATTITUDE":
+                    self.state["roll"] = math.degrees(msg.roll)
+                    self.state["pitch"] = math.degrees(msg.pitch)
                 elif t == "HEARTBEAT" and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
                     self.state["armed"] = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
                     self.state["mode"] = mm.get(msg.custom_mode, str(msg.custom_mode)); self.state["hb"] += 1
@@ -181,24 +184,41 @@ class Backend:
 
     def goto(self, lat, lon):
         if not self.conn:
+            self.log("destination rejected — autopilot not connected")
             return
         self.log(f"destination set — {lat:.5f}, {lon:.5f}")
+        self._goto_target = (lat, lon)
         threading.Thread(target=self._drive, args=(lat, lon), daemon=True).start()
 
     def _drive(self, lat, lon):
         c = self.conn; mm = c.mode_mapping() or {}
         if "GUIDED" in mm:
             c.set_mode(mm["GUIDED"])
-        end = time.time()+120
-        while not self._stop and time.time() < end:
-            if not self.state.get("armed"):
-                self._arm_once()
-                if "GUIDED" in mm:
-                    c.set_mode(mm["GUIDED"])
-            c.mav.set_position_target_global_int_send(
-                0, c.target_system, c.target_component,
-                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-                0b0000111111111000, int(lat*1e7), int(lon*1e7), 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        end = time.time() + 900
+        while not self._stop and self.conn and self._goto_target == (lat, lon) and time.time() < end:
+            # Yield to active attacks -- do not fight or override attacker commands
+            if self.active_attack:
+                time.sleep(0.5)
+                continue
+            try:
+                if not self.state.get("armed"):
+                    self._arm_once()
+                    if "GUIDED" in mm:
+                        c.set_mode(mm["GUIDED"])
+                hold_depth = max(2.0, float(self.state.get("depth", 2.0))) if self.domain == "underwater" else 0.0
+                target_alt = -hold_depth if self.domain == "underwater" else 0.0
+                c.mav.set_position_target_global_int_send(
+                    0, c.target_system, c.target_component,
+                    mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                    0b0000111111111000, int(lat*1e7), int(lon*1e7), int(target_alt), 0, 0, 0, 0, 0, 0, 0, 0)
+                c.mav.command_int_send(
+                    c.target_system, c.target_component,
+                    mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                    mavutil.mavlink.MAV_CMD_DO_REPOSITION,
+                    0, 0, -1, 1, 0, 0,
+                    int(lat*1e7), int(lon*1e7), float(target_alt))
+            except (OSError, AttributeError):
+                break
             with self.lock:
                 clat, clon = self.state.get("lat"), self.state.get("lon")
             if clat is not None and DEG_M*math.hypot(clat-lat, (clon-lon)*math.cos(math.radians(lat))) < 3.0:
@@ -242,8 +262,13 @@ class Backend:
             self._override_stop.clear()
             self.log("ATTACK · RC_CHANNELS_OVERRIDE — throttle seized (MANUAL forced)")
             while not self._override_stop.is_set():
-                c.mav.rc_channels_override_send(c.target_system, c.target_component,
-                                                 1500, 0, 1850, 0, 0, 0, 0, 0)
+                if self.domain == "underwater":
+                    # Channel 4: Yaw (1850=hard right), Channel 5: Surge (1850=full surge)
+                    c.mav.rc_channels_override_send(c.target_system, c.target_component,
+                                                     1500, 1500, 1500, 1850, 1850, 1500, 0, 0)
+                else:
+                    c.mav.rc_channels_override_send(c.target_system, c.target_component,
+                                                     1800, 0, 1850, 0, 0, 0, 0, 0)
                 time.sleep(0.1)
         elif name == "AIS ghost":
             self.log("ATTACK · AIS ghost contact (operator-layer)")

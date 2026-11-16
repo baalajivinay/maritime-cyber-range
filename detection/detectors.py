@@ -292,14 +292,162 @@ class AcousticDivergenceDetector:
 
 
 # ---------------------------------------------------------------------------
+class CusumDriftDetector:
+    """Surface & Underwater: Two-Sided Page's CUSUM sequential change-point detector.
+    
+    Catches stealthy low-rate walk-offs (e.g. 0.15 - 0.4 m/s) that stay below static
+    speed gates, without privileged knowledge of attack trajectory or timing.
+    Applies exponential smoothing (tau ~ 1.0s) to reject zero-mean wave agitation,
+    accumulating persistent velocity divergence along Cartesian axes.
+    """
+    def __init__(self, slack_mps=0.15, threshold_m=5.0, smoothing_tau_s=1.0, refractory_s=5.0):
+        self.k = slack_mps
+        self.h = threshold_m
+        self.tau = smoothing_tau_s
+        self.refractory_s = refractory_s
+        self.last_t = None
+        self.last_n = None
+        self.last_e = None
+        self.res_vn_filt = 0.0
+        self.res_ve_filt = 0.0
+        self.cusum_n_pos = 0.0
+        self.cusum_n_neg = 0.0
+        self.cusum_e_pos = 0.0
+        self.cusum_e_neg = 0.0
+        self.last_alert = None
+
+    def update(self, e):
+        et = e.get("type")
+        t = e.get("t")
+        if t is None:
+            return None
+            
+        cur_n, cur_e = None, None
+        meas_vn, meas_ve = None, None
+
+        if et == "local_pos":
+            cur_n, cur_e = e["n"], e["e"]
+            meas_vn, meas_ve = e.get("vx", 0.0), e.get("vy", 0.0)
+            domain = e.get("domain", "surface")
+        elif et == "believed_pos":
+            lat, lon = e["lat"], e["lon"]
+            if lat == 0 and lon == 0:
+                return None
+            # Project to local Cartesian tangent frame (meters)
+            cur_n = lat * _M_PER_DEG_LAT
+            cur_e = lon * _m_per_deg_lon(lat)
+            meas_vn = e.get("vn", 0.0)
+            meas_ve = e.get("ve", 0.0)
+            domain = "surface"
+        else:
+            return None
+
+        if self.last_t is None:
+            self.last_t = t
+            self.last_n = cur_n
+            self.last_e = cur_e
+            return None
+
+        dt = t - self.last_t
+        if dt <= 0.001:
+            return None
+
+        # Velocity from position differences
+        v_diff_n = (cur_n - self.last_n) / dt
+        v_diff_e = (cur_e - self.last_e) / dt
+        self.last_t = t
+        self.last_n = cur_n
+        self.last_e = cur_e
+
+        # Innovation residual against measured velocity (or 0 if stationary)
+        ref_vn = meas_vn if meas_vn is not None else 0.0
+        ref_ve = meas_ve if meas_ve is not None else 0.0
+        raw_res_n = v_diff_n - ref_vn
+        raw_res_e = v_diff_e - ref_ve
+
+        # Exponential low-pass filter
+        alpha = dt / (self.tau + dt)
+        self.res_vn_filt += alpha * (raw_res_n - self.res_vn_filt)
+        self.res_ve_filt += alpha * (raw_res_e - self.res_ve_filt)
+
+        # Page's Two-Sided CUSUM integration
+        self.cusum_n_pos = max(0.0, self.cusum_n_pos + (self.res_vn_filt - self.k) * dt)
+        self.cusum_n_neg = max(0.0, self.cusum_n_neg + (-self.res_vn_filt - self.k) * dt)
+        self.cusum_e_pos = max(0.0, self.cusum_e_pos + (self.res_ve_filt - self.k) * dt)
+        self.cusum_e_neg = max(0.0, self.cusum_e_neg + (-self.res_ve_filt - self.k) * dt)
+
+        peak = max(self.cusum_n_pos, self.cusum_n_neg, self.cusum_e_pos, self.cusum_e_neg)
+        if peak >= self.h and (self.last_alert is None or t - self.last_alert >= self.refractory_s):
+            self.last_alert = t
+            self.cusum_n_pos = self.cusum_n_neg = self.cusum_e_pos = self.cusum_e_neg = 0.0
+            attack_type = "acoustic_spoof" if domain == "underwater" else "gps_spoof"
+            return Alert(t, "CusumDriftDetector", attack_type, domain,
+                         f"cumulative Page's CUSUM residual reached {peak:.2f} m (> {self.h:.2f} m) -- stealthy drift detected")
+
+        return None
+
+
+# ---------------------------------------------------------------------------
+class KinematicConsistencyDetector:
+    """Cross-sensor kinematic consistency: checks whether the rate of change of
+    believed/reported position matches internal vehicle dynamic state (IMU/velocities).
+    If GPS/Acoustic position is walking off while vehicle thrusters are idle or INS speed is ~0,
+    triggers an alert."""
+    def __init__(self, speed_discrepancy_mps=1.5, refractory_s=4.0):
+        self.speed_discrepancy = speed_discrepancy_mps
+        self.refractory_s = refractory_s
+        self.last_pos = None     # (t, n, e)
+        self.last_alert = None
+
+    def update(self, e):
+        et = e.get("type")
+        if et != "local_pos":
+            return None
+        t, n, e_pos = e["t"], e["n"], e["e"]
+        ins_vx, ins_vy = e.get("vx", 0.0), e.get("vy", 0.0)
+        domain = e.get("domain", "surface")
+
+        if self.last_pos is None:
+            self.last_pos = (t, n, e_pos)
+            return None
+
+        lt, ln, le = self.last_pos
+        dt = t - lt
+        if dt < 0.1:
+            return None
+        self.last_pos = (t, n, e_pos)
+
+        diff_vn = (n - ln) / dt
+        diff_ve = (e_pos - le) / dt
+        gps_speed = math.hypot(diff_vn, diff_ve)
+        ins_speed = math.hypot(ins_vx, ins_vy)
+
+        speed_error = abs(gps_speed - ins_speed)
+        if speed_error > self.speed_discrepancy and (self.last_alert is None or t - self.last_alert >= self.refractory_s):
+            self.last_alert = t
+            attack_type = "acoustic_spoof" if domain == "underwater" else "gps_spoof"
+            return Alert(t, "KinematicConsistencyDetector", attack_type, domain,
+                         f"kinematic discrepancy: pos rate {gps_speed:.2f} m/s vs INS speed {ins_speed:.2f} m/s "
+                         f"(delta {speed_error:.2f} m/s > {self.speed_discrepancy:.2f} m/s)")
+        return None
+
+
+# ---------------------------------------------------------------------------
 DOMAIN_DETECTORS = {
     "surface": lambda cfg: [
         GpsJumpDetector(),
         GpsRampDetector(),
+        CusumDriftDetector(),
+        KinematicConsistencyDetector(),
         AisConflictDetector(known_mmsi=cfg.get("known_mmsi")),
         C2CommandDetector(),
     ],
-    "underwater": lambda cfg: [AcousticDivergenceDetector(), C2CommandDetector()],
+    "underwater": lambda cfg: [
+        AcousticDivergenceDetector(),
+        CusumDriftDetector(),
+        KinematicConsistencyDetector(),
+        C2CommandDetector(),
+    ],
 }
 
 

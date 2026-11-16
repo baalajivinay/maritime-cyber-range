@@ -155,48 +155,22 @@ class UnifiedBackend:
     # ---- lifecycle ----------------------------------------------------------
     def _teardown_current(self):
         """Tear down whatever engine/twin is currently running and BLOCK until
-        the ports (and processes) the next stack needs are actually free.
-
-        Both engines' own teardown is fire-and-forget: Backend.teardown()
-        (Gazebo) launches `run_vehicle.sh down` via subprocess.Popen and
-        returns immediately, without waiting for the `gz sim` WORLD SERVER
-        process (not just the SITL binary) to actually exit -- and two
-        different Gazebo twins can share the identical world SDF/world_name
-        (e.g. interceptor_usv and survey_usv both use cusv_world.sdf /
-        "surface_harbor"), so a still-dying old world can block the new one
-        from starting at all. Observed live: interceptor_usv -> survey_usv
-        consistently failed to boot (150s timeout, empty gz world.log) right
-        after interceptor_usv tore down, even though its own ArduSub ports
-        were confirmed free -- the stale `gz sim` process was the blocker,
-        not the ports tools/run_sim.sh's own SITL serial links use.
-        tools/teardown_all.sh is this project's already-proven comprehensive
-        reaper (kills gz sim, ardusub/ardurover, mav_bridge.py and the rest,
-        explicitly including the world-server process); run it SYNCHRONOUSLY
-        here instead of relying on the async per-engine teardown alone."""
-        if self.engine is None:
-            return
-        try:
-            self.engine.teardown()
-        except Exception:
-            pass
+        the ports (and processes) the next stack needs are actually free."""
+        if self.engine is not None:
+            try:
+                self.engine.teardown()
+            except Exception:
+                pass
+        self._stop_stonefish_bridge()
         subprocess.run(["bash", os.path.join(REPO, "tools", "teardown_all.sh")],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if self.engine_kind == "stonefish":
-            self._stop_stonefish_bridge()
         self.engine = None
         _wait_ports_free(timeout=20.0, log=self._log)
-        # gz-transport's pub/sub discovery (what `gz topic -l` reads to decide
-        # a Gazebo world has booted) takes a beat to flush a SIGKILLed world's
-        # stale registration -- raw ports being free (checked above) doesn't
-        # guarantee discovery has caught up yet. A short settle here is much
-        # cheaper than occasionally eating tools/run_sim.sh's full model-wait
-        # timeout on the next boot (see its wait_gz_model call).
-        time.sleep(3.0)
+        time.sleep(2.0)
 
     def boot(self, site, twin, domain):
         kind = "stonefish" if twin in STONEFISH_TWINS else "gazebo"
-        if self.engine is not None:
-            self._teardown_current()
+        self._teardown_current()
 
         if kind == "stonefish":
             if not self._ensure_stonefish_bridge(site):
@@ -244,10 +218,4 @@ class UnifiedBackend:
             self.engine.stop_attack()
 
     def teardown(self):
-        if self.engine:
-            try:
-                self.engine.teardown()
-            except Exception:
-                pass
-        self._stop_stonefish_bridge()
-        self.engine = None
+        self._teardown_current()

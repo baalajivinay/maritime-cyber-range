@@ -28,7 +28,8 @@ var cam_target := 0.0
 var heading := 0.0
 var dest_rel = null          # Vector2 east,north relative to vehicle
 var dest_world = null         # Vector3 world position of the waypoint marker
-var dest_marker: MeshInstance3D
+var dest_marker: Node3D
+var buoys: Array[Node3D] = []
 var setting_dest := false
 var seabed: MeshInstance3D
 var snow: GPUParticles3D
@@ -132,22 +133,79 @@ func _build_world():
 	snow.visible = false
 	add_child(snow)
 
-	# destination waypoint marker (a bright floating pylon)
-	dest_marker = MeshInstance3D.new()
+	# destination waypoint marker (a high-visibility luminescent navigational beacon)
+	dest_marker = Node3D.new()
+	var pillar := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.4; cyl.bottom_radius = 0.4; cyl.height = 6.0
-	dest_marker.mesh = cyl
+	cyl.top_radius = 0.8; cyl.bottom_radius = 0.8; cyl.height = 45.0
+	pillar.mesh = cyl
+	pillar.position.y = 22.5
 	var mm := StandardMaterial3D.new()
-	mm.albedo_color = Color(0.2, 1.0, 0.5)
-	mm.emission_enabled = true; mm.emission = Color(0.2, 1.0, 0.5); mm.emission_energy_multiplier = 2.0
-	dest_marker.material_override = mm
+	mm.albedo_color = Color(0.1, 1.0, 0.6)
+	mm.emission_enabled = true; mm.emission = Color(0.1, 1.0, 0.6); mm.emission_energy_multiplier = 4.0
+	pillar.material_override = mm
+	dest_marker.add_child(pillar)
+
+	var head := MeshInstance3D.new()
+	var sph := SphereMesh.new()
+	sph.radius = 2.5; sph.height = 5.0
+	head.mesh = sph
+	head.position.y = 45.0
+	head.material_override = mm
+	dest_marker.add_child(head)
+
+	var ring := MeshInstance3D.new()
+	var tr := TorusMesh.new()
+	tr.inner_radius = 5.0; tr.outer_radius = 6.0
+	ring.mesh = tr
+	ring.position.y = 0.5
+	ring.material_override = mm
+	dest_marker.add_child(ring)
+
 	dest_marker.visible = false
 	add_child(dest_marker)
+
+	_build_nav_aids()
 
 	cam = Camera3D.new()
 	cam.fov = 64
 	cam.far = 3000
 	add_child(cam)
+
+func _build_nav_aids():
+	var buoy_coords := [
+		Vector2(100, 60), Vector2(-120, 90), Vector2(250, 180), Vector2(-200, -120),
+		Vector2(60, 320), Vector2(-160, 420), Vector2(380, -220), Vector2(-320, 260),
+		Vector2(20, 180), Vector2(180, -60), Vector2(-70, -240), Vector2(420, 310)
+	]
+	for i in buoy_coords.size():
+		var pt: Vector2 = buoy_coords[i]
+		var b := Node3D.new()
+		b.position = Vector3(pt.x, 0, -pt.y)
+		var hull := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 1.4; cyl.bottom_radius = 1.6; cyl.height = 3.5
+		hull.mesh = cyl
+		var hm := StandardMaterial3D.new()
+		hm.albedo_color = Color(0.95, 0.2, 0.1) if (i % 2 == 0) else Color(0.1, 0.85, 0.3)
+		hm.roughness = 0.4
+		hull.material_override = hm
+		b.add_child(hull)
+
+		var mast := MeshInstance3D.new()
+		var mc := CylinderMesh.new()
+		mc.top_radius = 0.15; mc.bottom_radius = 0.15; mc.height = 4.0
+		mast.mesh = mc
+		mast.position.y = 3.2
+		var mm := StandardMaterial3D.new()
+		mm.albedo_color = Color(0.9, 0.9, 0.2)
+		mm.emission_enabled = true
+		mm.emission = Color(1.0, 0.9, 0.2) if (i % 2 == 0) else Color(0.2, 1.0, 0.4)
+		mm.emission_energy_multiplier = 3.0
+		mast.material_override = mm
+		b.add_child(mast)
+		add_child(b)
+		buoys.append(b)
 
 func _make_seabed() -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -157,10 +215,9 @@ func _make_seabed() -> MeshInstance3D:
 	pm.subdivide_depth = 80
 	mi.mesh = pm
 	mi.position.y = -45
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.32, 0.29, 0.21)
-	m.roughness = 0.95
-	mi.material_override = m
+	var sm := ShaderMaterial.new()
+	sm.shader = load("res://seabed.gdshader")
+	mi.material_override = sm
 	return mi
 
 func _make_snow() -> GPUParticles3D:
@@ -454,7 +511,7 @@ func _update_vehicle():
 	if dest_marker:
 		dest_marker.visible = dest_world != null
 		if dest_world != null:
-			dest_marker.position = Vector3(dest_world.x, 0.5, dest_world.z)
+			dest_marker.position = dest_world
 
 func _recenter_world(c: Vector3):
 	for n in [seabed, snow]:
@@ -573,9 +630,13 @@ func _attack_cb(name: String) -> Callable:
 func _update_hud():
 	if labels.is_empty():
 		return
-	labels["status"].text = ("LIVE" if connected else ("BOOTING" if booting else "IDLE"))
-	labels["status"].add_theme_color_override("font_color",
-		Color(0.4, 0.8, 0.55) if connected else Color(0.9, 0.7, 0.4))
+	if active_attack != "":
+		labels["status"].text = "ATTACK: " + active_attack.to_upper()
+		labels["status"].add_theme_color_override("font_color", Color(1.0, 0.25, 0.25))
+	else:
+		labels["status"].text = ("LIVE" if connected else ("BOOTING" if booting else "IDLE"))
+		labels["status"].add_theme_color_override("font_color",
+			Color(0.4, 0.8, 0.55) if connected else Color(0.9, 0.7, 0.4))
 	labels["LAT"].text = "%.5f" % float(tele.get("lat", 0)) if tele.get("lat") else "--"
 	labels["LON"].text = "%.5f" % float(tele.get("lon", 0)) if tele.get("lon") else "--"
 	labels["HDG"].text = "%05.1f" % float(tele.get("hdg", 0))
@@ -588,9 +649,24 @@ func _update_hud():
 	if setting_dest:
 		labels["DEST"].text = "click the water…"
 		labels["DEST"].add_theme_color_override("font_color", Color(0.5, 0.9, 0.6))
-	elif dest_rel:
-		labels["DEST"].text = "%.0f m" % dest_rel.length()
-		labels["DEST"].add_theme_color_override("font_color", Color(0.82, 0.86, 0.9))
+	elif dest_world != null:
+		var cur_dist := Vector2(dest_world.x - veh_pos.x, dest_world.z - veh_pos.z).length()
+		var brg := rad_to_deg(atan2(dest_world.x - veh_pos.x, -(dest_world.z - veh_pos.z)))
+		if brg < 0:
+			brg += 360.0
+		if cur_dist < 4.0:
+			labels["DEST"].text = "ARRIVED"
+			labels["DEST"].add_theme_color_override("font_color", Color(0.2, 1.0, 0.5))
+			dest_world = null
+			dest_rel = null
+			if dest_marker:
+				dest_marker.visible = false
+		else:
+			labels["DEST"].text = "%.1f m (%03.0f°)" % [cur_dist, brg]
+			labels["DEST"].add_theme_color_override("font_color", Color(0.82, 0.86, 0.9))
+	else:
+		labels["DEST"].text = "--"
+		labels["DEST"].add_theme_color_override("font_color", Color(0.6, 0.65, 0.7))
 	labels["evt"].text = str(tele.get("event", ""))
 
 # ---------------- menu ----------------
@@ -655,22 +731,27 @@ func _unhandled_input(ev):
 func _pick_destination(mp: Vector2):
 	var from = cam.project_ray_origin(mp)
 	var dir = cam.project_ray_normal(mp)
-	if abs(dir.y) < 1e-4:
-		return
-	var t = -from.y / dir.y
-	if t < 0:
-		return
-	var hit = from + dir * t          # world (x=east, z=-north)
-	# offset of the click from the VEHICLE's current world position
+	var plane_y: float = veh_pos.y if domain == "underwater" else 0.0
+	var hit: Vector3
+	if abs(dir.y) > 0.02:
+		var t: float = (plane_y - from.y) / dir.y
+		if t > 0.0 and t < 3500.0:
+			hit = from + dir * t
+		else:
+			hit = from + dir * 250.0
+	else:
+		hit = from + dir * 250.0
+	hit.y = plane_y
 	var d := Vector2(hit.x - veh_pos.x, (-hit.z) - (-veh_pos.z))
-	if d.length() > 300:
-		d = d.normalized() * 300
+	if d.length() < 10.0:
+		d = Vector2(sin(deg_to_rad(heading)), cos(deg_to_rad(heading))) * 120.0
+	elif d.length() > 3000.0:
+		d = d.normalized() * 3000.0
 	dest_rel = d
-	dest_world = Vector3(veh_pos.x + d.x, 0, veh_pos.z - d.y)
+	dest_world = Vector3(veh_pos.x + d.x, plane_y, veh_pos.z - d.y)
 	if dest_marker:
 		dest_marker.visible = true
-		dest_marker.position = Vector3(dest_world.x, 0.5, dest_world.z)
-	# convert the offset to an absolute lat/lon from the vehicle's fix
+		dest_marker.position = dest_world
 	var vlat = float(tele.get("lat")) if tele.get("lat") != null else home.x
 	var vlon = float(tele.get("lon")) if tele.get("lon") != null else home.y
 	var lat = vlat + d.y / DEG_M
@@ -678,6 +759,8 @@ func _pick_destination(mp: Vector2):
 	_send({"cmd": "goto", "lat": lat, "lon": lon})
 	setting_dest = false
 	cam_target = 1.0                   # smooth transition to first-person
+	if not labels.is_empty() and labels.has("DEST"):
+		labels["DEST"].text = "%.1f m" % d.length()
 
 func _quit():
 	_send({"cmd": "quit"})

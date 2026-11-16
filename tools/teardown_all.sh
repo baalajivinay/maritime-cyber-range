@@ -14,6 +14,7 @@ set +e
 PATTERNS=(
   "gz sim" "ardurover" "ardusub" "mav_bridge.py" "gps_spoof.py"
   "acoustic_spoof.py" "ais_emulator.py" "dashboard_server.py" "inject_current.py"
+  "stonefish_extnav.py" "MCR"
 )
 for p in "${PATTERNS[@]}"; do
   pkill -9 -f "$p" 2>/dev/null

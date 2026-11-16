@@ -82,20 +82,25 @@ def main():
             c = d.get("cmd")
             if c == "boot":
                 site = d.get("site", "kochi")
-                be.teardown()
-                be = make_backend()
+                print(f"[relay] boot requested: {d['twin']} @ {site} (source={SOURCE})", flush=True)
                 be.boot(site, d["twin"], d.get("domain", "surface"))
-                print(f"[relay] boot {d['twin']} @ {site} (source={SOURCE})", flush=True)
+                print(f"[relay] boot complete: {d['twin']} @ {site}", flush=True)
             elif c == "goto":
-                be.goto(float(d["lat"]), float(d["lon"]))
+                lat, lon = float(d["lat"]), float(d["lon"])
+                print(f"[relay] goto {lat:.5f}, {lon:.5f}", flush=True)
+                be.goto(lat, lon)
             elif c == "arm":
+                print("[relay] cmd: arm", flush=True)
                 be.arm()
             elif c == "disarm":
+                print("[relay] cmd: disarm", flush=True)
                 be.disarm()
             elif c == "attack":
+                print(f"[relay] cmd: attack {d.get('name')}", flush=True)
                 import threading
                 threading.Thread(target=be.attack, args=(d["name"],), daemon=True).start()
             elif c == "stop":
+                print("[relay] cmd: stop attack", flush=True)
                 be.stop_attack()
             elif c == "quit":
                 running = False

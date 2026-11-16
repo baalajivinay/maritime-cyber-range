@@ -1,0 +1,19 @@
+{"t": 1794833850.1571636, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 16507.32 m (> 5.00 m) -- stealthy drift detected"}
+{"t": 1794833855.254184, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 160262.87 m (> 5.00 m) -- stealthy drift detected"}
+{"t": 1794833863.5639005, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 6370020.85 m (> 5.00 m) -- stealthy drift detected"}
+{"t": 1794833866.244836, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1794833867.2604427, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 33 m/s (> 15) -- implausible"}
+{"t": 1794833867.4637146, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 24 m/s (> 15) -- implausible"}
+{"t": 1794833868.5807655, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 6196985.30 m (> 5.00 m) -- stealthy drift detected"}
+{"t": 1794833869.2902684, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1794833872.3494768, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
+{"t": 1794833872.859384, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 114 m/s (> 15) -- implausible"}
+{"t": 1794833873.1639137, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 147 m/s (> 15) -- implausible"}
+{"t": 1794833873.6716163, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 401640.66 m (> 5.00 m) -- stealthy drift detected"}
+{"t": 1794833873.8767319, "detector": "GpsRampDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "sustained position drift at 0.30 m/s over 24s (> 0.30) -- possible GPS ramp spoof"}
+{"t": 1794833874.1623852, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 625 m/s (> 15) -- implausible"}
+{"t": 1794833874.260712, "detector": "KinematicConsistencyDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "kinematic discrepancy: pos rate 284.37 m/s vs INS speed 1.83 m/s (delta 282.54 m/s > 1.50 m/s)"}
+{"t": 1794833878.7597504, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 259352.87 m (> 5.00 m) -- stealthy drift detected"}
+{"t": 1794833883.7619014, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 56657.98 m (> 5.00 m) -- stealthy drift detected"}
+{"t": 1794833888.7630637, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 22826.15 m (> 5.00 m) -- stealthy drift detected"}
+{"t": 1794833893.76478, "detector": "CusumDriftDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "cumulative Page's CUSUM residual reached 50020.26 m (> 5.00 m) -- stealthy drift detected"}

@@ -320,7 +320,7 @@
       <kDotP>0</kDotP>
       <mDotQ>0</mDotQ>
       <nDotR>0</nDotR>
-      <xU>-808</xU>
+      <xU>-110</xU>
       <yV>-1615</yV>
       <zW>-1615</zW>
       <!-- Angular damping (kP/mQ/nR + abs variants) is NOT the same
@@ -339,7 +339,7 @@
       <kP>-24200</kP>
       <mQ>-24200</mQ>
       <nR>-32300</nR>
-      <xUabsU>-1010</xUabsU>
+      <xUabsU>-85</xUabsU>
       <yVabsV>-2423</yVabsV>
       <zWabsW>-2423</zWabsW>
       <kPabsP>-40400</kPabsP>
@@ -362,13 +362,12 @@
         port motor — SERVO1_FUNCTION 73 (ThrottleLeft)
         COMMAND type computes cmd = multiplier * (normalized_input + offset);
         normalized_input in [0,1], offset=-0.5 -> effective range [-0.5,0.5].
-        multiplier=8000 gives max +-4000N per thruster at full deflection,
-        matching the twin-4000N sanity check in the header comment (BlueBoat
-        uses the identical formula with multiplier=70 -> +-35N per side).
+        multiplier=26000 gives max +-13000N per thruster at full deflection,
+        enabling realistic planing interceptor speeds (~15-17 m/s, ~30-33 kn).
       -->
       <control channel="0">
         <jointName>motor_port_joint</jointName>
-        <multiplier>8000</multiplier>
+        <multiplier>26000</multiplier>
         <offset>-0.5</offset>
         <servo_min>1000</servo_min>
         <servo_max>2000</servo_max>
@@ -381,7 +380,7 @@
       -->
       <control channel="2">
         <jointName>motor_stbd_joint</jointName>
-        <multiplier>8000</multiplier>
+        <multiplier>26000</multiplier>
         <offset>-0.5</offset>
         <servo_min>1000</servo_min>
         <servo_max>2000</servo_max>
