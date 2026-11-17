@@ -16,7 +16,10 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 source /opt/ros/jazzy/setup.bash 2>/dev/null
 source "$REPO/ros2_ws/install/setup.bash" 2>/dev/null   # puts VRX/WAM-V models on the resource path
-export GZ_SIM_SYSTEM_PLUGIN_PATH="$HOME/ardupilot_gazebo/build:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
+EXT="$REPO/external"
+GZ_PLUGIN="$EXT/ardupilot_gazebo/build"
+[[ -d "$GZ_PLUGIN" ]] || GZ_PLUGIN="$HOME/ardupilot_gazebo/build"
+export GZ_SIM_SYSTEM_PLUGIN_PATH="$GZ_PLUGIN:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
 export GZ_SIM_RESOURCE_PATH="$REPO/sim_config/models:${GZ_SIM_RESOURCE_PATH:-}"
 
 if [ -z "${DISPLAY:-}" ]; then

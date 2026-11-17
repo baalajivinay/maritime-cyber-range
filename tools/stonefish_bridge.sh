@@ -6,8 +6,10 @@
 #   tools/stonefish_bridge.sh up    (boot)   |   down (teardown)
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MCR="${MCR_BIN:-$HOME/stonefish_src/build/Tests/MCR}"
-ARDUSUB="${ARDUSUB_BIN:-$HOME/ardupilot/build/sitl/bin/ardusub}"
+MCR="${MCR_BIN:-$REPO/external/stonefish_src/build/Tests/MCR}"
+[[ -x "$MCR" ]] || MCR="$HOME/stonefish_src/build/Tests/MCR"
+ARDUSUB="${ARDUSUB_BIN:-$REPO/external/ardupilot/build/sitl/bin/ardusub}"
+[[ -x "$ARDUSUB" ]] || ARDUSUB="$HOME/ardupilot/build/sitl/bin/ardusub"
 SCN="${MCR_SCN:-$REPO/stonefish/auv150.scn}"
 SITE_LAT="${MCR_LAT:-9.9}"; SITE_LON="${MCR_LON:-76.2}"
 RUN=/tmp/mcr_stonefish; mkdir -p "$RUN"; FIFO="$RUN/sub_stdin.fifo"

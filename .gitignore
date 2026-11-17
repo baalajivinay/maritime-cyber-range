@@ -23,6 +23,7 @@ evidence/live_session_alerts.jsonl
 *.pdf
 *.pptx
 *.ppt
+docs/archive_reference/
 
 # Built application artifacts (multi-GB) -- packages are built on demand by
 # app/build-*.sh into dist/; never commit the outputs.

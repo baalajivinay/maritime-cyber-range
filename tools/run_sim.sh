@@ -70,15 +70,24 @@ WORLD_METHOD="${PF[6]}"; MODEL_NAME="${PF[7]}"; WORLD_SDF="${PF[8]}"; WORLD_NAME
 PROFILE_ARDU_DEFAULTS="${PF[11]:-}"
 
 # --- Gazebo environment ------------------------------------------------------
-export GZ_SIM_SYSTEM_PLUGIN_PATH="$HOME/ardupilot_gazebo/build:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
-export GZ_SIM_RESOURCE_PATH="$REPO/sim_config/models:$HOME/ardupilot_gazebo/models:$HOME/SITL_Models/Gazebo/models:$HOME/SITL_Models/Gazebo/worlds:${GZ_SIM_RESOURCE_PATH:-}"
+EXT="$REPO/external"
+GZ_PLUGIN="$EXT/ardupilot_gazebo/build"
+[[ -d "$GZ_PLUGIN" ]] || GZ_PLUGIN="$HOME/ardupilot_gazebo/build"
+export GZ_SIM_SYSTEM_PLUGIN_PATH="$GZ_PLUGIN:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
+
+GZ_MODELS="$REPO/sim_config/models:$EXT/ardupilot_gazebo/models:$EXT/SITL_Models/Gazebo/models:$EXT/SITL_Models/Gazebo/worlds"
+[[ -d "$EXT/ardupilot_gazebo/models" ]] || GZ_MODELS="$REPO/sim_config/models:$HOME/ardupilot_gazebo/models:$HOME/SITL_Models/Gazebo/models:$HOME/SITL_Models/Gazebo/worlds"
+export GZ_SIM_RESOURCE_PATH="$GZ_MODELS:${GZ_SIM_RESOURCE_PATH:-}"
 
 ARDU_PARAMS=""
 if [[ "$VTYPE" == "Sub" ]]; then
-  SITL_BIN="$HOME/ardupilot/build/sitl/bin/ardusub"
-  ARDU_PARAMS="$HOME/auv_ws/src/dave/models/dave_robot_models/config/bluerov2/ardusub.parm"
+  SITL_BIN="$EXT/ardupilot/build/sitl/bin/ardusub"
+  [[ -x "$SITL_BIN" ]] || SITL_BIN="$HOME/ardupilot/build/sitl/bin/ardusub"
+  ARDU_PARAMS="$EXT/auv_ws/src/dave/models/dave_robot_models/config/bluerov2/ardusub.parm"
+  [[ -f "$ARDU_PARAMS" ]] || ARDU_PARAMS="$HOME/auv_ws/src/dave/models/dave_robot_models/config/bluerov2/ardusub.parm"
 else
-  SITL_BIN="$HOME/ardupilot/build/sitl/bin/ardurover"
+  SITL_BIN="$EXT/ardupilot/build/sitl/bin/ardurover"
+  [[ -x "$SITL_BIN" ]] || SITL_BIN="$HOME/ardupilot/build/sitl/bin/ardurover"
 fi
 # A profile's own "ardu_defaults" (e.g. a hardened SYSID_MYGCS for a
 # resilient digital twin) overrides the domain's usual default entirely --
