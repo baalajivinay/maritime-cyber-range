@@ -20,6 +20,9 @@ evidence/live_session_alerts.jsonl
 
 # Personal/understanding-only docs -- not part of the shipped package
 *.docx
+*.pdf
+*.pptx
+*.ppt
 
 # Built application artifacts (multi-GB) -- packages are built on demand by
 # app/build-*.sh into dist/; never commit the outputs.
