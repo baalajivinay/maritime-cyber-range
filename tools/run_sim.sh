@@ -200,6 +200,7 @@ do_up() {
     senv=$(python3 -c "import sys;sys.path.insert(0,'$REPO');from scaleup.sites import load_site;s=load_site('$MCR_SITE');print(round(s.density(),1), s.position[0], s.position[1])" 2>/dev/null)
     if [[ -n "$senv" ]]; then
       read -r sden slat slon <<< "$senv"
+      HOME_LAT="$slat"; HOME_LON="$slon"
       # relocate the Gazebo GPS origin to the site AND set the water density.
       # (SITL --home already follows, via constants.HOME_LAT/LON override.)
       WORLD_LAUNCH="$RUN_DIR/world_site.sdf"

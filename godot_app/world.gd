@@ -45,7 +45,7 @@ var active_attack := ""
 const SITES := ["kochi", "mumbai", "visakhapatnam"]
 const SITE_COORDS := {
 	"kochi": Vector2(9.9, 76.2),
-	"mumbai": Vector2(18.95, 72.8),
+	"mumbai": Vector2(18.92, 72.8),
 	"visakhapatnam": Vector2(17.7, 83.3)
 }
 const TWINS := [

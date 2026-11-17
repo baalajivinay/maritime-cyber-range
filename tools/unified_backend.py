@@ -136,7 +136,7 @@ class UnifiedBackend:
         if self._mcr_running():
             return True
         env = dict(os.environ, MCR_HEADLESS="1")
-        lat_lon = {"kochi": ("9.9", "76.2"), "mumbai": ("18.95", "72.8"),
+        lat_lon = {"kochi": ("9.9", "76.2"), "mumbai": ("18.92", "72.8"),
                    "visakhapatnam": ("17.7", "83.3")}.get(site, ("9.9", "76.2"))
         env["MCR_LAT"], env["MCR_LON"] = lat_lon
         self._log("starting Stonefish physics (headless) ...")
