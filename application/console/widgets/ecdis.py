@@ -1,349 +1,424 @@
 """
-Tactical 2D Vector Nautical Chart (ECDIS Canvas conforming to IEC 61174 & IEC 62288).
-Renders bathymetry, fairway, buoys, true own-ship position, spoofed ghost divergence, and interactive waypoint routing.
+Testbed Map & Navigation Display.
+Clean 2D interactive nautical chart showing true position, navigation track,
+GPS spoofing divergence, and AIS ghost vessels.
 """
 import math
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
-from PyQt6.QtGui import (
-    QPainter, QColor, QPen, QBrush, QFont, QPolygonF, QPainterPath
-)
-from PyQt6.QtCore import Qt, QPointF, pyqtSignal
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPolygonF, QFont, QPainterPath
+from PyQt6.QtCore import Qt, QPointF, QRectF
+
 from application.console.theme import (
-    CHART_WATER_DEEP, CHART_WATER_SHALLOW, CHART_WATER_FAIRWAY, CHART_LAND,
-    CHART_GRID, CHART_BUOY_PORT, CHART_BUOY_STBD, CHART_TRUE_VESSEL,
-    CHART_SPOOFED_GHOST, CHART_WAYPOINT, TEXT_WHITE, TEXT_MUTED, COLOR_ALARM, COLOR_WARN,
-    PANEL_BORDER
+    MAP_WATER, MAP_FAIRWAY, MAP_LAND, MAP_GRID,
+    MAP_OWN_SHIP, MAP_GHOST_SHIP, MAP_PATH, MAP_SPOOF_LINE,
+    MAP_WAYPOINT, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    COLOR_RED, COLOR_GREEN, BG_PANEL, BORDER_COLOR
 )
 
 DEG_TO_M = 111320.0
 
-class TacticalECDISWidget(QWidget):
-    waypoint_selected = pyqtSignal(float, float)   # lat, lon
 
+class ChartCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setMinimumSize(480, 420)
         self.setMouseTracking(True)
-        self.setMinimumSize(450, 400)
 
-        # Map state (origin coordinates)
-        self.center_lat = 18.92000
-        self.center_lon = 72.80000
-        self.scale_px_per_m = 0.85    # Zoom scale (pixels per meter)
-        self.pan_offset = QPointF(0, 0)
-        self.dragging = False
-        self.drag_start = QPointF(0, 0)
+        # Coordinate Frame (Meters relative to site origin)
+        self.center_lat = 9.9000
+        self.center_lon = 76.2000
+        self.scale_m_to_px = 0.85  # Pixels per meter
+        self.pan_x = 0.0
+        self.pan_y = 0.0
 
-        # Vehicle & Telemetry
-        self.true_pos = (0.0, 0.0)      # East, North (m) relative to center
-        self.true_hdg = 0.0
-        self.spoofed_pos = None          # East, North (m) during attack
-        self.waypoint = None             # East, North (m)
-        self.waypoint_latlon = None
-        self.trail = []                  # History of true positions [(E, N), ...]
-        self.speed = 0.0
-        self.active_attack = ""
+        # Vessel State
+        self.true_pos = (0.0, 0.0)      # (East m, North m)
+        self.true_hdg = 45.0            # Degrees
+        self.speed_mps = 0.0
+        self.trail = []
 
-        # Navigational Aids (Buoys around harbour in local meters East, North)
-        self.buoys = [
-            (80.0, 60.0, "port"), (-100.0, 90.0, "stbd"),
-            (180.0, 160.0, "port"), (-160.0, 200.0, "stbd"),
-            (50.0, 280.0, "port"), (-120.0, 320.0, "stbd"),
-            (220.0, -90.0, "port"), (-190.0, -110.0, "stbd"),
-            (10.0, 150.0, "fairway"), (0.0, 250.0, "fairway")
-        ]
+        # Target Waypoint
+        self.target_wp = None           # (East m, North m)
 
-    def set_origin(self, lat: float, lon: float):
+        # Attack Overlays
+        self.spoofed_pos = None         # (East m, North m)
+        self.ghost_vessel = None        # dict(pos=(e, n), hdg=deg, name=str)
+        self.active_attack = None
+
+        # Dragging / Panning State
+        self._dragging = False
+        self._drag_start = QPointF()
+
+    def set_site(self, lat: float, lon: float):
         self.center_lat = lat
         self.center_lon = lon
+        self.true_pos = (0.0, 0.0)
         self.trail.clear()
-        self.waypoint = None
+        self.target_wp = None
+        self.spoofed_pos = None
+        self.ghost_vessel = None
+        self.pan_x = 0.0
+        self.pan_y = 0.0
         self.update()
 
     def update_telemetry(self, state: dict):
         lat = state.get("lat")
         lon = state.get("lon")
-        hdg = float(state.get("hdg") or 0.0)
-        self.speed = float(state.get("speed") or 0.0)
-
-        self.true_hdg = hdg
-        self.active_attack = state.get("active_attack", "")
+        self.true_hdg = float(state.get("hdg") or 0.0)
+        self.speed_mps = float(state.get("speed") or 0.0)
+        self.active_attack = state.get("active_attack")
 
         if lat is not None and lon is not None:
-            # Convert Lat/Lon to meters East, North from center
-            d_north = (float(lat) - self.center_lat) * DEG_TO_M
-            d_east = (float(lon) - self.center_lon) * DEG_TO_M * math.cos(math.radians(self.center_lat))
-            self.true_pos = (d_east, d_north)
+            dn = (float(lat) - self.center_lat) * DEG_TO_M
+            de = (float(lon) - self.center_lon) * DEG_TO_M * math.cos(math.radians(self.center_lat))
+            self.true_pos = (de, dn)
 
-            # Record trail
-            if not self.trail or math.hypot(d_east - self.trail[-1][0], d_north - self.trail[-1][1]) > 2.0:
-                self.trail.append((d_east, d_north))
-                if len(self.trail) > 150:
+            # Record navigation trail
+            if not self.trail or math.hypot(de - self.trail[-1][0], dn - self.trail[-1][1]) > 2.0:
+                self.trail.append((de, dn))
+                if len(self.trail) > 200:
                     self.trail.pop(0)
 
-            # Check if attack injected spoofed offset
-            spoof_offset = state.get("spoof_offset_m")
-            if spoof_offset:
-                self.spoofed_pos = (d_east + spoof_offset[0], d_north + spoof_offset[1])
-            elif "gps" in self.active_attack.lower():
-                # Visual synthetic walk-off divergence during active attack test
-                self.spoofed_pos = (d_east + 18.5, d_north - 12.0)
-            else:
-                self.spoofed_pos = None
+        # GPS Spoofing Offset
+        spoof_offset = state.get("spoof_offset_m")
+        if spoof_offset and self.active_attack == "gps_spoof":
+            self.spoofed_pos = (self.true_pos[0] + spoof_offset[0], self.true_pos[1] + spoof_offset[1])
+        else:
+            self.spoofed_pos = None
+
+        # AIS Ghost Target
+        if self.active_attack == "ais_spoof":
+            ghost_info = state.get("ghost_vessel")
+            if ghost_info:
+                g_lat = ghost_info.get("lat", self.center_lat + 0.0015)
+                g_lon = ghost_info.get("lon", self.center_lon + 0.001)
+                g_dn = (g_lat - self.center_lat) * DEG_TO_M
+                g_de = (g_lon - self.center_lon) * DEG_TO_M * math.cos(math.radians(self.center_lat))
+                self.ghost_vessel = {
+                    "pos": (g_de, g_dn),
+                    "hdg": ghost_info.get("hdg", 180.0),
+                    "mmsi": ghost_info.get("mmsi", "419000123")
+                }
+        else:
+            self.ghost_vessel = None
 
         self.update()
 
-    # Coordinate transformation helpers
-    def _world_to_screen(self, east: float, north: float) -> QPointF:
-        cx = self.width() / 2.0 + self.pan_offset.x()
-        cy = self.height() / 2.0 + self.pan_offset.y()
-        sx = cx + (east * self.scale_px_per_m)
-        sy = cy - (north * self.scale_px_per_m)   # North is up (screen -Y)
-        return QPointF(sx, sy)
+    def m_to_screen(self, east: float, north: float):
+        cx = self.width() / 2.0 + self.pan_x
+        cy = self.height() / 2.0 + self.pan_y
+        sx = cx + east * self.scale_m_to_px
+        sy = cy - north * self.scale_m_to_px
+        return sx, sy
 
-    def _screen_to_world(self, sx: float, sy: float) -> tuple[float, float]:
-        cx = self.width() / 2.0 + self.pan_offset.x()
-        cy = self.height() / 2.0 + self.pan_offset.y()
-        east = (sx - cx) / self.scale_px_per_m
-        north = -(sy - cy) / self.scale_px_per_m
+    def screen_to_m(self, sx: float, sy: float):
+        cx = self.width() / 2.0 + self.pan_x
+        cy = self.height() / 2.0 + self.pan_y
+        east = (sx - cx) / self.scale_m_to_px
+        north = -(sy - cy) / self.scale_m_to_px
         return east, north
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        w = self.width()
-        h = self.height()
+        # 1. Sea Water Background
+        p.fillRect(self.rect(), QColor(MAP_WATER))
 
-        # 1. Bathymetric Background
-        painter.fillRect(0, 0, w, h, QColor(CHART_WATER_DEEP))
+        # 2. Channel / Fairway
+        self._draw_fairway(p)
 
-        # Navigable Fairway / Deep Water Channel (diagonal corridor)
-        fairway_poly = QPolygonF([
-            self._world_to_screen(-140, -400),
-            self._world_to_screen(140, -400),
-            self._world_to_screen(180, 500),
-            self._world_to_screen(-100, 500)
-        ])
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(CHART_WATER_FAIRWAY)))
-        painter.drawPolygon(fairway_poly)
+        # 3. Coordinate Grid
+        self._draw_grid(p)
 
-        # 2. Distance Range Rings (50m, 100m, 200m, 400m from vessel)
-        cx, cy = self._world_to_screen(self.true_pos[0], self.true_pos[1]).x(), self._world_to_screen(self.true_pos[0], self.true_pos[1]).y()
-        painter.setPen(QPen(QColor(CHART_GRID), 1, Qt.PenStyle.DashLine))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setFont(QFont("Inter", 8))
+        # 4. Navigation Trail
+        self._draw_trail(p)
 
-        for r_m in [50, 100, 200, 400]:
-            r_px = r_m * self.scale_px_per_m
-            painter.drawEllipse(QPointF(cx, cy), r_px, r_px)
-            painter.setPen(QColor(TEXT_MUTED))
-            painter.drawText(int(cx + r_px + 4), int(cy), f"{r_m}m")
-            painter.setPen(QPen(QColor(CHART_GRID), 1, Qt.PenStyle.DashLine))
+        # 5. Commanded Waypoint & Target Path
+        if self.target_wp:
+            self._draw_waypoint(p)
 
-        # 3. Nautical Buoys (Lateral Marks)
-        for be, bn, btype in self.buoys:
-            pt = self._world_to_screen(be, bn)
-            if btype == "port":
-                col = QColor(CHART_BUOY_PORT)
-                painter.setBrush(QBrush(col))
-                painter.setPen(QPen(QColor("#FFFFFF"), 1))
-                painter.drawRect(int(pt.x() - 4), int(pt.y() - 4), 8, 8)  # Can mark
-            elif btype == "stbd":
-                col = QColor(CHART_BUOY_STBD)
-                painter.setBrush(QBrush(col))
-                painter.setPen(QPen(QColor("#FFFFFF"), 1))
-                poly = QPolygonF([QPointF(pt.x(), pt.y() - 6), QPointF(pt.x() - 5, pt.y() + 4), QPointF(pt.x() + 5, pt.y() + 4)])
-                painter.drawPolygon(poly) # Conical mark
-            else:
-                col = QColor(CHART_WAYPOINT)
-                painter.setBrush(QBrush(col))
-                painter.setPen(QPen(QColor("#FFFFFF"), 1))
-                painter.drawEllipse(pt, 3, 3)
+        # 6. AIS Ghost Vessel (if spoof active)
+        if self.ghost_vessel:
+            self._draw_ghost(p)
 
-        # 4. Historical Track Trail
-        if len(self.trail) > 1:
-            painter.setPen(QPen(QColor(CHART_TRUE_VESSEL).lighter(120), 1.5, Qt.PenStyle.DotLine))
-            path = QPainterPath()
-            pt0 = self._world_to_screen(self.trail[0][0], self.trail[0][1])
-            path.moveTo(pt0)
-            for e, n in self.trail[1:]:
-                path.lineTo(self._world_to_screen(e, n))
-            painter.drawPath(path)
-
-        # 5. Destination Waypoint Marker & Planned Corridor
-        if self.waypoint:
-            wpt_pt = self._world_to_screen(self.waypoint[0], self.waypoint[1])
-            v_pt = self._world_to_screen(self.true_pos[0], self.true_pos[1])
-
-            # Planned track line
-            painter.setPen(QPen(QColor(CHART_WAYPOINT), 1.5, Qt.PenStyle.DashLine))
-            painter.drawLine(v_pt, wpt_pt)
-
-            # Waypoint beacon marker
-            painter.setPen(QPen(QColor(CHART_WAYPOINT), 2))
-            painter.setBrush(QBrush(QColor(52, 211, 153, 60)))
-            painter.drawEllipse(wpt_pt, 12, 12)
-            painter.drawEllipse(wpt_pt, 4, 4)
-            painter.setFont(QFont("JetBrains Mono", 9, QFont.Weight.Bold))
-            dist_m = math.hypot(self.waypoint[0] - self.true_pos[0], self.waypoint[1] - self.true_pos[1])
-            painter.drawText(int(wpt_pt.x() + 14), int(wpt_pt.y() + 4), f"WAYPOINT ({dist_m:.1f}m)")
-
-        # 6. Own-Ship True Ground Truth Vessel (Solid Cyan)
-        v_sc = self._world_to_screen(self.true_pos[0], self.true_pos[1])
-        painter.save()
-        painter.translate(v_sc)
-        painter.rotate(self.true_hdg)
-
-        # Scaled vessel hull silhouette (30m length representation)
-        L = 30.0 * self.scale_px_per_m
-        B = 9.0 * self.scale_px_per_m
-        hull = QPolygonF([
-            QPointF(0, -L * 0.5),           # Bow tip
-            QPointF(B * 0.5, -L * 0.25),    # Stbd shoulder
-            QPointF(B * 0.5, L * 0.5),      # Stbd quarter
-            QPointF(-B * 0.5, L * 0.5),     # Port quarter
-            QPointF(-B * 0.5, -L * 0.25)    # Port shoulder
-        ])
-        painter.setBrush(QBrush(QColor(CHART_TRUE_VESSEL)))
-        painter.setPen(QPen(QColor("#FFFFFF"), 1.5))
-        painter.drawPolygon(hull)
-
-        # Velocity Lead-line (Heading + speed vector)
-        speed_len = max(15.0, self.speed * 8.0 * self.scale_px_per_m)
-        painter.setPen(QPen(QColor(CHART_TRUE_VESSEL), 2))
-        painter.drawLine(0, int(-L * 0.5), 0, int(-L * 0.5 - speed_len))
-        painter.restore()
-
-        # 7. Autopilot Spoofed Ghost Vessel (Divergence during attack)
+        # 7. GPS Spoofed Position & Divergence Line
         if self.spoofed_pos:
-            g_sc = self._world_to_screen(self.spoofed_pos[0], self.spoofed_pos[1])
+            self._draw_spoofed_ghost(p)
 
-            # Divergence Vector Line connecting True to Ghost
-            painter.setPen(QPen(QColor(COLOR_ALARM), 2, Qt.PenStyle.DashLine))
-            painter.drawLine(v_sc, g_sc)
+        # 8. True Own-Ship Vessel
+        self._draw_own_ship(p)
 
-            divergence_m = math.hypot(self.spoofed_pos[0] - self.true_pos[0], self.spoofed_pos[1] - self.true_pos[1])
-            painter.setFont(QFont("JetBrains Mono", 9, QFont.Weight.Bold))
-            painter.setPen(QColor(COLOR_ALARM))
-            mid_pt = QPointF((v_sc.x() + g_sc.x()) / 2.0, (v_sc.y() + g_sc.y()) / 2.0)
-            painter.drawText(int(mid_pt.x() + 8), int(mid_pt.y()), f"ΔPOS: {divergence_m:.1f}m (SPOOFED)")
+        # 9. Top-Left HUD Card (Scale & Quick Info)
+        self._draw_hud(p)
 
-            # Ghost vessel contour
-            painter.save()
-            painter.translate(g_sc)
-            painter.rotate(self.true_hdg + 8.0)
-            painter.setBrush(QBrush(QColor(239, 68, 68, 80)))
-            painter.setPen(QPen(QColor(COLOR_ALARM), 1.5, Qt.PenStyle.DashLine))
-            painter.drawPolygon(hull)
-            painter.restore()
+    def _draw_fairway(self, p: QPainter):
+        # Draw a curved navigable fairway channel
+        path = QPainterPath()
+        p1 = self.m_to_screen(-300, -350)
+        p2 = self.m_to_screen(-100, -100)
+        p3 = self.m_to_screen(150, 150)
+        p4 = self.m_to_screen(350, 400)
 
-        # 8. Chart HUD Overlays (Scale, Mode, Click instructions)
-        painter.setPen(QPen(QColor(PANEL_BORDER), 1))
-        painter.setBrush(QBrush(QColor(15, 20, 29, 210)))
-        painter.drawRect(12, 12, 230, 48)
+        path.moveTo(p1[0], p1[1])
+        path.cubicTo(p2[0], p2[1], p3[0], p3[1], p4[0], p4[1])
 
-        painter.setFont(QFont("Inter", 8, QFont.Weight.Bold))
-        painter.setPen(QColor(TEXT_MUTED))
-        painter.drawText(20, 28, "TACTICAL 2D ECDIS (S-57)")
-        painter.setPen(QColor(CHART_WAYPOINT))
-        painter.drawText(20, 46, "LEFT-CLICK: SET GUIDED WAYPOINT")
+        fairway_pen = QPen(QColor(MAP_FAIRWAY), 120 * self.scale_m_to_px, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        p.setPen(fairway_pen)
+        p.drawPath(path)
 
-    # Mouse navigation & interaction
-    def mousePressEvent(self, ev):
-        if ev.button() == Qt.MouseButton.LeftButton:
-            # Set Waypoint
-            east, north = self._screen_to_world(ev.position().x(), ev.position().y())
-            self.waypoint = (east, north)
-            dlat = north / DEG_TO_M
-            dlon = east / (DEG_TO_M * math.cos(math.radians(self.center_lat)))
-            tgt_lat = self.center_lat + dlat
-            tgt_lon = self.center_lon + dlon
-            self.waypoint_latlon = (tgt_lat, tgt_lon)
-            self.waypoint_selected.emit(tgt_lat, tgt_lon)
+        # Fairway edge lines
+        edge_pen = QPen(QColor("#2d4157"), 1, Qt.PenStyle.DashLine)
+        p.setPen(edge_pen)
+        p.drawPath(path)
+
+    def _draw_grid(self, p: QPainter):
+        pen = QPen(QColor(MAP_GRID), 1, Qt.PenStyle.DotLine)
+        p.setPen(pen)
+
+        step_m = 100.0  # 100 meter grid intervals
+        step_px = step_m * self.scale_m_to_px
+
+        cx = self.width() / 2.0 + self.pan_x
+        cy = self.height() / 2.0 + self.pan_y
+
+        start_x = int(cx % step_px)
+        while start_x < self.width():
+            p.drawLine(start_x, 0, start_x, self.height())
+            start_x += int(step_px)
+
+        start_y = int(cy % step_px)
+        while start_y < self.height():
+            p.drawLine(0, start_y, self.width(), start_y)
+            start_y += int(step_px)
+
+    def _draw_trail(self, p: QPainter):
+        if len(self.trail) < 2:
+            return
+        pen = QPen(QColor(MAP_PATH), 2, Qt.PenStyle.SolidLine)
+        p.setPen(pen)
+        for i in range(len(self.trail) - 1):
+            sx1, sy1 = self.m_to_screen(*self.trail[i])
+            sx2, sy2 = self.m_to_screen(*self.trail[i + 1])
+            p.drawLine(int(sx1), int(sy1), int(sx2), int(sy2))
+
+    def _draw_waypoint(self, p: QPainter):
+        wx, wy = self.m_to_screen(*self.target_wp)
+        vx, vy = self.m_to_screen(*self.true_pos)
+
+        # Line from vessel to waypoint
+        pen_line = QPen(QColor(MAP_WAYPOINT), 1, Qt.PenStyle.DashLine)
+        p.setPen(pen_line)
+        p.drawLine(int(vx), int(vy), int(wx), int(wy))
+
+        # Waypoint marker (Bullseye)
+        p.setPen(QPen(QColor(MAP_WAYPOINT), 2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QPointF(wx, wy), 9, 9)
+        p.setBrush(QBrush(QColor(MAP_WAYPOINT)))
+        p.drawEllipse(QPointF(wx, wy), 3, 3)
+
+        # Label
+        p.setFont(QFont("-apple-system, sans-serif", 9))
+        p.setPen(QColor(MAP_WAYPOINT))
+        p.drawText(int(wx + 12), int(wy + 4), "Target Waypoint")
+
+    def _draw_ghost(self, p: QPainter):
+        ge, gn = self.ghost_vessel["pos"]
+        gx, gy = self.m_to_screen(ge, gn)
+        ghdg = self.ghost_vessel["hdg"]
+
+        p.save()
+        p.translate(gx, gy)
+        p.rotate(ghdg)
+
+        # Safety perimeter circle
+        p.setPen(QPen(QColor(COLOR_RED), 1, Qt.PenStyle.DashLine))
+        p.setBrush(QBrush(QColor(235, 87, 87, 25)))
+        r = 60 * self.scale_m_to_px
+        p.drawEllipse(QPointF(0, 0), r, r)
+
+        # Vessel Hull Shape
+        hull = QPolygonF([
+            QPointF(0, -18),
+            QPointF(8, 6),
+            QPointF(6, 16),
+            QPointF(-6, 16),
+            QPointF(-8, 6),
+        ])
+        p.setPen(QPen(QColor(COLOR_RED), 2))
+        p.setBrush(QBrush(QColor(COLOR_RED)))
+        p.drawPolygon(hull)
+        p.restore()
+
+        # Ghost Ship Label
+        p.setFont(QFont("-apple-system, sans-serif", 9, QFont.Weight.Bold))
+        p.setPen(QColor(COLOR_RED))
+        mmsi = self.ghost_vessel.get("mmsi", "AIS-GHOST")
+        p.drawText(int(gx + 15), int(gy - 5), f"AIS Ghost ({mmsi})")
+
+    def _draw_spoofed_ghost(self, p: QPainter):
+        tx, ty = self.m_to_screen(*self.true_pos)
+        sx, sy = self.m_to_screen(*self.spoofed_pos)
+
+        # Red Divergence Vector Line
+        pen_div = QPen(QColor(MAP_SPOOF_LINE), 2, Qt.PenStyle.DashLine)
+        p.setPen(pen_div)
+        p.drawLine(int(tx), int(ty), int(sx), int(sy))
+
+        # Divergence distance calculation
+        dx_m = self.spoofed_pos[0] - self.true_pos[0]
+        dy_m = self.spoofed_pos[1] - self.true_pos[1]
+        dist_m = math.hypot(dx_m, dy_m)
+
+        # Midpoint label for distance
+        mx = (tx + sx) / 2.0
+        my = (ty + sy) / 2.0
+        p.setFont(QFont("-apple-system, sans-serif", 9, QFont.Weight.Bold))
+        p.setPen(QColor(MAP_SPOOF_LINE))
+        p.drawText(int(mx + 8), int(my - 5), f"Drift: {dist_m:.1f} m")
+
+        # Believed (Spoofed) Position Marker
+        p.save()
+        p.translate(sx, sy)
+        p.rotate(self.true_hdg)
+
+        p.setPen(QPen(QColor(MAP_SPOOF_LINE), 2))
+        p.setBrush(QBrush(QColor(235, 87, 87, 80)))
+        hull = QPolygonF([
+            QPointF(0, -14),
+            QPointF(6, 4),
+            QPointF(4, 12),
+            QPointF(-4, 12),
+            QPointF(-6, 4),
+        ])
+        p.drawPolygon(hull)
+        p.restore()
+
+        p.drawText(int(sx + 14), int(sy + 4), "Believed GPS Fix")
+
+    def _draw_own_ship(self, p: QPainter):
+        vx, vy = self.m_to_screen(*self.true_pos)
+
+        p.save()
+        p.translate(vx, vy)
+        p.rotate(self.true_hdg)
+
+        # Heading velocity vector line
+        vec_len = max(25.0, self.speed_mps * 8.0 * self.scale_m_to_px)
+        p.setPen(QPen(QColor(MAP_OWN_SHIP), 2))
+        p.drawLine(0, 0, 0, int(-vec_len))
+
+        # Modern Crisp Vessel Hull
+        hull = QPolygonF([
+            QPointF(0, -16),
+            QPointF(7, 5),
+            QPointF(5, 14),
+            QPointF(-5, 14),
+            QPointF(-7, 5),
+        ])
+
+        p.setPen(QPen(QColor("#0284c7"), 1.5))
+        p.setBrush(QBrush(QColor(MAP_OWN_SHIP)))
+        p.drawPolygon(hull)
+        p.restore()
+
+        # Own-ship Label
+        p.setFont(QFont("-apple-system, sans-serif", 9, QFont.Weight.Bold))
+        p.setPen(QColor(TEXT_PRIMARY))
+        p.drawText(int(vx + 14), int(vy - 6), "Own-Ship (True Position)")
+
+    def _draw_hud(self, p: QPainter):
+        # Scale indicator card in bottom-left
+        hud_w, hud_h = 130, 44
+        margin = 12
+        rx = margin
+        ry = self.height() - hud_h - margin
+
+        p.setPen(QPen(QColor(BORDER_COLOR), 1))
+        p.setBrush(QBrush(QColor(30, 30, 38, 220)))
+        p.drawRoundedRect(QRectF(rx, ry, hud_w, hud_h), 5, 5)
+
+        # Scale bar (50 meters)
+        scale_50m_px = 50.0 * self.scale_m_to_px
+        p.setPen(QPen(QColor(TEXT_PRIMARY), 2))
+        p.drawLine(int(rx + 12), int(ry + 28), int(rx + 12 + scale_50m_px), int(ry + 28))
+        p.drawLine(int(rx + 12), int(ry + 24), int(rx + 12), int(ry + 32))
+        p.drawLine(int(rx + 12 + scale_50m_px), int(ry + 24), int(rx + 12 + scale_50m_px), int(ry + 32))
+
+        p.setFont(QFont("-apple-system, sans-serif", 8))
+        p.setPen(QColor(TEXT_SECONDARY))
+        p.drawText(int(rx + 12), int(ry + 18), "50 meters")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Set target navigation waypoint
+            east, north = self.screen_to_m(event.position().x(), event.position().y())
+            self.target_wp = (east, north)
             self.update()
-        elif ev.button() == Qt.MouseButton.RightButton:
-            self.dragging = True
-            self.drag_start = ev.position()
+        elif event.button() in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
+            self._dragging = True
+            self._drag_start = event.position()
 
-    def mouseMoveEvent(self, ev):
-        if self.dragging:
-            delta = ev.position() - self.drag_start
-            self.pan_offset += delta
-            self.drag_start = ev.position()
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            delta = event.position() - self._drag_start
+            self._drag_start = event.position()
+            self.pan_x += delta.x()
+            self.pan_y += delta.y()
             self.update()
 
-    def mouseReleaseEvent(self, ev):
-        if ev.button() == Qt.MouseButton.RightButton:
-            self.dragging = False
+    def mouseReleaseEvent(self, event):
+        if event.button() in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
+            self._dragging = False
 
-    def wheelEvent(self, ev):
-        factor = 1.15 if ev.angleDelta().y() > 0 else 0.85
-        self.scale_px_per_m = max(0.2, min(5.0, self.scale_px_per_m * factor))
+    def wheelEvent(self, event):
+        angle = event.angleDelta().y()
+        factor = 1.15 if angle > 0 else 0.87
+        self.scale_m_to_px = max(0.2, min(5.0, self.scale_m_to_px * factor))
         self.update()
 
 
 class ECDISPanel(QWidget):
-    """Container wrapping the ECDIS canvas with tactical zoom & center tools."""
-    waypoint_commanded = pyqtSignal(float, float)
-
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
-        # Canvas
-        self.canvas = TacticalECDISWidget(self)
-        self.canvas.waypoint_selected.connect(self.waypoint_commanded.emit)
-        layout.addWidget(self.canvas)
+        # Header bar above chart
+        header = QHBoxLayout()
+        header.setContentsMargins(8, 4, 8, 0)
 
-        # Bottom Quick Controls Bar
-        ctrl_bar = QHBoxLayout()
-        ctrl_bar.setContentsMargins(6, 0, 6, 4)
+        lbl = QLabel("Navigation Map")
+        lbl.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_PRIMARY};")
+        header.addWidget(lbl)
 
-        btn_recenter = QPushButton("CENTER VESSEL")
-        btn_recenter.setFixedHeight(24)
-        btn_recenter.clicked.connect(self._recenter_vessel)
-        ctrl_bar.addWidget(btn_recenter)
+        hint = QLabel("Left-click to steer waypoint  •  Scroll to zoom  •  Right-drag to pan")
+        hint.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED};")
+        header.addWidget(hint)
 
-        btn_clear_wpt = QPushButton("CLEAR WAYPOINT")
-        btn_clear_wpt.setFixedHeight(24)
-        btn_clear_wpt.clicked.connect(self._clear_waypoint)
-        ctrl_bar.addWidget(btn_clear_wpt)
+        header.addStretch()
 
-        ctrl_bar.addStretch()
+        btn_recenter = QPushButton("Recenter")
+        btn_recenter.setFixedHeight(26)
+        btn_recenter.clicked.connect(self._recenter)
+        header.addWidget(btn_recenter)
 
-        btn_zoom_in = QPushButton("+")
-        btn_zoom_in.setFixedSize(24, 24)
-        btn_zoom_in.clicked.connect(lambda: self._zoom(1.2))
-        ctrl_bar.addWidget(btn_zoom_in)
+        layout.addLayout(header)
 
-        btn_zoom_out = QPushButton("-")
-        btn_zoom_out.setFixedSize(24, 24)
-        btn_zoom_out.clicked.connect(lambda: self._zoom(0.8))
-        ctrl_bar.addWidget(btn_zoom_out)
+        # Chart Canvas
+        self.canvas = ChartCanvas(self)
+        layout.addWidget(self.canvas, 1)
 
-        layout.addLayout(ctrl_bar)
-
-    def _recenter_vessel(self):
-        self.canvas.pan_offset = QPointF(
-            -self.canvas.true_pos[0] * self.canvas.scale_px_per_m,
-            self.canvas.true_pos[1] * self.canvas.scale_px_per_m
-        )
+    def _recenter(self):
+        self.canvas.pan_x = 0.0
+        self.canvas.pan_y = 0.0
+        self.canvas.scale_m_to_px = 0.85
         self.canvas.update()
 
-    def _clear_waypoint(self):
-        self.canvas.waypoint = None
-        self.canvas.waypoint_latlon = None
-        self.canvas.update()
-
-    def _zoom(self, factor):
-        self.canvas.scale_px_per_m = max(0.2, min(5.0, self.canvas.scale_px_per_m * factor))
-        self.canvas.update()
+    def set_site(self, lat: float, lon: float):
+        self.canvas.set_site(lat, lon)
 
     def update_telemetry(self, state: dict):
         self.canvas.update_telemetry(state)
-
-    def set_origin(self, lat: float, lon: float):
-        self.canvas.set_origin(lat, lon)

@@ -112,21 +112,34 @@ class Backend:
         self.site_env(); self.booting = True
         self.log(f"booting {twin} @ {site} — starting headless physics")
         env = dict(os.environ, MCR_SITE=site)
-        subprocess.Popen(["bash", f"{REPO}/tools/run_vehicle.sh", f"vehicle_twins/{twin}", "up"],
+        subprocess.Popen(["bash", f"{REPO}/communication/run_vehicle.sh", f"{REPO}/application/twins/{twin}", "up"],
                          cwd=REPO, env=env, stdout=open(f"/tmp/mcr_app_{twin}.log", "w"),
                          stderr=subprocess.STDOUT)
+
         threading.Thread(target=self._loop, daemon=True).start()
+
+    @staticmethod
+    def _check_tcp(port, host="127.0.0.1"):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.settimeout(0.3)
+            s.connect((host, port))
+            s.close()
+            return True
+        except Exception:
+            return False
 
     def _loop(self):
         c = None
         while not self._stop and self.conn is None:
             try:
                 if c is None:
-                    try:
+                    dash_port = getattr(constants, "MAVLINK_DASHBOARD_PORT", 14551)
+                    if self.domain == "underwater" and self._check_tcp(5763):
                         c = mavutil.mavlink_connection("tcp:127.0.0.1:5763", source_system=255)
-                    except Exception:
-                        c = mavutil.mavlink_connection("udpin:127.0.0.1:14554", source_system=255)
-                if c.wait_heartbeat(timeout=3) is not None:
+                    else:
+                        c = mavutil.mavlink_connection(f"udpin:127.0.0.1:{dash_port}", source_system=255)
+                if c.wait_heartbeat(timeout=2) is not None:
                     self.conn = c
                     break
             except Exception:
@@ -137,6 +150,7 @@ class Backend:
                         pass
                 c = None
             time.sleep(1)
+
         if self.conn is None:
             return
         self.booting = False; self.connected = True; self.log("connected — live telemetry")

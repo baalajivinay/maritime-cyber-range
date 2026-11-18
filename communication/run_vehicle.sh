@@ -23,7 +23,14 @@ ACTION="${2:-up}"
 
 # Accept the folder with or without a trailing slash, relative or absolute.
 FOLDER="${FOLDER%/}"
-if [[ "$FOLDER" != /* ]]; then FOLDER="$REPO/$FOLDER"; fi
+if [[ ! -d "$FOLDER" ]]; then
+  BASE_NAME="${FOLDER##*/}"
+  if [[ -d "$REPO/application/twins/$BASE_NAME" ]]; then
+    FOLDER="$REPO/application/twins/$BASE_NAME"
+  elif [[ -d "$REPO/$FOLDER" ]]; then
+    FOLDER="$REPO/$FOLDER"
+  fi
+fi
 
 PROFILE_JSON="$FOLDER/profile.json"
 [[ -f "$PROFILE_JSON" ]] || { echo "FATAL: no profile.json in '$FOLDER'"; exit 1; }
@@ -31,7 +38,11 @@ PROFILE_JSON="$FOLDER/profile.json"
 NAME="$(python3 -c "import json; print(json.load(open('$PROFILE_JSON'))['name'])")"
 [[ -n "$NAME" ]] || { echo "FATAL: profile.json in '$FOLDER' has no \"name\""; exit 1; }
 
-ln -sf "$PROFILE_JSON" "$REPO/profiles/$NAME.json"
+mkdir -p "$REPO/application/profiles"
+REAL_PROFILE="$(realpath "$PROFILE_JSON")"
+ln -sf "$REAL_PROFILE" "$REPO/application/profiles/$NAME.json"
+
 
 echo "[run_vehicle] $FOLDER -> profile '$NAME'"
-exec "$REPO/tools/run_sim.sh" "$NAME" "$ACTION"
+exec "$REPO/communication/run_sim.sh" "$NAME" "$ACTION"
+

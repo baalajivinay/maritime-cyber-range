@@ -92,7 +92,21 @@ class StonefishSource:
                 pass
         self.booting = True
         self.log(f"attaching to Stonefish stack ({MAVLINK}) ...")
+        if MAVLINK.startswith("tcp:"):
+            parts = MAVLINK[4:].split(":")
+            host = parts[0]
+            port = int(parts[1]) if len(parts) > 1 else 5763
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.settimeout(0.8)
+                s.connect((host, port))
+                s.close()
+            except Exception:
+                self.booting = False
+                self.log(f"cannot connect to {MAVLINK}: port not open")
+                return False
         self.conn = mavutil.mavlink_connection(MAVLINK, source_system=255)
+
         if self.conn.wait_heartbeat(timeout=20) is None:
             self.booting = False
             self.log("no ArduSub heartbeat -- is tools/stonefish_bridge.sh up?")

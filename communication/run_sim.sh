@@ -21,7 +21,9 @@
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="$REPO:$REPO/application:$REPO/communication:$REPO/attacks:$REPO/application/external/venv-ardupilot/lib/python3.12/site-packages:${PYTHONPATH:-}"
 PROFILE="${1:?usage: run_sim.sh <profile> up|down|status}"
+
 ACTION="${2:-up}"
 
 # Scale-up: the stack defaults to the Kochi test site (the old Sydney Regatta
@@ -274,8 +276,9 @@ do_up() {
 
   # 4) MAVLink fan-out bridge
   log "starting MAVLink bridge..."
-  spawn "$LOG_DIR/bridge.log" "cd '$REPO'; MCR_VEHICLE_PROFILE='$PROFILE' python3 -u tools/mav_bridge.py" > "$RUN_DIR/bridge.pid"
+  spawn "$LOG_DIR/bridge.log" "cd '$REPO'; MCR_VEHICLE_PROFILE='$PROFILE' python3 -u communication/mav_bridge.py" > "$RUN_DIR/bridge.pid"
   wait_heartbeat "$HB_PORT" 30 || fail "no MAVLink heartbeat on :$HB_PORT (bridge/SITL link)"
+
   log "  heartbeat on :$HB_PORT [OK]"
 
   # 5) AIS emulator (DISABLED)

@@ -27,8 +27,11 @@ import csv
 import os
 from pymavlink import mavutil
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO)
+sys.path.insert(0, os.path.join(REPO, "communication"))
 import constants
+
 
 MAVLINK_ENDPOINT = f"udpin:127.0.0.1:{constants.MAVLINK_C2_REPLAY_PORT}"
 

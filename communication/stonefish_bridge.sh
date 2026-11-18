@@ -42,15 +42,16 @@ else
 fi
 sleep 6
 echo "[stonefish] 2) ArduSub SITL on the JSON FDM (home $SITE_LAT,$SITE_LON, ExternalNav) ..."
-PARM="$REPO/stonefish/auv150_ardusub.parm"
+PARM="$REPO/application/stonefish/auv150_ardusub.parm"
 rm -f "$FIFO"; mkfifo "$FIFO"; setsid bash -c "exec 9>'$FIFO'; sleep infinity" >/dev/null 2>&1 &
 setsid bash -c "cd '$RUN'; '$ARDUSUB' --model JSON:127.0.0.1 --speedup 1 -I0 --home $SITE_LAT,$SITE_LON,0,0 --defaults '$PARM' < '$FIFO'" >"$RUN/sub.log" 2>&1 &
 sleep 3
 echo "[stonefish] 3) mav_bridge (GCS on 5760 -> fan-out 14551+) ..."
-setsid bash -c "cd '$REPO'; MCR_VEHICLE_PROFILE=auv150 python3 -u tools/mav_bridge.py" >"$RUN/bridge.log" 2>&1 &
+setsid bash -c "cd '$REPO'; MCR_VEHICLE_PROFILE=auv150 python3 -u communication/mav_bridge.py" >"$RUN/bridge.log" 2>&1 &
 sleep 4
 echo "[stonefish] 4) ExternalNav/USBL feed (acoustic positioning; spoof toggle on :10120) ..."
-setsid bash -c "cd '$REPO'; python3 -u tools/stonefish_extnav.py tcp:127.0.0.1:5762" >"$RUN/extnav.log" 2>&1 &
+setsid bash -c "cd '$REPO'; python3 -u communication/stonefish_extnav.py tcp:127.0.0.1:5762" >"$RUN/extnav.log" 2>&1 &
+
 sleep 3
 echo "[stonefish] STACK UP. ArduSub flies on Stonefish physics with USBL ExternalNav."
 echo "  acoustic spoof ON:  echo step | nc -u -w1 127.0.0.1 10120   (OFF: echo off | ...)"

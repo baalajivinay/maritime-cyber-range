@@ -34,8 +34,10 @@ import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
-sys.path.insert(0, os.path.join(REPO, "detection"))
+sys.path.insert(0, os.path.join(REPO, "communication"))
+sys.path.insert(0, os.path.join(REPO, "attacks", "detection"))
 import constants
+
 from detectors import DetectorSuite
 from pymavlink import mavutil
 
