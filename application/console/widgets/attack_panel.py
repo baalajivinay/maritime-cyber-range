@@ -3,43 +3,46 @@ Testbed Cyber Attack Suite.
 Clean, intuitive control panel for GPS spoofing, AIS ghost injection, and C2 replay attacks.
 """
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSlider, QComboBox, QGroupBox, QFrame
+    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QSlider, QComboBox, QGroupBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 
 from application.console.theme import (
-    BG_PANEL, BORDER_COLOR, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    PANEL_BG, PANEL_BORDER, PANEL_HEADER, TEXT_WHITE, TEXT_MUTED,
     COLOR_RED, COLOR_GREEN, COLOR_BLUE
 )
 
 
-class AttackPanel(QWidget):
+class AttackPanel(QFrame):
     attack_triggered = pyqtSignal(str, dict)
     attack_stopped = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setProperty("class", "panel")
+        self.setFixedWidth(290)
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(14)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(10)
+
+        lbl_head = QLabel("Cyber Attacks")
+        lbl_head.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_WHITE};")
+        layout.addWidget(lbl_head)
 
         # -------------------------------------------------------------
-        # 1. GPS Spoofing Card
+        # 1. GPS Spoofing
         # -------------------------------------------------------------
-        box_gps = QGroupBox("1. GPS Spoofing (Position Walk-off)")
+        box_gps = QGroupBox("GPS Spoofing")
         l_gps = QVBoxLayout(box_gps)
-        l_gps.setSpacing(10)
+        l_gps.setSpacing(8)
 
-        desc_gps = QLabel(
-            "Injects false GNSS coordinate offsets into the navigation filter. "
-            "Causes own-ship navigation to drift from its true track."
-        )
-        desc_gps.setWordWrap(True)
-        desc_gps.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        desc_gps = QLabel("Injects coordinate drift into GNSS position feed.")
+        desc_gps.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         l_gps.addWidget(desc_gps)
 
-        # Drift Rate Slider
+        # Drift Slider
         row_rate = QHBoxLayout()
         row_rate.addWidget(QLabel("Drift Rate:"))
         self.lbl_rate_val = QLabel("3.0 m/s")
@@ -56,10 +59,9 @@ class AttackPanel(QWidget):
         )
         l_gps.addWidget(self.slider_drift)
 
-        # Live Divergence & Trigger
         row_gps_action = QHBoxLayout()
-        self.lbl_divergence = QLabel("Divergence: 0.0 m")
-        self.lbl_divergence.setStyleSheet(f"font-weight: bold; color: {TEXT_MUTED}; font-size: 12px;")
+        self.lbl_divergence = QLabel("Drift: 0.0 m")
+        self.lbl_divergence.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; font-weight: bold;")
         row_gps_action.addWidget(self.lbl_divergence)
         row_gps_action.addStretch()
 
@@ -67,9 +69,9 @@ class AttackPanel(QWidget):
         self.btn_gps.setCheckable(True)
         self.btn_gps.setStyleSheet(f"""
             QPushButton {{
-                background-color: #383844;
-                border: 1px solid {BORDER_COLOR};
-                padding: 6px 14px;
+                background-color: #2e303b;
+                border: 1px solid {PANEL_BORDER};
+                padding: 5px 12px;
                 font-weight: 600;
             }}
             QPushButton:checked {{
@@ -85,29 +87,25 @@ class AttackPanel(QWidget):
         layout.addWidget(box_gps)
 
         # -------------------------------------------------------------
-        # 2. AIS Spoofing Card
+        # 2. AIS Spoofing
         # -------------------------------------------------------------
-        box_ais = QGroupBox("2. AIS Spoofing (Ghost Target)")
+        box_ais = QGroupBox("AIS Spoofing")
         l_ais = QVBoxLayout(box_ais)
-        l_ais.setSpacing(10)
+        l_ais.setSpacing(8)
 
-        desc_ais = QLabel(
-            "Broadcasts forged AIVDM messages for a non-existent phantom ship "
-            "to test collision avoidance (COLREGS Rule 14)."
-        )
-        desc_ais.setWordWrap(True)
-        desc_ais.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        desc_ais = QLabel("Broadcasts fake AIS target to test collision avoidance.")
+        desc_ais.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         l_ais.addWidget(desc_ais)
 
         row_ais_info = QHBoxLayout()
         row_ais_info.addWidget(QLabel("Target: MMSI 419000123"))
         row_ais_info.addStretch()
-        row_ais_info.addWidget(QLabel("Course: 180° (Head-on)"))
+        row_ais_info.addWidget(QLabel("Course: 180°"))
         l_ais.addLayout(row_ais_info)
 
         row_ais_action = QHBoxLayout()
-        self.lbl_ais_status = QLabel("Status: Standby")
-        self.lbl_ais_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        self.lbl_ais_status = QLabel("Standby")
+        self.lbl_ais_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         row_ais_action.addWidget(self.lbl_ais_status)
         row_ais_action.addStretch()
 
@@ -115,9 +113,9 @@ class AttackPanel(QWidget):
         self.btn_ais.setCheckable(True)
         self.btn_ais.setStyleSheet(f"""
             QPushButton {{
-                background-color: #383844;
-                border: 1px solid {BORDER_COLOR};
-                padding: 6px 14px;
+                background-color: #2e303b;
+                border: 1px solid {PANEL_BORDER};
+                padding: 5px 12px;
                 font-weight: 600;
             }}
             QPushButton:checked {{
@@ -133,32 +131,25 @@ class AttackPanel(QWidget):
         layout.addWidget(box_ais)
 
         # -------------------------------------------------------------
-        # 3. Command & Control (C2) Hijack Card
+        # 3. Command & Control (C2)
         # -------------------------------------------------------------
-        box_c2 = QGroupBox("3. Command & Control Hijack (MAVLink Replay)")
+        box_c2 = QGroupBox("Command & Control (C2)")
         l_c2 = QVBoxLayout(box_c2)
-        l_c2.setSpacing(10)
+        l_c2.setSpacing(8)
 
-        desc_c2 = QLabel(
-            "Injects forged or replayed MAVLink packets into the ground link "
-            "to test telemetry authentication and failsafe locks."
-        )
-        desc_c2.setWordWrap(True)
-        desc_c2.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        desc_c2 = QLabel("Injects unauthorized MAVLink override command.")
+        desc_c2.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         l_c2.addWidget(desc_c2)
 
-        row_c2_cmd = QHBoxLayout()
-        row_c2_cmd.addWidget(QLabel("Command:"))
         self.combo_c2 = QComboBox()
         self.combo_c2.addItem("Emergency Return to Launch (RTL)")
         self.combo_c2.addItem("Force Hold Position")
         self.combo_c2.addItem("Manual Steering Override")
-        row_c2_cmd.addWidget(self.combo_c2)
-        l_c2.addLayout(row_c2_cmd)
+        l_c2.addWidget(self.combo_c2)
 
         row_c2_action = QHBoxLayout()
         self.lbl_c2_status = QLabel("Link: Normal")
-        self.lbl_c2_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        self.lbl_c2_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         row_c2_action.addWidget(self.lbl_c2_status)
         row_c2_action.addStretch()
 
@@ -166,9 +157,9 @@ class AttackPanel(QWidget):
         self.btn_c2.setCheckable(True)
         self.btn_c2.setStyleSheet(f"""
             QPushButton {{
-                background-color: #383844;
-                border: 1px solid {BORDER_COLOR};
-                padding: 6px 14px;
+                background-color: #2e303b;
+                border: 1px solid {PANEL_BORDER};
+                padding: 5px 12px;
                 font-weight: 600;
             }}
             QPushButton:checked {{
@@ -188,7 +179,6 @@ class AttackPanel(QWidget):
     def _toggle_gps(self, checked: bool):
         if checked:
             self.btn_gps.setText("Stop GPS Spoof")
-            # Uncheck others
             if self.btn_ais.isChecked():
                 self.btn_ais.setChecked(False)
             if self.btn_c2.isChecked():
@@ -198,43 +188,43 @@ class AttackPanel(QWidget):
             self.attack_triggered.emit("gps_spoof", {"drift_rate": drift_rate})
         else:
             self.btn_gps.setText("Inject GPS Spoof")
-            self.lbl_divergence.setText("Divergence: 0.0 m")
-            self.lbl_divergence.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+            self.lbl_divergence.setText("Drift: 0.0 m")
+            self.lbl_divergence.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; font-weight: bold;")
             self.attack_stopped.emit()
 
     def _toggle_ais(self, checked: bool):
         if checked:
-            self.btn_ais.setText("Remove Ghost Ship")
+            self.btn_ais.setText("Clear Ghost")
             if self.btn_gps.isChecked():
                 self.btn_gps.setChecked(False)
             if self.btn_c2.isChecked():
                 self.btn_c2.setChecked(False)
 
-            self.lbl_ais_status.setText("Threat Active (Avoidance)")
-            self.lbl_ais_status.setStyleSheet(f"color: {COLOR_RED}; font-weight: bold; font-size: 12px;")
+            self.lbl_ais_status.setText("Threat Active")
+            self.lbl_ais_status.setStyleSheet(f"color: {COLOR_RED}; font-weight: bold; font-size: 11px;")
             self.attack_triggered.emit("ais_spoof", {"mmsi": "419000123", "speed": 4.0, "course": 180.0})
         else:
             self.btn_ais.setText("Inject Ghost Ship")
-            self.lbl_ais_status.setText("Status: Standby")
-            self.lbl_ais_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+            self.lbl_ais_status.setText("Standby")
+            self.lbl_ais_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
             self.attack_stopped.emit()
 
     def _toggle_c2(self, checked: bool):
         if checked:
-            self.btn_c2.setText("Release C2 Override")
+            self.btn_c2.setText("Release C2")
             if self.btn_gps.isChecked():
                 self.btn_gps.setChecked(False)
             if self.btn_ais.isChecked():
                 self.btn_ais.setChecked(False)
 
             cmd = self.combo_c2.currentText()
-            self.lbl_c2_status.setText(f"Injected: {cmd}")
-            self.lbl_c2_status.setStyleSheet(f"color: {COLOR_RED}; font-weight: bold; font-size: 12px;")
+            self.lbl_c2_status.setText("Injected")
+            self.lbl_c2_status.setStyleSheet(f"color: {COLOR_RED}; font-weight: bold; font-size: 11px;")
             self.attack_triggered.emit("c2_replay", {"command": cmd})
         else:
             self.btn_c2.setText("Inject C2 Override")
             self.lbl_c2_status.setText("Link: Normal")
-            self.lbl_c2_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+            self.lbl_c2_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
             self.attack_stopped.emit()
 
     def update_telemetry(self, state: dict):
@@ -244,27 +234,27 @@ class AttackPanel(QWidget):
         if active_atk == "gps_spoof" and spoof_offset:
             import math
             dist = math.hypot(spoof_offset[0], spoof_offset[1])
-            self.lbl_divergence.setText(f"Divergence: {dist:.1f} m")
-            self.lbl_divergence.setStyleSheet(f"color: {COLOR_RED}; font-weight: bold; font-size: 12px;")
+            self.lbl_divergence.setText(f"Drift: {dist:.1f} m")
+            self.lbl_divergence.setStyleSheet(f"color: {COLOR_RED}; font-weight: bold; font-size: 11px;")
         elif not active_atk:
             if self.btn_gps.isChecked():
                 self.btn_gps.blockSignals(True)
                 self.btn_gps.setChecked(False)
                 self.btn_gps.setText("Inject GPS Spoof")
-                self.lbl_divergence.setText("Divergence: 0.0 m")
-                self.lbl_divergence.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+                self.lbl_divergence.setText("Drift: 0.0 m")
+                self.lbl_divergence.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; font-weight: bold;")
                 self.btn_gps.blockSignals(False)
             if self.btn_ais.isChecked():
                 self.btn_ais.blockSignals(True)
                 self.btn_ais.setChecked(False)
                 self.btn_ais.setText("Inject Ghost Ship")
-                self.lbl_ais_status.setText("Status: Standby")
-                self.lbl_ais_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+                self.lbl_ais_status.setText("Standby")
+                self.lbl_ais_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
                 self.btn_ais.blockSignals(False)
             if self.btn_c2.isChecked():
                 self.btn_c2.blockSignals(True)
                 self.btn_c2.setChecked(False)
                 self.btn_c2.setText("Inject C2 Override")
                 self.lbl_c2_status.setText("Link: Normal")
-                self.lbl_c2_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+                self.lbl_c2_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
                 self.btn_c2.blockSignals(False)

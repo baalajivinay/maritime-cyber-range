@@ -1,6 +1,7 @@
 """
 Testbed — Main Application Window.
-Clean, modern, human-engineered desktop testbed for maritime autonomous vehicle cyber resilience.
+Professional maritime resilience testbed replicating proven industrial workstation layouts
+(Conning Gyro Compass, ECDIS Navigation Chart, Cyber Attack Suite, EKF3 Diagnostics, and Protocol Stream).
 """
 import os
 import sys
@@ -9,7 +10,7 @@ import time
 import math
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QTabWidget, QMessageBox
+    QSplitter, QMessageBox
 )
 from PyQt6.QtCore import QTimer, Qt
 
@@ -17,7 +18,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
-from application.console.theme import CLEAN_QSS
+from application.console.theme import TESTBED_QSS
 from application.console.widgets.bam_header import BAMHeaderWidget
 from application.console.widgets.conning import ConningPanel
 from application.console.widgets.ecdis import ECDISPanel
@@ -46,8 +47,8 @@ class MCRMainWindow(QMainWindow):
         super().__init__()
         # Title explicitly set to Testbed
         self.setWindowTitle("Testbed")
-        self.resize(1380, 850)
-        self.setStyleSheet(CLEAN_QSS)
+        self.resize(1440, 880)
+        self.setStyleSheet(TESTBED_QSS)
 
         # Simulation Backend
         self.backend = UnifiedBackend()
@@ -79,53 +80,50 @@ class MCRMainWindow(QMainWindow):
         self.header.arm_toggled.connect(self._on_arm_toggled)
         main_vbox.addWidget(self.header)
 
-        # 2. Main Workstation Splitter
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_splitter.setHandleWidth(2)
-        main_splitter.setStyleSheet("QSplitter::handle { background-color: #3a3a46; }")
+        # 2. Main Vertical Splitter (Top Operational Workstation / Bottom Diagnostics)
+        v_splitter = QSplitter(Qt.Orientation.Vertical)
+        v_splitter.setHandleWidth(2)
 
-        # --- Left Side: Navigation Map & Telemetry Strip (60%) ---
-        left_container = QWidget()
-        left_layout = QVBoxLayout(left_container)
-        left_layout.setContentsMargins(12, 10, 8, 10)
-        left_layout.setSpacing(10)
+        # --- Upper Workstation Splitter (Horizontal: Conning | ECDIS Chart | Cyber Attacks) ---
+        h_upper = QSplitter(Qt.Orientation.Horizontal)
+        h_upper.setHandleWidth(2)
 
+        # Left: Conning & Gyro Compass
+        self.conning = ConningPanel(self)
+        h_upper.addWidget(self.conning)
+
+        # Center: Interactive 2D Navigation Chart
         self.map_view = ECDISPanel(self)
-        left_layout.addWidget(self.map_view, 1)
+        h_upper.addWidget(self.map_view)
 
-        self.telemetry_strip = ConningPanel(self)
-        left_layout.addWidget(self.telemetry_strip)
-
-        main_splitter.addWidget(left_container)
-
-        # --- Right Side: Clean Control Tabs (40%) ---
-        right_container = QWidget()
-        right_layout = QVBoxLayout(right_container)
-        right_layout.setContentsMargins(8, 10, 12, 10)
-        right_layout.setSpacing(8)
-
-        self.tabs = QTabWidget(self)
-
-        # Tab 1: Cyber Attack Suite
+        # Right: Cyber Attack Panel
         self.attack_panel = AttackPanel(self)
         self.attack_panel.attack_triggered.connect(self._on_attack_triggered)
         self.attack_panel.attack_stopped.connect(self._on_attack_stopped)
-        self.tabs.addTab(self.attack_panel, "Cyber Attacks")
+        h_upper.addWidget(self.attack_panel)
 
-        # Tab 2: Sensor Health & Innovation
+        # Sizes: Conning ~240px, Chart flex, Attacks ~290px
+        h_upper.setSizes([240, 910, 290])
+        v_splitter.addWidget(h_upper)
+
+        # --- Lower Diagnostic Splitter (Horizontal: Innovation Graph | Protocol Stream & Export) ---
+        h_lower = QSplitter(Qt.Orientation.Horizontal)
+        h_lower.setHandleWidth(2)
+
+        # Left: EKF3 Innovation Residual Graph
         self.telemetry_graph = TelemetryGraphPanel(self)
-        self.tabs.addTab(self.telemetry_graph, "Sensor Health")
+        h_lower.addWidget(self.telemetry_graph)
 
-        # Tab 3: Event Log & Report
-        self.event_log = BusInspectorPanel(self)
-        self.tabs.addTab(self.event_log, "Test Log & Report")
+        # Right: Telemetry / Protocol Stream Table & Export PDF
+        self.inspector = BusInspectorPanel(self)
+        h_lower.addWidget(self.inspector)
 
-        right_layout.addWidget(self.tabs)
-        main_splitter.addWidget(right_container)
+        h_lower.setSizes([600, 840])
+        v_splitter.addWidget(h_lower)
 
-        # Proportions: 62% Left, 38% Right
-        main_splitter.setSizes([850, 530])
-        main_vbox.addWidget(main_splitter, 1)
+        # Height Splitter: 65% Top Workstation / 35% Bottom Diagnostics
+        v_splitter.setSizes([570, 310])
+        main_vbox.addWidget(v_splitter, 1)
 
         # Telemetry Polling Timer (10 Hz)
         self.timer = QTimer(self)
@@ -135,6 +133,7 @@ class MCRMainWindow(QMainWindow):
         # Set initial site
         lat, lon = SITE_COORDS[self.active_site]
         self.map_view.set_site(lat, lon)
+        self.inspector.set_context(self.active_twin, self.active_site)
 
     def _on_start_clicked(self):
         site_key = self.header.site_combo.currentData() or "kochi"
@@ -158,8 +157,7 @@ class MCRMainWindow(QMainWindow):
 
         self.map_view.set_site(lat, lon)
         self.header.set_running_state(True)
-        self.event_log.set_context(twin_key, site_key)
-        self.event_log.add_log(f"Testbed started: {twin_key} at {site_key}.", "SUCCESS")
+        self.inspector.set_context(twin_key, site_key)
 
         # Launch background SITL process
         threading.Thread(target=self._boot_backend_bg, args=(site_key, twin_key, domain), daemon=True).start()
@@ -167,7 +165,7 @@ class MCRMainWindow(QMainWindow):
     def _boot_backend_bg(self, site, twin, domain):
         try:
             self.backend.boot(site, twin, domain)
-        except Exception as e:
+        except Exception:
             pass
 
     def _on_stop_clicked(self):
@@ -179,7 +177,6 @@ class MCRMainWindow(QMainWindow):
         self.spoof_offset = [0.0, 0.0]
 
         self.header.set_running_state(False)
-        self.event_log.add_log("Testbed stopped.", "INFO")
 
         # Teardown backend if initialized
         threading.Thread(target=self._teardown_bg, daemon=True).start()
@@ -196,11 +193,9 @@ class MCRMainWindow(QMainWindow):
         if armed:
             self.sim_speed = 2.5
             self.sim_mode = "GUIDED"
-            self.event_log.add_log("Vehicle armed. Navigation active.", "INFO")
         else:
             self.sim_speed = 0.0
             self.sim_mode = "MANUAL"
-            self.event_log.add_log("Vehicle disarmed.", "INFO")
 
         if self.backend.engine:
             if armed:
@@ -212,12 +207,6 @@ class MCRMainWindow(QMainWindow):
         self.active_attack = attack_name
         if attack_name == "gps_spoof":
             self.sim_drift_rate = float(params.get("drift_rate", 3.0))
-            self.event_log.add_log(f"GPS Spoofing started: {self.sim_drift_rate} m/s drift.", "WARN")
-        elif attack_name == "ais_spoof":
-            self.event_log.add_log(f"AIS Spoofing: Phantom vessel injected (MMSI 419000123).", "WARN")
-        elif attack_name == "c2_replay":
-            cmd = params.get("command", "Hold")
-            self.event_log.add_log(f"C2 Hijack: Injected unauthorized command [{cmd}].", "ALERT")
 
         if self.backend.engine:
             self.backend.attack(attack_name)
@@ -226,7 +215,6 @@ class MCRMainWindow(QMainWindow):
         self.active_attack = None
         self.sim_drift_rate = 0.0
         self.spoof_offset = [0.0, 0.0]
-        self.event_log.add_log("Attack ceased. Restoring normal telemetry baseline.", "SUCCESS")
 
         if self.backend.engine:
             self.backend.stop_attack()
@@ -243,7 +231,7 @@ class MCRMainWindow(QMainWindow):
             state["active_attack"] = self.active_attack or backend_state.get("active_attack")
             state["spoof_offset_m"] = self.spoof_offset
         else:
-            # 2. Kinematic Dead-Reckoning Engine (Guarantees zero-hang, smooth simulation)
+            # 2. Kinematic Dead-Reckoning Engine
             if self.is_running and self.sim_armed:
                 # Steer toward waypoint if commanded, otherwise sail current heading
                 target_wp = self.map_view.canvas.target_wp
@@ -258,7 +246,7 @@ class MCRMainWindow(QMainWindow):
                     else:
                         self.map_view.canvas.target_wp = None
 
-                # COLREGS Rule 14 Evasion: If AIS Ghost Ship is active and head-on, alter course to starboard (+25 deg)
+                # COLREGS Rule 14 Evasion: If AIS Ghost Ship is active, alter course to starboard (+15 deg)
                 if self.active_attack == "ais_spoof":
                     self.sim_hdg = (self.sim_hdg + 8.0 * dt) % 360.0
 
@@ -288,12 +276,12 @@ class MCRMainWindow(QMainWindow):
             }
 
         # Update all UI widgets
+        self.conning.update_telemetry(state)
         self.map_view.update_telemetry(state)
-        self.telemetry_strip.update_telemetry(state)
-        self.header.update_telemetry(state)
         self.attack_panel.update_telemetry(state)
         self.telemetry_graph.update_telemetry(state)
-        self.event_log.update_telemetry(state)
+        self.inspector.update_telemetry(state)
+        self.header.update_telemetry(state)
 
     def closeEvent(self, event):
         self.timer.stop()
