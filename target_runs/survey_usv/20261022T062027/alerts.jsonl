@@ -1,6 +1,0 @@
-{"t": 1792630244.147683, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
-{"t": 1792630247.2069721, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
-{"t": 1792630248.1254842, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 40 m/s (> 15) -- implausible"}
-{"t": 1792630250.26337, "detector": "C2CommandDetector", "attack_type": "c2_replay", "domain": "surface", "detail": "RC_CHANNELS_OVERRIDE observed -- actuator command authority seized"}
-{"t": 1792630252.1242743, "detector": "GpsJumpDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "believed position moved at 1857 m/s (> 15) -- implausible"}
-{"t": 1792630252.1242743, "detector": "GpsRampDetector", "attack_type": "gps_spoof", "domain": "surface", "detail": "sustained position drift at 2.29 m/s over 24s (> 0.30) -- possible GPS ramp spoof"}

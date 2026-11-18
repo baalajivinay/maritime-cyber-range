@@ -1,0 +1,45 @@
+{
+  "name": "mt_andaman_tug",
+  "domain": "surface",
+  "ardupilot_vehicle_type": "Rover",
+  "home": {
+    "lat": 18.92,
+    "lon": 72.8
+  },
+  "attacks": [
+    "gps_spoof",
+    "ais_spoof",
+    "c2_replay"
+  ],
+  "ais": {
+    "mmsi": "419000888",
+    "vessel_name": "MT-ANDAMAN",
+    "udp_addr": [
+      "127.0.0.1",
+      10110
+    ]
+  },
+  "ports": {
+    "fdm_relay_bind": [
+      "127.0.0.1",
+      9002
+    ],
+    "fdm_gazebo_addr": [
+      "127.0.0.1",
+      9100
+    ],
+    "mavlink": {
+      "dashboard": 14551,
+      "auto_mission": 14552,
+      "c2_replay": 14553
+    }
+  },
+  "model_sdf": "sim_config/models/cusv/model.sdf",
+  "world": {
+    "method": "gz",
+    "sdf": "sim_config/cusv_world.sdf",
+    "model_name": "cusv",
+    "world_name": "surface_harbor"
+  },
+  "ardu_defaults": "vehicle_twins/mt_andaman_tug/tug.parm"
+}

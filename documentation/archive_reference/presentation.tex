@@ -1,0 +1,234 @@
+\documentclass{beamer}
+
+\mode<presentation> {
+\usetheme{Madrid}
+}
+
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+% Beamer loads hyperref automatically. We configure link colors cleanly
+\hypersetup{
+    colorlinks=true,
+    urlcolor=blue,
+    linkcolor=blue
+}
+
+%----------------------------------------------------------------------------------------
+%   TITLE PAGE
+%----------------------------------------------------------------------------------------
+
+\title[Maritime Cyber Range]{Simulating Cyberattacks on Autonomous Maritime Vessels}
+
+\author{
+    Vinaybaalaji PNS \quad (CB.SC.U4CYS24061) \\
+    \medskip
+    Department of TIFAC-CORE in Cyber Security \\
+    Amrita Vishwa Vidyapeetham, Coimbatore \\
+    \medskip
+    3rd Year, B.Tech Cybersecurity
+}
+
+\institute[]{}
+\date{\today}
+
+\begin{document}
+
+% Slide 1: Title Slide
+\begin{frame}
+\titlepage
+\end{frame}
+
+%----------------------------------------------------------------------------------------
+%   SLIDES
+%----------------------------------------------------------------------------------------
+
+% Slide 2: Autonomous Vehicles Importance & Cyber Resilience
+\section{Context}
+\begin{frame}
+\frametitle{\textbf{Autonomous Maritime Vessels and Cyber Resilience}}
+\textbf{Role of Autonomous Vessels:}
+\begin{itemize}
+    \item Unmanned Surface Vessels (USVs) and Autonomous Underwater Vehicles (AUVs) are increasingly utilized for maritime patrol, ocean mapping, subsea inspection, and cargo transport.
+    \item They handle long-duration and high-risk operations where deploying human crews is expensive or hazardous.
+\end{itemize}
+
+\vspace{0.4cm}
+\textbf{Importance of Cyber Resilience:}
+\begin{itemize}
+    \item Unlike manned ships, autonomous vessels lack a crew on board to cross-check navigational anomalies or manually take control during a disruption.
+    \item They rely entirely on wireless communication, satellite positioning, and acoustic telemetry.
+    \item If these communication or sensor feeds are manipulated, the vessel blindly follows corrupted data, making cyber resilience critical to preventing collisions, mission aborts, or vessel loss.
+\end{itemize}
+\end{frame}
+
+% Slide 3: Need for Testbeds, Regulations & Indian Landscape
+\section{Regulatory Drivers}
+\begin{frame}
+\frametitle{\textbf{Pre-Sea Testing: Mandates \& National Context}}
+
+\footnotesize
+\textbf{Global Mandates Requiring Cyber Validation:}
+\begin{itemize}
+    \setlength\itemsep{0.1em}
+    \item \textbf{IACS UR E26/E27 (2024):} Mandates cyber resilience testing for shipboard systems and onboard networks \href{https://iacs.org.uk}{\textbf{[1]}}.
+    \item \textbf{IMO Res. MSC.428(98):} Requires cyber risk management in vessel safety management systems \href{https://www.imo.org}{\textbf{[2]}}.
+    \item \textbf{ITU \& SOLAS Spectrum Laws:} Prohibits open-water radio jamming and GPS spoofing near civilian sea lanes.
+\end{itemize}
+
+\vspace{0.1cm}
+\textbf{Indian Context \& Maritime Problem Statements:}
+\begin{itemize}
+    \setlength\itemsep{0.1em}
+    \item DRDO NPOL's SPACE platform \href{https://www.pib.gov.in/PressReleasePage.aspx?PRID=2018151}{\textbf{[3]}} and NSTL basins evaluate acoustic physics, but lack active cyber testbeds.
+    \item \textbf{MoD SIH PS 26247:} Real-time maritime threat detection and tactical intelligence fusion system \href{https://www.sih.gov.in/sih2026PS}{\textbf{[4]}}.
+    \item \textbf{MoD SIH PS 26248:} Degraded communications and EW simulation for naval tactical command \href{https://www.sih.gov.in/sih2026PS}{\textbf{[5]}}.
+    \item \textbf{Indian Navy NIIO / iDEX SPRINT:} Cyber-resilient autonomous naval craft (USVs/AUVs) and secure acoustic data links \href{https://idex.gov.in}{\textbf{[6]}}.
+\end{itemize}
+
+\vspace{0.1cm}
+\tiny
+\textbf{References:} 
+\href{https://iacs.org.uk}{[1] IACS E26} \quad 
+\href{https://www.imo.org}{[2] IMO 428} \quad 
+\href{https://www.pib.gov.in/PressReleasePage.aspx?PRID=2018151}{[3] DRDO SPACE} \quad
+\href{https://www.sih.gov.in/sih2026PS}{[4] SIH 26247} \quad
+\href{https://www.sih.gov.in/sih2026PS}{[5] SIH 26248} \quad
+\href{https://idex.gov.in}{[6] NIIO SPRINT}
+\end{frame}
+
+% Slide 4: Our Approach
+\section{Our Approach}
+\begin{frame}
+\frametitle{\textbf{Our Approach: Simulation-Based Cyber Testing}}
+\small
+Our objective is to test cyberattacks across both surface (USV) and subsurface (AUV) craft in a controlled software simulation.
+
+\vspace{0.2cm}
+\textbf{Key Elements of the Approach:}
+\begin{itemize}
+    \setlength\itemsep{0.2em}
+    \item \textbf{Cross-Domain Testing:} Evaluating attacks on both surface vessels (radio/GPS layer) and underwater vessels (acoustic communication layer).
+    \item \textbf{Realistic Communications:} Modeling MAVLink 2 C2 command streams and telemetry between the ground control station and the vessel autopilot.
+    \item \textbf{Indian Naval Test Sites:} Calibrated to realistic ocean conditions at Kochi, Mumbai, and Visakhapatnam.
+    \item \textbf{Dual-Engine Ocean Dynamics:} Coupling Gazebo Sim (DART surface hydrodynamics) and Stonefish (6-DOF subsea added mass and damping).
+    \item \textbf{Safe Experimentation:} Assessing navigation stability, EKF divergence, and boundary conditions without risking physical naval assets.
+\end{itemize}
+\end{frame}
+
+% Slide 5: Prototype Demo (3D Visuals)
+\section{Prototype Demo}
+\begin{frame}
+\frametitle{\textbf{Initial Prototype Demonstration: 3D Tactical Interface}}
+\begin{columns}
+    \column{0.5\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{godot_3d_interceptor_usv.png}
+    \column{0.5\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{godot_3d_maya_auv.png}
+\end{columns}
+
+\vspace{0.3cm}
+\footnotesize
+\begin{itemize}
+    \item \textbf{Left (Surface USV 3D Visual):} High-speed Fast Interceptor USV navigating in Godot 4 with dynamic ocean wave shaders, sun reflections, wake, and live HUD telemetry.
+    \item \textbf{Right (Subsurface AUV 3D Visual):} Maya AUV operating submerged with procedural seabed shaders, marine snow particulate physics, and acoustic depth telemetry.
+\end{itemize}
+\end{frame}
+
+% Slide 6: SITL Methodology (Orderly)
+\section{Methodology}
+\begin{frame}
+\frametitle{\textbf{Simulation Methodology}}
+Our simulation environment couples three core components in an orderly pipeline:
+
+\vspace{0.3cm}
+\begin{enumerate}
+    \item \textbf{Dual-Physics Simulation (Gazebo \& Stonefish):} Simulates 6-DOF hydrodynamics, water resistance, buoyancy, added mass, and ocean current forces acting on the vessel hull.
+    \vspace{0.2cm}
+    \item \textbf{Autopilot Brain (ArduPilot / ArduSub SITL):} Runs production autopilot software in Software-in-the-Loop, executing real 24-state EKF3 sensor fusion and navigation algorithms.
+    \vspace{0.2cm}
+    \item \textbf{Communication Protocol (MAVLink 2):} Handles bidirectional telemetry and command routing between the autopilot and control station, matching real vessel network traffic.
+\end{enumerate}
+\end{frame}
+
+% Slide 7: Vehicle Integration (Conditional)
+\section{Extensibility}
+\begin{frame}
+\frametitle{\textbf{Extending to Other Vessels}}
+\small
+We can make this testbed vehicle-independent if the following inputs are available for a given platform:
+
+\vspace{0.2cm}
+\begin{enumerate}
+    \setlength\itemsep{0.2em}
+    \item \textbf{Autopilot Firmware / Binary:} The compiled control software or physical controller board used to execute guidance logic.
+    \item \textbf{Sensor API:} An interface allowing the physics engine to stream simulated sensor data (depth, position, attitude) into the control logic.
+    \item \textbf{Communication Protocol Specs:} Interface Control Documents (ICD) defining message formats so testing scripts can send recognizable commands.
+    \item \textbf{Configuration Profile:} The parameter configuration of the vessel (speed limits, thruster mapping, and failsafe thresholds).
+\end{enumerate}
+
+\vspace{0.2cm}
+\footnotesize
+\textbf{Validated Digital Twins:} Verified across 4 autonomous platforms: Fast Interceptor USV, Coastal Survey Catamaran, Maya AUV, and AUV-150.
+\end{frame}
+
+% Slide 8: Attacks Tested & Real-World Fidelity
+\section{Attack Vectors}
+\begin{frame}
+\frametitle{\textbf{Attacks Tested and Simulation Fidelity}}
+\small
+\textbf{The attacks we are testing:}
+\begin{itemize}
+    \setlength\itemsep{0.15em}
+    \item \textbf{GPS Spoofing:} Injected coordinate shifts on surface vessels to alter navigation courses.
+    \item \textbf{AIS Ghost Vessels \& Impersonation:} Forged NMEA AIVDM broadcast messages injecting phantom collision hazards.
+    \item \textbf{Acoustic Position Spoofing:} Forged underwater positioning signals (USBL) where GPS cannot penetrate.
+    \item \textbf{C2 Command Injection:} Forged MAVLink override packets attempting unauthorized mode changes and motor hijacking.
+\end{itemize}
+
+\vspace{0.2cm}
+\textbf{Simulation Fidelity vs. Physical Reality:}
+\begin{itemize}
+    \setlength\itemsep{0.15em}
+    \item \textbf{Protocol and Software Level:} Identical to reality. The autopilot firmware, packet headers, and state logic match production deployments.
+    \item \textbf{Environmental Level:} Water density, currents, and regional sound speed are modeled; seabed acoustic reverberation and RF weather degradation remain simplified.
+\end{itemize}
+\end{frame}
+
+% Slide 9: Benchmarks & Limitations (Updated with Live Tested Metrics)
+\section{Benchmarks}
+\begin{frame}
+\frametitle{\textbf{Tested Simulation Benchmarks \& Operational Metrics}}
+
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcc}
+\toprule
+\textbf{Parameter / Test Metric} & \textbf{Real Sea Environment} & \textbf{Tested Simulation Value} \\
+\midrule
+Seawater Density & $1020 - 1023\text{ kg/m}^3$ & $1020.5 - 1022.9\text{ kg/m}^3$ (Site-calibrated) \\
+Sound Speed ($c$) & $1538 - 1543\text{ m/s}$ & $1538.7 - 1542.6\text{ m/s}$ (Mackenzie model) \\
+Tidal Ocean Current & $0.30 - 0.70\text{ m/s}$ & $0.35 - 0.60\text{ m/s}$ (Dynamic drift vector) \\
+Wave Height ($H_s$) \& Period & $1.0 - 1.2\text{ m}$ (Sea State 2--3) & $1.0 - 1.2\text{ m}$ ($T_p = 6.0 - 7.0\text{ s}$) \\
+Subsea Acoustic Propagation & $\tau = d/c$, $4-6\text{ dB/km}$ & $\tau = 0.52\text{ s}$ ($800\text{ m}$), Thorp $25\text{ kHz}$ \\
+Telemetry \& EKF Loop Rate & $10 - 50\text{ Hz}$ & $10.0\text{ Hz}$ MAVLink / $50\text{ Hz}$ EKF3 \\
+\bottomrule
+\end{tabular}%
+}
+
+\vspace{0.25cm}
+\raggedright
+\footnotesize
+\textbf{Measured Attack Impact \& Detection Benchmarks (Live Audit):}
+\begin{itemize}
+    \setlength\itemsep{0.15em}
+    \item \textbf{GNSS Spoofing:} Divergence of $10.0\text{ m} - 25.4\text{ m}$ with $11.2\text{ dB}$ $C/N_0$ front-end drop; detected by Page's CUSUM without prior signature knowledge.
+    \item \textbf{AIS Ghost Insertion:} Forged phantom vessel triggered autonomous COLREGs Rule 14 collision avoidance with $30^\circ$ course deviation.
+    \item \textbf{C2 Mode Takeover:} Forged MAVLink packets achieved 100\% unauthenticated authority seizure from GUIDED to MANUAL/HOLD.
+    \item \textbf{Acoustic Position Spoofing:} Manipulated subsea USBL positioning within physical sound propagation limits ($\tau = 0.52\text{ s}$).
+\end{itemize}
+\end{frame}
+
+\end{document}

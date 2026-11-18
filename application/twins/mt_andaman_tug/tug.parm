@@ -1,0 +1,32 @@
+# MT Andaman 30m Autonomous Tugboat digital-twin ArduRover defaults.
+#
+# Represents the 30-metre autonomous harbour tug MT Andaman certified by the
+# Indian Register of Shipping (IRS) in collaboration with Mazagon Dock
+# Shipbuilders Ltd (MDL) and Robosys Automation (Voyager AI).
+#
+# Real Naval Architecture Specifications:
+#   Length Overall (LOA): 30.0 m
+#   Beam Overall (B): 9.0 m
+#   Draft (T): 3.2 m
+#   Displacement: 280-320 metric tonnes
+#   Propulsion: Twin Azimuth Stern Drive (ASD) / Steerable Kort Nozzles
+#   Bollard Pull: 40-45 tonnes
+#   Operational Speed: 5.5 m/s (~11 knots cruise)
+#
+# Steering: Skid-steer / twin differential azimuth thrusters
+SERVO1_FUNCTION 73
+SERVO3_FUNCTION 74
+
+# Heavy Displacement Harbour Tug Dynamics:
+# Cruising speed ~5.5 m/s (10.7 knots); waypoint transit ~5.0 m/s (9.7 knots)
+ARMING_CHECK 0
+CRUISE_SPEED 5.5
+WP_SPEED 5.0
+CRUISE_THROTTLE 65.0
+SPEED_TURN_GAIN 80.0
+ATC_STR_RAT_FF 0.45
+ATC_STR_RAT_P 0.35
+ATC_STR_RAT_I 0.15
+ATC_SPEED_P 1.8
+ATC_ACCEL_MAX 0.8
+PIVOT_TURN_ANGLE 30

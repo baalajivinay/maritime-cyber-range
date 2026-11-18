@@ -1,78 +1,60 @@
-# Autonomous Maritime Cyber Range
+# Autonomous Maritime Cyber Range & Certification Testbed
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Godot Engine](https://img.shields.io/badge/Godot-4.3_Forward+-478CBF?style=flat-square&logo=godotengine&logoColor=white)](https://godotengine.org/)
+[![PyQt6](https://img.shields.io/badge/GUI-PyQt6_Tactical_ECDIS-41CD52?style=flat-square&logo=qt&logoColor=white)](https://riverbankcomputing.com/software/pyqt/)
 [![ArduPilot](https://img.shields.io/badge/ArduPilot-SITL%2FMAVLink_2-CC2936?style=flat-square)](https://ardupilot.org/)
-[![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic-F58113?style=flat-square)](https://gazebosim.org/)
-[![Stonefish](https://img.shields.io/badge/Stonefish-6--DOF_Hydrodynamics-00B4D8?style=flat-square)](https://github.com/patrykcieslak/stonefish)
+[![Standards](https://img.shields.io/badge/Conformance-IACS_UR_E26%2FE27_%7C_IEC_62288-0052CC?style=flat-square)](https://iacs.org.uk/)
 [![Linux](https://img.shields.io/badge/Platform-Linux_x86__64-FCC624?style=flat-square&logo=linux&logoColor=black)](https://kernel.org/)
 
-An open-source **Software-in-the-Loop (SITL) Digital Twin & Cyber-Physical Resilience Testbed** for Unmanned Surface Vessels (USVs) and Autonomous Underwater Vehicles (AUVs). 
+An industrial-grade **Software-in-the-Loop (SITL) Digital Twin & Cyber-Physical Resilience Testbed** for Unmanned Surface Vessels (USVs) and Autonomous Underwater Vehicles (AUVs), engineered to verify compliance against mandatory **IACS Unified Requirements (UR) E26 / E27** and **DNV-ST-0373** standards.
 
-Production autopilot firmware (**ArduPilot Rover** and **ArduSub**) runs alongside high-fidelity multi-engine physics (**Gazebo DART** for surface hydrodynamics and **Stonefish** for 6-DOF underwater added mass and damping). The platform visualizes missions in a real-time **Godot 4 Vulkan 3D front-end** and evaluates navigation stability against active cyber-physical attack injections (GNSS spoofing, AIS ghost vessels, MAVLink C2 hijack, and acoustic telemetry disruption).
+The platform provides a type-approved tactical human-machine interface (IEC 62288 Conning Information Display + IEC 61174 2D Vector ECDIS), production autopilot SIL sensor fusion (24-state EKF3), deterministic cyber-physical fault injection (GNSS spoofing, AIS ghost vessels, MAVLink C2 hijack, and acoustic USBL disruption), real-time Kalman innovation residual tracking, and automated one-click PDF audit certificate generation for classification surveyors.
 
 ---
 
-## 3D Application Showcase
+## Tactical Marine Workstation Showcase
 
 <p align="center">
-  <img src="screenshots/godot_window_clean.png" width="48%" alt="Mission Setup & Site Selector" />
-  <img src="screenshots/godot_3d_interceptor_usv.png" width="48%" alt="Fast Interceptor USV in Godot 3D" />
-</p>
-
-<p align="center">
-  <img src="screenshots/godot_3d_maya_auv.png" width="48%" alt="Maya AUV Subsea with Seabed Shader" />
-  <img src="screenshots/godot_3d_survey_usv.png" width="48%" alt="Coastal Survey Catamaran" />
+  <img src="screenshots/mcr_tactical_testbed_v2.png" width="98%" alt="Maritime Cyber Range Tactical Testbed Workstation" />
 </p>
 
 ---
 
-## System Architecture
+## Workstation Architecture & Standards Conformance
 
-The testbed operates across six decoupled layers bridged by non-blocking UDP/JSON messaging:
+The testbed operates across four integrated functional layers:
 
-<p align="center">
-  <img src="screenshots/system_architecture_diagram.png" width="95%" alt="System Architecture Diagram" />
-</p>
-
-1. **Operator 3D Front-End (`godot_app/`):** Built on Godot 4 (Vulkan Forward+), rendering dynamic water shaders, sun glint, procedural seabed bathymetry, marine snow particulate effects, and live telemetry HUD.
-2. **Unified Routing Bus (`tools/godot_relay.py`):** Speaks JSON over UDP (`:14650` for telemetry, `:14651` for operator commands) with automatic sub-millisecond process lifecycle management.
-3. **Cyber-Physical Attack Suite (`attacks/`):** Injects GNSS pseudorange walk-off, AIS phantom vessel broadcasts, MAVLink C2 channel overrides, and acoustic USBL positioning shifts.
-4. **Autopilot SIL Core:** True production ArduPilot / ArduSub binaries executing real 24-state Extended Kalman Filter (EKF3) sensor fusion.
-5. **Dual Multi-Physics Engines:**
-   - **Surface USVs:** Gazebo Sim with DART physics solver, surface wave drag, and buoyancy tensors.
-   - **Subsurface AUVs:** Stonefish C++ hydrodynamics calculating 6-DOF added mass, cross-flow drag, and restoring buoyancy moments.
-6. **Real-Time Anomaly Detection (`detection/`):** Continuous innovation filtering using Page's Two-Sided CUSUM and kinematic consistency checking.
+1. **Bridge Alert Management & Conning Workstation (`mcr_console/widgets/`):**
+   * **BAM Header (IEC 62288):** Standardized multi-status alert banner with prioritized Alarm / Warning / Normal states, vessel twin selector, and mission lifecycle controls.
+   * **Conning Information Display (CID):** High-contrast gyro compass rose, Rate-of-Turn (ROT) meter, dual-rudder deflection gauge, Speed Over Ground (SOG), and propulsion telemetry.
+   * **Tactical 2D Vector Nautical Chart (ECDIS - IEC 61174):** Real-time S-57 nautical chart showing bathymetry fairway, lateral navigational buoys, true own-ship ground truth vs. autopilot believed ghost position, dynamic drift divergence vector (`Δpos`), and interactive click-to-guide waypoint routing.
+2. **Cyber-Physical Resilience Test Suite (`attacks/` & `mcr_console/widgets/attack_panel.py`):**
+   * Pre-configured IACS UR E26 / UR E27 test cases (`MCR-SEC-01` to `MCR-SEC-04`) with live walk-off drift rate and power ratio parameter sliders.
+   * Instant fail-safe trigger and autonomous containment logging.
+3. **Real-Time Innovation Anomaly Filter (`detection/` & `mcr_console/widgets/telemetry_graph.py`):**
+   * Live scrolling oscilloscope tracking the Extended Kalman Filter innovation residual $\nu_k$ against Amber Warning ($3.0\text{ m}$) and Red Failsafe ($8.0\text{ m}$) statistical tripwires.
+4. **OT Fieldbus Inspector & One-Click Audit Generator (`mcr_console/report_generator.py`):**
+   * Real-time Wireshark-style stream of NMEA 0183 (`$GPRMC`, `$GPGGA`, `$AIVDM`) and MAVLink 2 frames with invalid checksum and kinematic violation flags.
+   * One-click export of formal **IACS UR E26 Type-Approval PDF Audit Certificates** with cryptographic SHA-256 seals.
 
 ---
 
-## 🚀 Quick Start: Running the 3D App
+## 🚀 Quick Start: Running the Application
 
-### Prerequisites
-* **Operating System:** Ubuntu 22.04 / 24.04 LTS (x86_64)
-* **Graphics:** Vulkan-capable GPU (NVIDIA discrete GPU recommended)
-* **Engine:** Godot 4.3 binary located at `$HOME/godot/Godot_v4.3-stable_linux.x86_64` (or set `GODOT=/path/to/binary`)
-
-### Launching the Application
-
-Run the unified launcher:
+### Launching the Tactical Console
 
 ```bash
-# Launch the Godot 3D front-end and auto-routed physics backend
-tools/app.sh
+# Launch the primary Tactical Conning & Cyber Testbed Workstation
+./run_app.sh        # Or: tools/app.sh
 ```
 
-### Controls & Operator Workflow:
-1. **Mission Setup:** Select a test harbor (**Kochi**, **Mumbai**, or **Visakhapatnam**) and pick a vehicle digital twin.
-2. **Start Mission:** Click **START RUN**. The application boots the SITL autopilot and initializes the 3D ocean environment.
-3. **Waypoint Navigation:** Left-click on the water surface to assign dynamic destination waypoints.
-4. **Attack Injection:** Trigger live cyber attacks from the on-screen console (GPS Spoof, AIS Spoof, C2 Override, Acoustic Spoof).
-5. **Observe Failsafes:** Watch the autopilot's Kalman filter react, detect anomalies, or diverge in real time.
-
-To shut down all background simulation processes cleanly:
-```bash
-tools/teardown_all.sh
-```
+### Operator Workflow:
+1. **Mission Setup:** Select the test harbour (**Mumbai**, **Kochi**, or **Visakhapatnam**) and choose the vessel digital twin (e.g., **MT Andaman Tug**).
+2. **Start Mission:** Click **BOOT SITL & TESTBED**. The application initializes the physics and connects to the ArduPilot SIL core.
+3. **Arm & Navigate:** Click **ARM PROPULSION**, then left-click on the 2D nautical chart to assign dynamic destination waypoints in `GUIDED` mode.
+4. **Execute Cyber Resilience Attack:** Select a test case (e.g., `MCR-SEC-01: GNSS Walk-off Spoof`), adjust the drift rate slider, and click **⚡ INJECT ATTACK**.
+5. **Observe Containment:** Watch the ghost vessel diverge on the chart, observe the red tripwire breach on the EKF3 innovation graph, and inspect the flagged NMEA sentences in the fieldbus log.
+6. **Export Evidence:** Click **📄 EXPORT CLASS AUDIT REPORT (PDF)** to generate the formal compliance certificate.
 
 ---
 

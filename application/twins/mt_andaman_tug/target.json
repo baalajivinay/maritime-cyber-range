@@ -1,0 +1,73 @@
+{
+  "name": "mt_andaman_tug",
+  "description": "Digital twin of the 30m Autonomous Harbour Tug MT Andaman certified by the Indian Register of Shipping (IRS) in collaboration with Mazagon Dock Shipbuilders Ltd (MDL) and Robosys Automation (Voyager AI). Surface displacement vessel operating in Mumbai Harbour: dual GPS L1/L2 + AIS Class A + UHF/S-band MAVLink/IP Remote Control Centre (RCC) datalink.",
+  "domain": "surface",
+  "authorized": true,
+  "site": "mumbai",
+  "mavlink": {
+    "connection": "udpin:127.0.0.1:14554",
+    "source_system": 255
+  },
+  "physical_parameters": {
+    "length_loa_m": 30.0,
+    "beam_m": 9.0,
+    "draft_m": 3.2,
+    "displacement_tonnes": 300.0,
+    "bollard_pull_tonnes": 42.0,
+    "cruise_speed_knots": 10.7,
+    "max_speed_knots": 12.2,
+    "turning_diameter_m": 35.0,
+    "propulsion": "Twin Azimuth Stern Drive (ASD) / Steerable Kort Nozzles"
+  },
+  "rf_spectrum": {
+    "gnss": "GPS L1 (1575.42 MHz) / L2 (1227.60 MHz) + NavIC L5 (1176.45 MHz)",
+    "ais": "VHF Marine Band Channel 87B (161.975 MHz) / Channel 88B (162.025 MHz)",
+    "c2_rcc": "UHF 868 MHz / COFDM IP Radio 2.4 GHz",
+    "radar": "Marine X-band 9.41 GHz"
+  },
+  "attacks": {
+    "gps_spoof": {
+      "enabled": true,
+      "method": "fdm_relay",
+      "bind": [
+        "127.0.0.1",
+        9002
+      ],
+      "gazebo_addr": [
+        "127.0.0.1",
+        9100
+      ],
+      "relay_fifo": "/tmp/mcr_run/mt_andaman_tug/relay.fifo",
+      "profile": "ramp",
+      "drift_rate_mps": 0.8,
+      "direction_deg": 90.0,
+      "rf_frequency_mhz": 1575.42
+    },
+    "ais_spoof": {
+      "enabled": true,
+      "udp_addr": [
+        "127.0.0.1",
+        10110
+      ],
+      "own_mmsi": "419000888",
+      "modes": [
+        "ghost",
+        "impersonate"
+      ],
+      "frequencies_mhz": [161.975, 162.025]
+    },
+    "c2_replay": {
+      "enabled": true,
+      "target_mode_for_injection": "HOLD",
+      "allow_arm_and_actuate": true,
+      "rc_throttle_pwm": 1650,
+      "rc_steering_pwm": 1500,
+      "duration_s": 8.0,
+      "rcc_link_freq_mhz": 868.0
+    }
+  },
+  "timing": {
+    "settle_s": 6.0,
+    "window_s": 25.0
+  }
+}
