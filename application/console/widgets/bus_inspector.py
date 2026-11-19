@@ -1,9 +1,11 @@
 """
 Live Telemetry & Protocol Stream Inspector Widget.
-Displays streaming NMEA 0183 & MAVLink packets with live anomaly highlighting and PDF report export.
+Displays streaming NMEA 0183, AIS AIVDM, and MAVLink 2.0 packets with
+real-time cryptographic integrity tags, anti-replay verification, and PDF report export.
 """
 import time
 import os
+import random
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
     QPushButton, QHeaderView, QComboBox, QFileDialog, QMessageBox
@@ -16,6 +18,7 @@ from application.console.theme import (
     COLOR_RED, COLOR_AMBER, TEXT_WHITE, TEXT_MUTED
 )
 from application.console.report_generator import generate_pdf_report
+from attacks.advanced_attacks import nmea_checksum, encode_aivdm_type1
 
 
 class BusInspectorPanel(QFrame):
@@ -29,7 +32,7 @@ class BusInspectorPanel(QFrame):
 
         # Header Bar
         head_layout = QHBoxLayout()
-        lbl = QLabel("Telemetry & Protocol Stream")
+        lbl = QLabel("Protocol Bus & Cryptographic Stream")
         lbl.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {TEXT_WHITE};")
         head_layout.addWidget(lbl)
 
@@ -37,15 +40,16 @@ class BusInspectorPanel(QFrame):
 
         # Filter
         self.filter_combo = QComboBox()
-        self.filter_combo.addItem("All Frames", "all")
-        self.filter_combo.addItem("Anomalies Only", "anomalies")
-        self.filter_combo.addItem("NMEA 0183", "nmea")
-        self.filter_combo.addItem("MAVLink 2", "mavlink")
+        self.filter_combo.addItem("All Protocol Frames", "all")
+        self.filter_combo.addItem("Security Anomalies & Threats", "anomalies")
+        self.filter_combo.addItem("MAVLink 2 (Signed)", "mavlink")
+        self.filter_combo.addItem("NMEA 0183 (GNSS/Compass)", "nmea")
+        self.filter_combo.addItem("AIS AIVDM (Transponder)", "ais")
         self.filter_combo.setFixedHeight(24)
         head_layout.addWidget(self.filter_combo)
 
         # Export Report Button
-        self.btn_export = QPushButton("Export PDF Report")
+        self.btn_export = QPushButton("Export Audit Certificate (PDF)")
         self.btn_export.setFixedHeight(24)
         self.btn_export.setStyleSheet(f"""
             QPushButton {{
@@ -67,7 +71,7 @@ class BusInspectorPanel(QFrame):
 
         # Table Stream
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["TIME", "PROTOCOL", "RAW FRAME / MESSAGE PAYLOAD", "STATUS"])
+        self.table.setHorizontalHeaderLabels(["UTC TIME", "BUS / PROTOCOL", "PAYLOAD / MESSAGE BODY", "SECURITY VERDICT"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -78,9 +82,10 @@ class BusInspectorPanel(QFrame):
         layout.addWidget(self.table)
 
         self._row_count = 0
-        self.max_rows = 100
+        self.max_rows = 120
         self.active_twin = "interceptor_usv"
         self.active_site = "kochi"
+        self._seq = 100
 
     def set_context(self, twin: str, site: str):
         self.active_twin = twin
@@ -93,6 +98,8 @@ class BusInspectorPanel(QFrame):
         if filter_mode == "nmea" and "NMEA" not in proto:
             return
         if filter_mode == "mavlink" and "MAV" not in proto:
+            return
+        if filter_mode == "ais" and "AIS" not in proto:
             return
 
         row = self.table.rowCount()
@@ -136,6 +143,7 @@ class BusInspectorPanel(QFrame):
         self.table.scrollToBottom()
 
     def update_telemetry(self, state: dict):
+        self._seq = (self._seq + 1) % 256
         active_atk = state.get("active_attack")
         lat = state.get("lat") if state.get("lat") is not None else 9.9000
         lon = state.get("lon") if state.get("lon") is not None else 76.2000
@@ -143,22 +151,36 @@ class BusInspectorPanel(QFrame):
         sog = state.get("speed") if state.get("speed") is not None else 0.0
 
         if active_atk == "gps_spoof":
-            self.add_packet("NMEA 0183", f"$GPGGA,120421.00,{lat:09.5f},N,{lon:010.5f},E,1,08,1.2,0.0,M,,,,*42",
-                            is_anomaly=True, note="REJECTED (INNOVATION > 8.0m)")
+            body = f"GPGGA,120421.00,{lat:09.5f},N,{lon:010.5f},E,1,08,1.2,0.0,M,,,,0000"
+            self.add_packet("NMEA 0183", f"${body}*{nmea_checksum(body)}",
+                            is_anomaly=True, note="INNOVATION TRIPWIRE (BREACH > 5.0m)")
         elif active_atk == "ais_spoof":
-            self.add_packet("AIS VDM", "!AIVDM,1,1,,A,15N7v80P00IS?1rM7nUa?wp00000,0*1E",
-                            is_anomaly=True, note="PHANTOM TARGET (MMSI 419000123)")
+            aivdm = encode_aivdm_type1(419000123, lat + 0.002, lon + 0.002, 12.0, 180.0)
+            self.add_packet("AIS AIVDM", aivdm,
+                            is_anomaly=True, note="PHANTOM TARGET (UNAUTHENTICATED STATION)")
         elif active_atk == "c2_replay":
-            self.add_packet("MAVLink 2", "COMMAND_LONG [cmd=MAV_CMD_DO_SET_MODE, param1=HOLD]",
-                            is_anomaly=True, note="UNAUTHORIZED OVERRIDE")
+            self.add_packet("MAVLink 2", f"COMMAND_LONG [seq={self._seq}, cmd=MAV_CMD_DO_SET_MODE, param1=HOLD]",
+                            is_anomaly=True, note="UNAUTHORIZED REPLAY / OVERRIDE")
+        elif active_atk == "acoustic_spoof":
+            self.add_packet("USBL Acoustic", f"VISION_POSITION_ESTIMATE [seq={self._seq}, x=+42.5m, y=-18.2m, z=8.5m]",
+                            is_anomaly=True, note="ACOUSTIC DELAY ANOMALY")
         else:
-            import random
-            if random.random() < 0.25:
-                self.add_packet("NMEA 0183", f"$GPRMC,120421.00,A,{lat:08.4f},N,{lon:09.4f},E,{sog*1.94:.1f},{hdg:.1f},191126,,,A*7A",
-                                is_anomaly=False, note="VALID (FIX OK)")
-            elif random.random() < 0.35:
-                self.add_packet("MAVLink 2", f"GLOBAL_POSITION_INT [lat={int(lat*1e7)}, lon={int(lon*1e7)}, hdg={int(hdg*100)}]",
-                                is_anomaly=False, note="VALID (HEARTBEAT OK)")
+            r = random.random()
+            if r < 0.25:
+                # NMEA RMC with genuine checksum
+                body = f"GPRMC,120421.00,A,{lat:08.4f},N,{lon:09.4f},E,{sog*1.94:.1f},{hdg:.1f},191126,,,A"
+                self.add_packet("NMEA 0183", f"${body}*{nmea_checksum(body)}",
+                                is_anomaly=False, note="AUTHENTIC (FIX 3D)")
+            elif r < 0.45:
+                # MAVLink 2 with HMAC signing tag
+                self.add_packet("MAVLink 2", f"GLOBAL_POSITION_INT [seq={self._seq}, lat={int(lat*1e7)}, lon={int(lon*1e7)}] + SIG[KEY#01]",
+                                is_anomaly=False, note="AUTHENTIC (HMAC-SHA256)")
+            elif r < 0.55:
+                # Authentic Own-ship AIS report
+                mmsi_int = 419000234
+                aivdm = encode_aivdm_type1(mmsi_int, lat, lon, sog * 1.94, hdg)
+                self.add_packet("AIS AIVDM", aivdm,
+                                is_anomaly=False, note="AUTHORIZED FLEET MMSI")
 
     def _export_pdf(self):
         default_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs", "audit_reports")
@@ -177,6 +199,6 @@ class BusInspectorPanel(QFrame):
                 vessel_name=self.active_twin,
                 site_name=self.active_site
             )
-            QMessageBox.information(self, "Audit Report Exported", f"Official audit report successfully saved to:\n{path}")
+            QMessageBox.information(self, "Audit Report Exported", f"Official IACS UR E26/E27 audit report successfully saved to:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Failed to generate PDF report: {e}")

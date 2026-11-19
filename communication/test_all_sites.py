@@ -32,23 +32,23 @@ ALL_SITES = ["kochi", "mumbai", "visakhapatnam"]
 
 
 def _teardown():
-    subprocess.run(["bash", os.path.join(REPO, "tools", "teardown_all.sh")],
+    subprocess.run(["bash", os.path.join(REPO, "communication", "teardown_all.sh")],
                    cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def run_one(twin, site, settle_s=10):
     env = dict(os.environ, MCR_SITE=site)
     _teardown()
-    boot = subprocess.run(["bash", "tools/run_sim.sh", twin, "up"], cwd=REPO, env=env)
+    boot = subprocess.run(["bash", "communication/run_sim.sh", twin, "up"], cwd=REPO, env=env)
     if boot.returncode != 0:
         _teardown()
         return {"error": "boot failed"}
     time.sleep(settle_s)  # let physics/EKF settle
-    target = f"vehicle_twins/{twin}/target.json"
-    subprocess.run(["python3", "tools/test_target.py", "--target", target], cwd=REPO, env=env)
+    target = f"application/twins/{twin}/target.json"
+    subprocess.run(["python3", "communication/test_target.py", "--target", target], cwd=REPO, env=env)
     runs = sorted(glob.glob(f"{REPO}/target_runs/{twin}/*/verdicts.json"))
     res = json.load(open(runs[-1])) if runs else {"error": "no verdicts.json generated"}
-    subprocess.run(["bash", "tools/run_sim.sh", twin, "down"], cwd=REPO, env=env,
+    subprocess.run(["bash", "communication/run_sim.sh", twin, "down"], cwd=REPO, env=env,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     _teardown()
     time.sleep(3)

@@ -257,13 +257,14 @@ class ConningPanel(QFrame):
         self.compass.set_heading(hdg)
 
         speed_mps = float(state.get("speed") or 0.0)
-        speed_kts = speed_mps * 1.94384
+        speed_kts = float(state.get("speed_knots") or (speed_mps * 1.94384))
         self.lbl_sog.setText(f"{speed_kts:.1f} kts ({speed_mps:.1f} m/s)")
 
         depth = float(state.get("depth") or 0.0)
         domain = state.get("domain", "surface")
         if domain == "underwater":
-            self.lbl_depth.setText(f"{depth:.1f} m DEPTH")
+            alt = float(state.get("altitude") or 25.0)
+            self.lbl_depth.setText(f"{depth:.1f}m (ALT {alt:.1f}m)")
         else:
             self.lbl_depth.setText("14.5 m (UKC 11.2m)")
 
@@ -274,13 +275,19 @@ class ConningPanel(QFrame):
         if lon is not None:
             self.lbl_lon.setText(f"{float(lon):.5f}° E")
 
-        rot = float(state.get("rot") or 0.0)
+        rot = float(state.get("rot_deg_min") or state.get("rot") or 0.0)
         self.lbl_rot.setText(f"{rot:+.1f} °/min")
-        self.rudder.set_angle(float(state.get("rudder") or 0.0))
+
+        rudder_deg = float(state.get("rudder_angle") or state.get("rudder") or 0.0)
+        self.rudder.set_angle(rudder_deg)
 
         armed = state.get("armed", False)
-        pwm = int(min(100, max(0, speed_mps / 3.5 * 100))) if armed else 0
-        self.thrust_bar.setValue(pwm)
-        volts = 24.2 - (pwm * 0.02)
-        amps = pwm * 0.35
-        self.lbl_power.setText(f"{volts:.1f} V | {amps:.1f} A | {pwm * 18} RPM")
+        throttle = float(state.get("throttle_pct") or 0.0)
+        if not armed:
+            throttle = 0.0
+        self.thrust_bar.setValue(int(min(100, max(0, throttle))))
+
+        volts = 24.2 - (throttle * 0.015)
+        amps = throttle * 0.42
+        rpm = int(throttle * 22)
+        self.lbl_power.setText(f"{volts:.1f} V | {amps:.1f} A | {rpm} RPM")

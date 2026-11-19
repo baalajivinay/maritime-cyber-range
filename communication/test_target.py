@@ -49,9 +49,9 @@ import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
-sys.path.insert(0, os.path.join(REPO, "targets"))
+sys.path.insert(0, os.path.join(REPO, "communication"))
 sys.path.insert(0, os.path.join(REPO, "attacks"))
-sys.path.insert(0, os.path.join(REPO, "detection"))
+sys.path.insert(0, os.path.join(REPO, "attacks", "detection"))
 from targets.loader import load_target
 from pymavlink import mavutil
 from detectors import DetectorSuite

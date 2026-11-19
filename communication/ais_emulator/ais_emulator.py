@@ -38,9 +38,7 @@ VESSEL_NAME = constants.VESSEL_NAME
 # existed, silently broadcasting a fixed, non-moving position at the world
 # origin for the entire session instead of the vessel's real pose.
 try:
-    _world = json.load(open(os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "profiles", constants.PROFILE_NAME + ".json"))).get("world", {})
+    _world = constants.load_profile(constants.PROFILE_NAME).get("world", {})
 except Exception:
     _world = {}
 MODEL_NAME = _world.get("model_name", constants.PROFILE_NAME)

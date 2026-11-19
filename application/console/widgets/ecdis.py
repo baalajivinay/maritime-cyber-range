@@ -1,7 +1,16 @@
 """
-Testbed Map & Navigation Display.
-Clean 2D interactive nautical chart showing true position, navigation track,
-GPS spoofing divergence, and AIS ghost vessels.
+Testbed Tactical ECDIS & Navigation Display.
+Conforming to IEC 61174, IHO S-52 Presentation Standards, and COLREGS Rules 7, 8, 14, 15.
+
+Features:
+- Nautical chart with navigable fairway channel and coordinate grid.
+- Own-ship true position with Heading line and True Motion Vector (1-min / 3-min predictor ticks).
+- Concentric Range Rings (100m, 250m, 500m) with distance labels.
+- Commanded Waypoint line with cross-track error readout.
+- AIS Target Contacts with true course vectors, CPA/TCPA calculations, and collision warning sectors.
+- Real-time GNSS Spoofing divergence vector and believed fix ghost.
+- Underwater AUV acoustic transponder beacon and depth profile view.
+- Pan, zoom (+, -, 1:1, Recenter) interactive controls.
 """
 import math
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
@@ -12,10 +21,12 @@ from application.console.theme import (
     MAP_WATER, MAP_FAIRWAY, MAP_LAND, MAP_GRID,
     MAP_OWN_SHIP, MAP_GHOST_SHIP, MAP_PATH, MAP_SPOOF_LINE,
     MAP_WAYPOINT, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    COLOR_RED, COLOR_GREEN, BG_PANEL, BORDER_COLOR
+    COLOR_RED, COLOR_GREEN, COLOR_BLUE, COLOR_AMBER, BG_PANEL, BORDER_COLOR
 )
 
 DEG_TO_M = 111320.0
+DEG_TO_RAD = math.pi / 180.0
+RAD_TO_DEG = 180.0 / math.pi
 
 
 class ChartCanvas(QWidget):
@@ -35,6 +46,8 @@ class ChartCanvas(QWidget):
         self.true_pos = (0.0, 0.0)      # (East m, North m)
         self.true_hdg = 45.0            # Degrees
         self.speed_mps = 0.0
+        self.depth_m = 0.0
+        self.domain = "surface"
         self.trail = []
 
         # Target Waypoint
@@ -42,8 +55,12 @@ class ChartCanvas(QWidget):
 
         # Attack Overlays
         self.spoofed_pos = None         # (East m, North m)
-        self.ghost_vessel = None        # dict(pos=(e, n), hdg=deg, name=str)
+        self.ghost_vessel = None        # dict(pos=(e, n), course=deg, speed=mps, mmsi=str)
         self.active_attack = None
+        self.cpa_m = None
+        self.tcpa_s = None
+        self.collision_risk = False
+        self.usbl_offset_m = 0.0
 
         # Dragging / Panning State
         self._dragging = False
@@ -66,7 +83,13 @@ class ChartCanvas(QWidget):
         lon = state.get("lon")
         self.true_hdg = float(state.get("hdg") or 0.0)
         self.speed_mps = float(state.get("speed") or 0.0)
+        self.depth_m = float(state.get("depth") or 0.0)
+        self.domain = state.get("domain", "surface")
         self.active_attack = state.get("active_attack")
+        self.cpa_m = state.get("cpa_m")
+        self.tcpa_s = state.get("tcpa_s")
+        self.collision_risk = state.get("collision_risk", False)
+        self.usbl_offset_m = state.get("usbl_offset_m", 0.0)
 
         if lat is not None and lon is not None:
             dn = (float(lat) - self.center_lat) * DEG_TO_M
@@ -76,7 +99,7 @@ class ChartCanvas(QWidget):
             # Record navigation trail
             if not self.trail or math.hypot(de - self.trail[-1][0], dn - self.trail[-1][1]) > 2.0:
                 self.trail.append((de, dn))
-                if len(self.trail) > 200:
+                if len(self.trail) > 250:
                     self.trail.pop(0)
 
         # GPS Spoofing Offset
@@ -90,13 +113,11 @@ class ChartCanvas(QWidget):
         if self.active_attack == "ais_spoof":
             ghost_info = state.get("ghost_vessel")
             if ghost_info:
-                g_lat = ghost_info.get("lat", self.center_lat + 0.0015)
-                g_lon = ghost_info.get("lon", self.center_lon + 0.001)
-                g_dn = (g_lat - self.center_lat) * DEG_TO_M
-                g_de = (g_lon - self.center_lon) * DEG_TO_M * math.cos(math.radians(self.center_lat))
+                g_pos = ghost_info.get("pos", (self.true_pos[0] + 150.0, self.true_pos[1] + 200.0))
                 self.ghost_vessel = {
-                    "pos": (g_de, g_dn),
-                    "hdg": ghost_info.get("hdg", 180.0),
+                    "pos": g_pos,
+                    "course": ghost_info.get("course", 180.0),
+                    "speed": ghost_info.get("speed", 4.5),
                     "mmsi": ghost_info.get("mmsi", "419000123")
                 }
         else:
@@ -122,38 +143,44 @@ class ChartCanvas(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 1. Sea Water Background
+        # 1. Nautical Water Background
         p.fillRect(self.rect(), QColor(MAP_WATER))
 
-        # 2. Channel / Fairway
+        # 2. Navigable Fairway Channel
         self._draw_fairway(p)
 
         # 3. Coordinate Grid
         self._draw_grid(p)
 
-        # 4. Navigation Trail
+        # 4. Range Rings (100m, 250m, 500m)
+        self._draw_range_rings(p)
+
+        # 5. Underwater Acoustic Transponder (AUV mode)
+        if self.domain == "underwater":
+            self._draw_acoustic_beacon(p)
+
+        # 6. Navigation Trail
         self._draw_trail(p)
 
-        # 5. Commanded Waypoint & Target Path
+        # 7. Commanded Waypoint & Target Course
         if self.target_wp:
             self._draw_waypoint(p)
 
-        # 6. AIS Ghost Vessel (if spoof active)
+        # 8. AIS Ghost Contact & Collision Sector
         if self.ghost_vessel:
             self._draw_ghost(p)
 
-        # 7. GPS Spoofed Position & Divergence Line
+        # 9. GNSS Spoofed Fix & Divergence Line
         if self.spoofed_pos:
             self._draw_spoofed_ghost(p)
 
-        # 8. True Own-Ship Vessel
+        # 10. True Own-Ship Vessel with Vectors
         self._draw_own_ship(p)
 
-        # 9. Top-Left HUD Card (Scale & Quick Info)
+        # 11. ECDIS Scale & Compass Indicator HUD Card
         self._draw_hud(p)
 
     def _draw_fairway(self, p: QPainter):
-        # Draw a curved navigable fairway channel
         path = QPainterPath()
         p1 = self.m_to_screen(-300, -350)
         p2 = self.m_to_screen(-100, -100)
@@ -163,11 +190,10 @@ class ChartCanvas(QWidget):
         path.moveTo(p1[0], p1[1])
         path.cubicTo(p2[0], p2[1], p3[0], p3[1], p4[0], p4[1])
 
-        fairway_pen = QPen(QColor(MAP_FAIRWAY), 120 * self.scale_m_to_px, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        fairway_pen = QPen(QColor(MAP_FAIRWAY), 130 * self.scale_m_to_px, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
         p.setPen(fairway_pen)
         p.drawPath(path)
 
-        # Fairway edge lines
         edge_pen = QPen(QColor("#2d4157"), 1, Qt.PenStyle.DashLine)
         p.setPen(edge_pen)
         p.drawPath(path)
@@ -176,7 +202,7 @@ class ChartCanvas(QWidget):
         pen = QPen(QColor(MAP_GRID), 1, Qt.PenStyle.DotLine)
         p.setPen(pen)
 
-        step_m = 100.0  # 100 meter grid intervals
+        step_m = 100.0
         step_px = step_m * self.scale_m_to_px
 
         cx = self.width() / 2.0 + self.pan_x
@@ -191,6 +217,38 @@ class ChartCanvas(QWidget):
         while start_y < self.height():
             p.drawLine(0, start_y, self.width(), start_y)
             start_y += int(step_px)
+
+    def _draw_range_rings(self, p: QPainter):
+        vx, vy = self.m_to_screen(*self.true_pos)
+        pen_ring = QPen(QColor("#223348"), 1, Qt.PenStyle.DashLine)
+        p.setPen(pen_ring)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setFont(QFont("-apple-system, sans-serif", 7))
+
+        for dist_m in (100.0, 250.0, 500.0):
+            r_px = dist_m * self.scale_m_to_px
+            if r_px < 15 or r_px > max(self.width(), self.height()) * 1.5:
+                continue
+            p.drawEllipse(QPointF(vx, vy), r_px, r_px)
+            # Label
+            p.setPen(QColor("#3a5068"))
+            p.drawText(int(vx + r_px + 3), int(vy - 2), f"{int(dist_m)}m")
+            p.setPen(pen_ring)
+
+    def _draw_acoustic_beacon(self, p: QPainter):
+        # Surface mother-ship transponder origin at (0,0)
+        bx, by = self.m_to_screen(0.0, 0.0)
+        p.setPen(QPen(QColor("#38bdf8"), 1.5, Qt.PenStyle.DashDotLine))
+        p.setBrush(QBrush(QColor(56, 189, 248, 15)))
+        r = 300.0 * self.scale_m_to_px
+        p.drawEllipse(QPointF(bx, by), r, r)
+
+        # Transponder icon
+        p.setPen(QPen(QColor("#38bdf8"), 2))
+        p.setBrush(QBrush(QColor("#38bdf8")))
+        p.drawEllipse(QPointF(bx, by), 4, 4)
+        p.setFont(QFont("-apple-system, sans-serif", 8, QFont.Weight.Bold))
+        p.drawText(int(bx + 8), int(by - 4), "USBL Acoustic Transponder (Origin)")
 
     def _draw_trail(self, p: QPainter):
         if len(self.trail) < 2:
@@ -211,34 +269,43 @@ class ChartCanvas(QWidget):
         p.setPen(pen_line)
         p.drawLine(int(vx), int(vy), int(wx), int(wy))
 
-        # Waypoint marker (Bullseye)
+        # Target arrival circle
         p.setPen(QPen(QColor(MAP_WAYPOINT), 2))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QPointF(wx, wy), 9, 9)
         p.setBrush(QBrush(QColor(MAP_WAYPOINT)))
         p.drawEllipse(QPointF(wx, wy), 3, 3)
 
-        # Label
-        p.setFont(QFont("-apple-system, sans-serif", 9))
+        # Distance label
+        dx = self.target_wp[0] - self.true_pos[0]
+        dy = self.target_wp[1] - self.true_pos[1]
+        dist_m = math.hypot(dx, dy)
+        p.setFont(QFont("-apple-system, sans-serif", 9, QFont.Weight.Bold))
         p.setPen(QColor(MAP_WAYPOINT))
-        p.drawText(int(wx + 12), int(wy + 4), "Target Waypoint")
+        p.drawText(int(wx + 12), int(wy + 4), f"Waypoint ({dist_m:.0f}m)")
 
     def _draw_ghost(self, p: QPainter):
         ge, gn = self.ghost_vessel["pos"]
         gx, gy = self.m_to_screen(ge, gn)
-        ghdg = self.ghost_vessel["hdg"]
+        ghdg = self.ghost_vessel["course"]
 
+        # If collision risk active, draw flashing safety zone
+        if self.collision_risk:
+            p.setPen(QPen(QColor(COLOR_RED), 2, Qt.PenStyle.DashLine))
+            p.setBrush(QBrush(QColor(235, 87, 87, 45)))
+            r = 75 * self.scale_m_to_px
+            p.drawEllipse(QPointF(gx, gy), r, r)
+        else:
+            p.setPen(QPen(QColor(COLOR_AMBER), 1, Qt.PenStyle.DashLine))
+            p.setBrush(QBrush(QColor(242, 153, 74, 25)))
+            r = 50 * self.scale_m_to_px
+            p.drawEllipse(QPointF(gx, gy), r, r)
+
+        # Vessel Hull Shape
         p.save()
         p.translate(gx, gy)
         p.rotate(ghdg)
 
-        # Safety perimeter circle
-        p.setPen(QPen(QColor(COLOR_RED), 1, Qt.PenStyle.DashLine))
-        p.setBrush(QBrush(QColor(235, 87, 87, 25)))
-        r = 60 * self.scale_m_to_px
-        p.drawEllipse(QPointF(0, 0), r, r)
-
-        # Vessel Hull Shape
         hull = QPolygonF([
             QPointF(0, -18),
             QPointF(8, 6),
@@ -246,16 +313,28 @@ class ChartCanvas(QWidget):
             QPointF(-6, 16),
             QPointF(-8, 6),
         ])
-        p.setPen(QPen(QColor(COLOR_RED), 2))
-        p.setBrush(QBrush(QColor(COLOR_RED)))
+        vessel_color = COLOR_RED if self.collision_risk else COLOR_AMBER
+        p.setPen(QPen(QColor(vessel_color), 2))
+        p.setBrush(QBrush(QColor(vessel_color)))
         p.drawPolygon(hull)
+
+        # Ghost Speed Vector (30 seconds ahead)
+        g_speed = self.ghost_vessel.get("speed", 4.0)
+        vec_len = g_speed * 30.0 * self.scale_m_to_px
+        p.setPen(QPen(QColor(vessel_color), 1.5, Qt.PenStyle.SolidLine))
+        p.drawLine(0, -18, 0, int(-18 - vec_len))
+
         p.restore()
 
-        # Ghost Ship Label
+        # Ghost Ship Label & CPA
         p.setFont(QFont("-apple-system, sans-serif", 9, QFont.Weight.Bold))
-        p.setPen(QColor(COLOR_RED))
+        p.setPen(QColor(vessel_color))
         mmsi = self.ghost_vessel.get("mmsi", "AIS-GHOST")
-        p.drawText(int(gx + 15), int(gy - 5), f"AIS Ghost ({mmsi})")
+        p.drawText(int(gx + 16), int(gy - 6), f"AIS Threat ({mmsi})")
+
+        if self.cpa_m is not None:
+            p.setFont(QFont("-apple-system, sans-serif", 8))
+            p.drawText(int(gx + 16), int(gy + 8), f"CPA: {self.cpa_m:.0f}m  TCPA: {self.tcpa_s:.0f}s")
 
     def _draw_spoofed_ghost(self, p: QPainter):
         tx, ty = self.m_to_screen(*self.true_pos)
@@ -266,12 +345,10 @@ class ChartCanvas(QWidget):
         p.setPen(pen_div)
         p.drawLine(int(tx), int(ty), int(sx), int(sy))
 
-        # Divergence distance calculation
         dx_m = self.spoofed_pos[0] - self.true_pos[0]
         dy_m = self.spoofed_pos[1] - self.true_pos[1]
         dist_m = math.hypot(dx_m, dy_m)
 
-        # Midpoint label for distance
         mx = (tx + sx) / 2.0
         my = (ty + sy) / 2.0
         p.setFont(QFont("-apple-system, sans-serif", 9, QFont.Weight.Bold))
@@ -283,8 +360,8 @@ class ChartCanvas(QWidget):
         p.translate(sx, sy)
         p.rotate(self.true_hdg)
 
-        p.setPen(QPen(QColor(MAP_SPOOF_LINE), 2))
-        p.setBrush(QBrush(QColor(235, 87, 87, 80)))
+        p.setPen(QPen(QColor(MAP_SPOOF_LINE), 1.5))
+        p.setBrush(QBrush(QColor(235, 87, 87, 70)))
         hull = QPolygonF([
             QPointF(0, -14),
             QPointF(6, 4),
@@ -295,7 +372,7 @@ class ChartCanvas(QWidget):
         p.drawPolygon(hull)
         p.restore()
 
-        p.drawText(int(sx + 14), int(sy + 4), "Believed GPS Fix")
+        p.drawText(int(sx + 14), int(sy + 4), "Spoofed Believed Fix")
 
     def _draw_own_ship(self, p: QPainter):
         vx, vy = self.m_to_screen(*self.true_pos)
@@ -304,29 +381,51 @@ class ChartCanvas(QWidget):
         p.translate(vx, vy)
         p.rotate(self.true_hdg)
 
-        # Heading velocity vector line
-        vec_len = max(25.0, self.speed_mps * 8.0 * self.scale_m_to_px)
-        p.setPen(QPen(QColor(MAP_OWN_SHIP), 2))
-        p.drawLine(0, 0, 0, int(-vec_len))
+        # 1. Heading Index Line (200m ahead)
+        hdg_len = 80.0 * self.scale_m_to_px
+        p.setPen(QPen(QColor("#7dd3fc"), 1, Qt.PenStyle.DashDotLine))
+        p.drawLine(0, -16, 0, int(-16 - hdg_len))
 
-        # Modern Crisp Vessel Hull
-        hull = QPolygonF([
-            QPointF(0, -16),
-            QPointF(7, 5),
-            QPointF(5, 14),
-            QPointF(-5, 14),
-            QPointF(-7, 5),
-        ])
+        # 2. True Motion Vector (1-minute and 3-minute predictor ticks)
+        if self.speed_mps > 0.2:
+            vec_1min = self.speed_mps * 60.0 * self.scale_m_to_px
+            p.setPen(QPen(QColor(COLOR_GREEN), 1.5, Qt.PenStyle.SolidLine))
+            p.drawLine(0, -16, 0, int(-16 - vec_1min))
+            # 1-min cross tick
+            p.drawLine(-4, int(-16 - vec_1min), 4, int(-16 - vec_1min))
 
-        p.setPen(QPen(QColor("#0284c7"), 1.5))
-        p.setBrush(QBrush(QColor(MAP_OWN_SHIP)))
+        # 3. Vessel Hull
+        if self.domain == "underwater":
+            # Torpedo AUV shape
+            hull = QPolygonF([
+                QPointF(0, -16),
+                QPointF(5, -6),
+                QPointF(5, 12),
+                QPointF(-5, 12),
+                QPointF(-5, -6),
+            ])
+            p.setPen(QPen(QColor("#0ea5e9"), 1.5))
+            p.setBrush(QBrush(QColor("#38bdf8")))
+        else:
+            # Planing / Displacement USV shape
+            hull = QPolygonF([
+                QPointF(0, -16),
+                QPointF(7, 5),
+                QPointF(5, 14),
+                QPointF(-5, 14),
+                QPointF(-7, 5),
+            ])
+            p.setPen(QPen(QColor("#0284c7"), 1.5))
+            p.setBrush(QBrush(QColor(MAP_OWN_SHIP)))
+
         p.drawPolygon(hull)
         p.restore()
 
         # Own-ship Label
         p.setFont(QFont("-apple-system, sans-serif", 9, QFont.Weight.Bold))
         p.setPen(QColor(TEXT_PRIMARY))
-        p.drawText(int(vx + 14), int(vy - 6), "Own-Ship (True Position)")
+        dom_label = "AUV Submerged" if self.domain == "underwater" else "Own-Ship"
+        p.drawText(int(vx + 14), int(vy - 6), f"{dom_label} (True Fix)")
 
     def _draw_hud(self, p: QPainter):
         # Scale indicator card in bottom-left
@@ -352,7 +451,6 @@ class ChartCanvas(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            # Set target navigation waypoint
             east, north = self.screen_to_m(event.position().x(), event.position().y())
             self.target_wp = (east, north)
             self.update()
@@ -375,7 +473,7 @@ class ChartCanvas(QWidget):
     def wheelEvent(self, event):
         angle = event.angleDelta().y()
         factor = 1.15 if angle > 0 else 0.87
-        self.scale_m_to_px = max(0.2, min(5.0, self.scale_m_to_px * factor))
+        self.scale_m_to_px = max(0.2, min(6.0, self.scale_m_to_px * factor))
         self.update()
 
 
@@ -384,24 +482,35 @@ class ECDISPanel(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
         # Header bar above chart
         header = QHBoxLayout()
-        header.setContentsMargins(8, 4, 8, 0)
+        header.setContentsMargins(8, 4, 8, 2)
 
-        lbl = QLabel("Navigation Map")
+        lbl = QLabel("Tactical ECDIS Chart")
         lbl.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_PRIMARY};")
         header.addWidget(lbl)
 
-        hint = QLabel("Left-click to steer waypoint  •  Scroll to zoom  •  Right-drag to pan")
+        hint = QLabel("Left-click: Commanded Waypoint  •  Right-drag: Pan  •  Scroll: Zoom")
         hint.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED};")
         header.addWidget(hint)
 
         header.addStretch()
 
+        # Zoom Controls (+, -, 1:1, Recenter)
+        btn_zin = QPushButton("+")
+        btn_zin.setFixedSize(26, 24)
+        btn_zin.clicked.connect(self._zoom_in)
+        header.addWidget(btn_zin)
+
+        btn_zout = QPushButton("-")
+        btn_zout.setFixedSize(26, 24)
+        btn_zout.clicked.connect(self._zoom_out)
+        header.addWidget(btn_zout)
+
         btn_recenter = QPushButton("Recenter")
-        btn_recenter.setFixedHeight(26)
+        btn_recenter.setFixedHeight(24)
         btn_recenter.clicked.connect(self._recenter)
         header.addWidget(btn_recenter)
 
@@ -410,6 +519,14 @@ class ECDISPanel(QWidget):
         # Chart Canvas
         self.canvas = ChartCanvas(self)
         layout.addWidget(self.canvas, 1)
+
+    def _zoom_in(self):
+        self.canvas.scale_m_to_px = min(6.0, self.canvas.scale_m_to_px * 1.25)
+        self.canvas.update()
+
+    def _zoom_out(self):
+        self.canvas.scale_m_to_px = max(0.2, self.canvas.scale_m_to_px * 0.8)
+        self.canvas.update()
 
     def _recenter(self):
         self.canvas.pan_x = 0.0

@@ -221,4 +221,84 @@ QHeaderView::section {{
     border-bottom: 1px solid {PANEL_BORDER};
     font-weight: 600;
 }}
+
+/* Menu Bar & Menus */
+QMenuBar {{
+    background-color: {PANEL_BG};
+    color: {TEXT_WHITE};
+    border-bottom: 1px solid {PANEL_BORDER};
+    padding: 2px 6px;
+    font-size: 11px;
+}}
+
+QMenuBar::item {{
+    background: transparent;
+    padding: 4px 10px;
+    border-radius: 3px;
+}}
+
+QMenuBar::item:selected {{
+    background-color: #2f3240;
+    color: #ffffff;
+}}
+
+QMenu {{
+    background-color: {PANEL_BG};
+    color: {TEXT_WHITE};
+    border: 1px solid {PANEL_BORDER};
+    padding: 4px;
+    font-size: 11px;
+}}
+
+QMenu::item {{
+    padding: 6px 24px 6px 16px;
+    border-radius: 3px;
+}}
+
+QMenu::item:selected {{
+    background-color: {COLOR_BLUE};
+    color: #ffffff;
+}}
+
+QMenu::separator {{
+    height: 1px;
+    background-color: {PANEL_BORDER};
+    margin: 4px 8px;
+}}
+
+/* Status Bar */
+QStatusBar {{
+    background-color: {PANEL_BG};
+    color: {TEXT_MUTED};
+    border-top: 1px solid {PANEL_BORDER};
+    font-size: 11px;
+    padding: 2px 8px;
+}}
+
+QStatusBar QLabel {{
+    color: {TEXT_MUTED};
+    font-size: 11px;
+}}
+
+/* Tab Widget */
+QTabWidget::pane {{
+    border: 1px solid {PANEL_BORDER};
+    background-color: {PANEL_BG};
+    border-radius: 4px;
+}}
+
+QTabBar::tab {{
+    background-color: #1a1b22;
+    color: {TEXT_MUTED};
+    padding: 6px 14px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    margin-right: 2px;
+}}
+
+QTabBar::tab:selected {{
+    background-color: {PANEL_BG};
+    color: {TEXT_WHITE};
+    font-weight: 600;
+}}
 """

@@ -180,4 +180,4 @@ def generate_pdf_report(output_path: str = None, vessel_twin: str = None, site_n
     doc = QTextDocument()
     doc.setHtml(html)
     doc.print(writer)
-    return output_path
+    return target_path

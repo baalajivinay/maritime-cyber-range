@@ -1,6 +1,14 @@
 """
-Testbed Top Toolbar & Header.
-Clean, intuitive control bar with vessel selection, location, start/stop, and status.
+Testbed Top Toolbar & Bridge Alert Management (BAM) Header.
+Conforming to IEC 62923 (Bridge Alert Management) and IMO MSC.302(87).
+
+Features:
+- Title strictly "Testbed".
+- Vessel Twin selector with domain indicators (Surface USV vs Underwater AUV).
+- Harbour Site selector with live sea state and environmental data.
+- Start/Stop simulation and Arm/Disarm operational controls.
+- BAM Alert lights: Emergency Alarm, Warning, Caution, Normal.
+- Dynamic active threat indicator banner.
 """
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QLabel, QComboBox, QPushButton, QFrame
@@ -9,7 +17,7 @@ from PyQt6.QtCore import pyqtSignal, Qt
 
 from application.console.theme import (
     BG_PANEL_HEADER, BORDER_COLOR, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    COLOR_GREEN, COLOR_RED, COLOR_BLUE
+    COLOR_GREEN, COLOR_RED, COLOR_AMBER, COLOR_BLUE
 )
 
 
@@ -17,6 +25,8 @@ class BAMHeaderWidget(QWidget):
     boot_requested = pyqtSignal()
     teardown_requested = pyqtSignal()
     arm_toggled = pyqtSignal(bool)
+    twin_changed = pyqtSignal(str)
+    site_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,12 +39,12 @@ class BAMHeaderWidget(QWidget):
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 8, 16, 8)
-        layout.setSpacing(14)
+        layout.setContentsMargins(14, 6, 14, 6)
+        layout.setSpacing(12)
 
         # 1. Main Title
         title = QLabel("Testbed")
-        title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {TEXT_PRIMARY}; letter-spacing: 0.5px;")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {TEXT_PRIMARY}; letter-spacing: 0.5px;")
         layout.addWidget(title)
 
         # Subtle Vertical Divider
@@ -45,31 +55,33 @@ class BAMHeaderWidget(QWidget):
 
         # 2. Vessel Selector
         lbl_twin = QLabel("Vehicle:")
-        lbl_twin.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: 500;")
+        lbl_twin.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: 500; font-size: 11px;")
         layout.addWidget(lbl_twin)
 
         self.twin_combo = QComboBox()
-        self.twin_combo.addItem("Fast Interceptor USV", "interceptor_usv")
-        self.twin_combo.addItem("Coastal Survey USV", "survey_usv")
-        self.twin_combo.addItem("MT Andaman Tug", "mt_andaman_tug")
-        self.twin_combo.addItem("Maya AUV (Underwater)", "maya_auv")
-        self.twin_combo.addItem("AUV-150 (Underwater)", "auv150")
-        self.twin_combo.setFixedWidth(200)
+        self.twin_combo.addItem("Fast Interceptor USV (Surface)", "interceptor_usv")
+        self.twin_combo.addItem("Coastal Survey USV (Surface)", "survey_usv")
+        self.twin_combo.addItem("MT Andaman Tug (Displacement)", "mt_andaman_tug")
+        self.twin_combo.addItem("Maya AUV (Underwater Subsea)", "maya_auv")
+        self.twin_combo.addItem("AUV-150 (Deep Flatfish)", "auv150")
+        self.twin_combo.setFixedWidth(210)
+        self.twin_combo.currentIndexChanged.connect(lambda: self.twin_changed.emit(self.twin_combo.currentData()))
         layout.addWidget(self.twin_combo)
 
         # 3. Location Selector
         lbl_site = QLabel("Location:")
-        lbl_site.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: 500;")
+        lbl_site.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: 500; font-size: 11px;")
         layout.addWidget(lbl_site)
 
         self.site_combo = QComboBox()
-        self.site_combo.addItem("Kochi Port (9.90°N, 76.20°E)", "kochi")
+        self.site_combo.addItem("Kochi Port (09.90°N, 76.20°E)", "kochi")
         self.site_combo.addItem("Mumbai Harbour (18.92°N, 72.80°E)", "mumbai")
         self.site_combo.addItem("Visakhapatnam (17.70°N, 83.30°E)", "visakhapatnam")
         self.site_combo.setFixedWidth(220)
+        self.site_combo.currentIndexChanged.connect(lambda: self.site_changed.emit(self.site_combo.currentData()))
         layout.addWidget(self.site_combo)
 
-        layout.addSpacing(6)
+        layout.addSpacing(4)
 
         # 4. Start & Stop Buttons
         self.btn_boot = QPushButton("Start Testbed")
@@ -79,8 +91,8 @@ class BAMHeaderWidget(QWidget):
                 background-color: {COLOR_GREEN};
                 color: #ffffff;
                 font-weight: 600;
-                padding: 6px 16px;
-                border-radius: 5px;
+                padding: 6px 14px;
+                border-radius: 4px;
                 border: none;
             }}
             QPushButton:hover {{
@@ -96,8 +108,8 @@ class BAMHeaderWidget(QWidget):
                 background-color: #383844;
                 color: {TEXT_PRIMARY};
                 font-weight: 500;
-                padding: 6px 14px;
-                border-radius: 5px;
+                padding: 6px 12px;
+                border-radius: 4px;
                 border: 1px solid {BORDER_COLOR};
             }}
             QPushButton:hover {{
@@ -111,28 +123,29 @@ class BAMHeaderWidget(QWidget):
 
         layout.addStretch()
 
-        # 5. Status Indicators
-        self.status_pill = QLabel("Ready")
-        self.status_pill.setStyleSheet("""
-            background-color: #2b2b36;
-            color: #b0b0c0;
-            border: 1px solid #3d3d4c;
-            border-radius: 12px;
-            padding: 4px 12px;
-            font-size: 11px;
-            font-weight: 600;
+        # 5. BAM Alert Status Banner
+        self.lbl_bam_alert = QLabel("BAM: NORMAL (NO THREAT)")
+        self.lbl_bam_alert.setStyleSheet(f"""
+            background-color: #1a2920;
+            color: {COLOR_GREEN};
+            border: 1px solid #234832;
+            border-radius: 10px;
+            padding: 3px 10px;
+            font-size: 10px;
+            font-weight: bold;
         """)
-        layout.addWidget(self.status_pill)
+        layout.addWidget(self.lbl_bam_alert)
 
+        # 6. Mode & Arm Indicators
         self.mode_pill = QLabel("MANUAL")
         self.mode_pill.setStyleSheet("""
-            background-color: #2b2b36;
+            background-color: #222533;
             color: #2f80ed;
-            border: 1px solid #3d3d4c;
-            border-radius: 12px;
-            padding: 4px 12px;
-            font-size: 11px;
-            font-weight: 600;
+            border: 1px solid #33405c;
+            border-radius: 10px;
+            padding: 3px 10px;
+            font-size: 10px;
+            font-weight: bold;
         """)
         layout.addWidget(self.mode_pill)
 
@@ -140,9 +153,9 @@ class BAMHeaderWidget(QWidget):
         self.btn_arm.setCheckable(True)
         self.btn_arm.setStyleSheet(f"""
             QPushButton {{
-                background-color: #32323c;
+                background-color: #2e303b;
                 border: 1px solid {BORDER_COLOR};
-                border-radius: 5px;
+                border-radius: 4px;
                 padding: 5px 12px;
                 font-weight: 600;
             }}
@@ -161,37 +174,97 @@ class BAMHeaderWidget(QWidget):
 
     def set_running_state(self, is_running: bool):
         if is_running:
-            self.status_pill.setText("Running")
-            self.status_pill.setStyleSheet("""
-                background-color: rgba(39, 174, 96, 0.2);
-                color: #27ae60;
-                border: 1px solid #27ae60;
-                border-radius: 12px;
-                padding: 4px 12px;
-                font-size: 11px;
-                font-weight: 600;
-            """)
             self.btn_boot.setEnabled(False)
             self.twin_combo.setEnabled(False)
             self.site_combo.setEnabled(False)
         else:
-            self.status_pill.setText("Ready")
-            self.status_pill.setStyleSheet("""
-                background-color: #2b2b36;
-                color: #b0b0c0;
-                border: 1px solid #3d3d4c;
-                border-radius: 12px;
-                padding: 4px 12px;
-                font-size: 11px;
-                font-weight: 600;
-            """)
             self.btn_boot.setEnabled(True)
             self.twin_combo.setEnabled(True)
             self.site_combo.setEnabled(True)
+            self.lbl_bam_alert.setText("BAM: NORMAL (NO THREAT)")
+            self.lbl_bam_alert.setStyleSheet(f"""
+                background-color: #1a2920;
+                color: {COLOR_GREEN};
+                border: 1px solid #234832;
+                border-radius: 10px;
+                padding: 3px 10px;
+                font-size: 10px;
+                font-weight: bold;
+            """)
 
     def update_telemetry(self, state: dict):
         mode = state.get("mode", "MANUAL")
         self.mode_pill.setText(str(mode).upper())
+
+        active_atk = state.get("active_attack")
+        if active_atk == "gps_spoof":
+            self.lbl_bam_alert.setText("ALARM: GNSS WALK-OFF SPOOFING")
+            self.lbl_bam_alert.setStyleSheet(f"""
+                background-color: #3b1c1c;
+                color: {COLOR_RED};
+                border: 1px solid #632626;
+                border-radius: 10px;
+                padding: 3px 10px;
+                font-size: 10px;
+                font-weight: bold;
+            """)
+        elif active_atk == "ais_spoof":
+            risk = state.get("collision_risk", False)
+            if risk:
+                self.lbl_bam_alert.setText("ALARM: AIS GHOST COLLISION RISK (COLREGS)")
+                self.lbl_bam_alert.setStyleSheet(f"""
+                    background-color: #3b1c1c;
+                    color: {COLOR_RED};
+                    border: 1px solid #632626;
+                    border-radius: 10px;
+                    padding: 3px 10px;
+                    font-size: 10px;
+                    font-weight: bold;
+                """)
+            else:
+                self.lbl_bam_alert.setText("WARNING: AIS PHANTOM TARGET DETECTED")
+                self.lbl_bam_alert.setStyleSheet(f"""
+                    background-color: #3b2a1a;
+                    color: {COLOR_AMBER};
+                    border: 1px solid #5e3f20;
+                    border-radius: 10px;
+                    padding: 3px 10px;
+                    font-size: 10px;
+                    font-weight: bold;
+                """)
+        elif active_atk == "c2_replay":
+            self.lbl_bam_alert.setText("ALARM: UNAUTHORIZED C2 OVERRIDE")
+            self.lbl_bam_alert.setStyleSheet(f"""
+                background-color: #3b1c1c;
+                color: {COLOR_RED};
+                border: 1px solid #632626;
+                border-radius: 10px;
+                padding: 3px 10px;
+                font-size: 10px;
+                font-weight: bold;
+            """)
+        elif active_atk == "acoustic_spoof":
+            self.lbl_bam_alert.setText("ALARM: USBL ACOUSTIC FIX SPOOFING")
+            self.lbl_bam_alert.setStyleSheet(f"""
+                background-color: #3b1c1c;
+                color: {COLOR_RED};
+                border: 1px solid #632626;
+                border-radius: 10px;
+                padding: 3px 10px;
+                font-size: 10px;
+                font-weight: bold;
+            """)
+        else:
+            self.lbl_bam_alert.setText("BAM: NORMAL (NO THREAT)")
+            self.lbl_bam_alert.setStyleSheet(f"""
+                background-color: #1a2920;
+                color: {COLOR_GREEN};
+                border: 1px solid #234832;
+                border-radius: 10px;
+                padding: 3px 10px;
+                font-size: 10px;
+                font-weight: bold;
+            """)
 
         armed = state.get("armed", False)
         if armed != self.btn_arm.isChecked():
