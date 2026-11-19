@@ -15,7 +15,7 @@ Features:
 import math
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPolygonF, QFont, QPainterPath
-from PyQt6.QtCore import Qt, QPointF, QRectF
+from PyQt6.QtCore import Qt, QPointF, QRectF, pyqtSignal
 
 from application.console.theme import (
     MAP_WATER, MAP_FAIRWAY, MAP_LAND, MAP_GRID,
@@ -30,6 +30,9 @@ RAD_TO_DEG = 180.0 / math.pi
 
 
 class ChartCanvas(QWidget):
+    waypoint_commanded = pyqtSignal(float, float)
+    waypoint_cleared = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(480, 420)
@@ -264,25 +267,48 @@ class ChartCanvas(QWidget):
         wx, wy = self.m_to_screen(*self.target_wp)
         vx, vy = self.m_to_screen(*self.true_pos)
 
-        # Line from vessel to waypoint
-        pen_line = QPen(QColor(MAP_WAYPOINT), 1, Qt.PenStyle.DashLine)
-        p.setPen(pen_line)
+        # 1. Commanded Track Line from vessel to waypoint
+        pen_track = QPen(QColor("#00d2ff"), 1.5, Qt.PenStyle.DashLine)
+        p.setPen(pen_track)
         p.drawLine(int(vx), int(vy), int(wx), int(wy))
 
-        # Target arrival circle
-        p.setPen(QPen(QColor(MAP_WAYPOINT), 2))
+        # 2. Bullseye Target Reticle
+        wp_color = QColor("#00d2ff")
+        p.setPen(QPen(wp_color, 2))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(QPointF(wx, wy), 9, 9)
-        p.setBrush(QBrush(QColor(MAP_WAYPOINT)))
-        p.drawEllipse(QPointF(wx, wy), 3, 3)
+        p.drawEllipse(QPointF(wx, wy), 12, 12)
+        p.drawEllipse(QPointF(wx, wy), 6, 6)
+        p.setBrush(QBrush(wp_color))
+        p.drawEllipse(QPointF(wx, wy), 2.5, 2.5)
 
-        # Distance label
+        # Reticle Crosshairs
+        p.drawLine(int(wx - 16), int(wy), int(wx - 13), int(wy))
+        p.drawLine(int(wx + 13), int(wy), int(wx + 16), int(wy))
+        p.drawLine(int(wx), int(wy - 16), int(wx), int(wy - 13))
+        p.drawLine(int(wx), int(wy + 13), int(wx), int(wy + 16))
+
+        # 3. Target Navigation Metrics Badge
         dx = self.target_wp[0] - self.true_pos[0]
         dy = self.target_wp[1] - self.true_pos[1]
         dist_m = math.hypot(dx, dy)
-        p.setFont(QFont("-apple-system, sans-serif", 9, QFont.Weight.Bold))
-        p.setPen(QColor(MAP_WAYPOINT))
-        p.drawText(int(wx + 12), int(wy + 4), f"Waypoint ({dist_m:.0f}m)")
+        bearing_deg = (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
+        ttg_str = f"{(dist_m / max(0.5, self.speed_mps)):.0f}s" if self.speed_mps > 0.5 else "--"
+
+        badge_txt = f"WP-01 | {dist_m:.0f}m | {bearing_deg:05.1f}° | TTG: {ttg_str}"
+        p.setFont(QFont("-apple-system, sans-serif", 8, QFont.Weight.Bold))
+        fm = p.fontMetrics()
+        txt_w = fm.horizontalAdvance(badge_txt) + 12
+        txt_h = 18
+
+        # Badge background pill
+        bx = int(wx + 14)
+        by = int(wy - 9)
+        p.setPen(QPen(QColor("#008bb2"), 1))
+        p.setBrush(QBrush(QColor(10, 25, 38, 220)))
+        p.drawRoundedRect(QRectF(bx, by, txt_w, txt_h), 4, 4)
+
+        p.setPen(QColor("#00d2ff"))
+        p.drawText(bx + 6, by + 13, badge_txt)
 
     def _draw_ghost(self, p: QPainter):
         ge, gn = self.ghost_vessel["pos"]
@@ -449,10 +475,16 @@ class ChartCanvas(QWidget):
         p.setPen(QColor(TEXT_SECONDARY))
         p.drawText(int(rx + 12), int(ry + 18), "50 meters")
 
+    def clear_waypoint(self):
+        self.target_wp = None
+        self.waypoint_cleared.emit()
+        self.update()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             east, north = self.screen_to_m(event.position().x(), event.position().y())
             self.target_wp = (east, north)
+            self.waypoint_commanded.emit(east, north)
             self.update()
         elif event.button() in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
             self._dragging = True
@@ -478,6 +510,9 @@ class ChartCanvas(QWidget):
 
 
 class ECDISPanel(QWidget):
+    waypoint_commanded = pyqtSignal(float, float)
+    waypoint_cleared = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -492,11 +527,19 @@ class ECDISPanel(QWidget):
         lbl.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_PRIMARY};")
         header.addWidget(lbl)
 
-        hint = QLabel("Left-click: Commanded Waypoint  •  Right-drag: Pan  •  Scroll: Zoom")
+        hint = QLabel("Left-click: Steer to Destination  •  Right-drag: Pan  •  Scroll: Zoom")
         hint.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED};")
         header.addWidget(hint)
 
         header.addStretch()
+
+        # Navigation WP Clear Button
+        btn_clear_wp = QPushButton("Clear WP")
+        btn_clear_wp.setFixedHeight(24)
+        btn_clear_wp.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        btn_clear_wp.setToolTip("Cancel active steered waypoint")
+        btn_clear_wp.clicked.connect(self._clear_waypoint)
+        header.addWidget(btn_clear_wp)
 
         # Zoom Controls (+, -, 1:1, Recenter)
         btn_zin = QPushButton("+")
@@ -518,7 +561,12 @@ class ECDISPanel(QWidget):
 
         # Chart Canvas
         self.canvas = ChartCanvas(self)
+        self.canvas.waypoint_commanded.connect(self.waypoint_commanded.emit)
+        self.canvas.waypoint_cleared.connect(self.waypoint_cleared.emit)
         layout.addWidget(self.canvas, 1)
+
+    def _clear_waypoint(self):
+        self.canvas.clear_waypoint()
 
     def _zoom_in(self):
         self.canvas.scale_m_to_px = min(6.0, self.canvas.scale_m_to_px * 1.25)

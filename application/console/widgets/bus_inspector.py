@@ -91,6 +91,9 @@ class BusInspectorPanel(QFrame):
         self.active_twin = twin
         self.active_site = site
 
+    def log_event(self, category: str, msg: str):
+        self.add_packet(category, msg, is_anomaly=False, note="INFO")
+
     def add_packet(self, proto: str, payload: str, is_anomaly: bool = False, note: str = "VALID"):
         filter_mode = self.filter_combo.currentData()
         if filter_mode == "anomalies" and not is_anomaly:

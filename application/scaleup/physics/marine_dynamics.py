@@ -296,7 +296,7 @@ class MarineDynamicsEngine:
         rudder_rad = self.rudder_deg * DEG_TO_RAD
         rudder_force = self.cfg["rudder_coeff"] * (u_r ** 2) * math.sin(rudder_rad)
         y_rudder = -rudder_force
-        n_rudder = -rudder_force * (self.cfg["length_m"] * 0.45)
+        n_rudder = +rudder_force * (self.cfg["length_m"] * 0.45)
 
         # Coriolis / Cross-coupling Centripetal Acceleration
         coriolis_x = m_y * self.v * self.r

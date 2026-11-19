@@ -216,6 +216,8 @@ class MCRMainWindow(QMainWindow):
         h_upper.addWidget(self.conning)
 
         self.map_view = ECDISPanel(self)
+        self.map_view.waypoint_commanded.connect(self._on_waypoint_commanded)
+        self.map_view.waypoint_cleared.connect(self._on_waypoint_cleared)
         h_upper.addWidget(self.map_view)
 
         self.attack_panel = AttackPanel(self)
@@ -325,6 +327,11 @@ class MCRMainWindow(QMainWindow):
         lat, lon = SITE_COORDS[site_key]
         self.physics.set_site(site_key, lat, lon)
         self.physics.armed = True
+        self.header.btn_arm.blockSignals(True)
+        self.header.btn_arm.setChecked(True)
+        self.header.btn_arm.setText("Disarm")
+        self.header.btn_arm.blockSignals(False)
+
         self.map_view.set_site(lat, lon)
         self.header.set_running_state(True)
         self.inspector.set_context(twin_key, site_key)
@@ -342,6 +349,11 @@ class MCRMainWindow(QMainWindow):
         self.is_running = False
         self.physics.armed = False
         self.physics.clear_target_waypoint()
+        self.map_view.canvas.clear_waypoint()
+        self.header.btn_arm.blockSignals(True)
+        self.header.btn_arm.setChecked(False)
+        self.header.btn_arm.setText("Arm Vehicle")
+        self.header.btn_arm.blockSignals(False)
         self.attack_mgr.stop_attack()
         self.header.set_running_state(False)
 
@@ -356,11 +368,44 @@ class MCRMainWindow(QMainWindow):
 
     def _on_arm_toggled(self, armed: bool):
         self.physics.armed = armed
+        if not armed:
+            self.physics.clear_target_waypoint()
+            self.map_view.canvas.clear_waypoint()
         if self.backend.engine:
             if armed:
                 self.backend.arm()
             else:
                 self.backend.disarm()
+
+    def _on_waypoint_commanded(self, east_m: float, north_m: float):
+        # 1. Automatically Arm Vehicle if disarmed so operator immediately sees vessel navigate
+        if not self.physics.armed:
+            self.physics.armed = True
+            self.header.btn_arm.blockSignals(True)
+            self.header.btn_arm.setChecked(True)
+            self.header.btn_arm.setText("Disarm")
+            self.header.btn_arm.blockSignals(False)
+
+        # 2. Command hydrodynamics autopilot Line-Of-Sight (LOS) guidance
+        self.physics.set_target_waypoint(east_m, north_m)
+        self.map_view.canvas.target_wp = (east_m, north_m)
+        self.map_view.canvas.update()
+        self.inspector.log_event("NAV", f"Waypoint commanded: East={east_m:.1f}m, North={north_m:.1f}m -> Autopilot LOS engaged")
+
+        # 3. If SITL MAVLink backend is actively connected, command MAVLink goto
+        if self.backend.connected:
+            lat, lon = self._meters_to_latlon(east_m, north_m)
+            self.backend.goto(lat, lon)
+
+    def _on_waypoint_cleared(self):
+        self.physics.clear_target_waypoint()
+        self.inspector.log_event("NAV", "Waypoint cancelled: returning to default cruise / loiter")
+
+    def _meters_to_latlon(self, east_m: float, north_m: float) -> tuple:
+        home_lat, home_lon = SITE_COORDS.get(self.active_site, (9.9, 76.2))
+        lat = home_lat + (north_m / 111132.954)
+        lon = home_lon + (east_m / (111132.954 * math.cos(math.radians(home_lat))))
+        return lat, lon
 
     def _on_attack_triggered(self, attack_name: str, params: dict):
         if attack_name == "gps_spoof":
@@ -400,10 +445,14 @@ class MCRMainWindow(QMainWindow):
         utc_ts = time.strftime("%H:%M:%SZ", time.gmtime())
         self.lbl_sb_time.setText(utc_ts)
 
-        # 1. Transfer any commanded waypoint from ECDIS chart to physics
-        chart_target_wp = self.map_view.canvas.target_wp
-        if chart_target_wp:
-            self.physics.set_target_waypoint(chart_target_wp[0], chart_target_wp[1])
+        # 1. Synchronize chart canvas waypoint with physics autopilot
+        chart_wp = self.map_view.canvas.target_wp
+        if chart_wp and not self.physics.target_wp:
+            self._on_waypoint_commanded(chart_wp[0], chart_wp[1])
+        elif not self.physics.target_wp and chart_wp is not None:
+            self.map_view.canvas.target_wp = None
+            self.map_view.canvas.update()
+            self.inspector.log_event("NAV", "Direct-to waypoint reached; entering station keeping / cruise")
 
         # 2. Check if live MAVLink SITL connection exists
         backend_state = self.backend.state
@@ -421,10 +470,6 @@ class MCRMainWindow(QMainWindow):
                 attack_params=self.attack_mgr.params
             )
             state = phys_state
-
-            # If physics arrived at waypoint, clear chart waypoint
-            if not self.physics.target_wp and self.map_view.canvas.target_wp:
-                self.map_view.canvas.target_wp = None
 
         # 3. Advance Cyber Attack Execution State
         own_pos = (self.physics.east_m, self.physics.north_m)
