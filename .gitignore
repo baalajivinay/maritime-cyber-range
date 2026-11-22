@@ -40,3 +40,4 @@ godot_app/.godot/
 # SITL_Models, the dave AUV ws, the ardupilot build venv) with their own .git --
 # never commit them; they are rebuilt by sim_config/install_*.sh.
 external/
+.coverage
