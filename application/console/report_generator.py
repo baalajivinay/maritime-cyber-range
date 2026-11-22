@@ -72,6 +72,9 @@ def generate_pdf_report(output_path: str = None, vessel_twin: str = None, site_n
 
     tests = test_results if test_results else default_tests
 
+    scenario_score = kwargs.get("scenario_score")
+    scenario_html = _render_scenario_section(scenario_score)
+
     rows_html = ""
     for t in tests:
         rows_html += f"""
@@ -155,6 +158,8 @@ def generate_pdf_report(output_path: str = None, vessel_twin: str = None, site_n
             </tbody>
         </table>
 
+        {scenario_html}
+
         <div class="verdict-box">
             <span style="font-size: 13pt; font-weight: 800; color: #065F46; letter-spacing: 1px;">
                 OVERALL CERTIFICATION: CLASS RESILIENCE VERIFIED (PASS)
@@ -181,3 +186,81 @@ def generate_pdf_report(output_path: str = None, vessel_twin: str = None, site_n
     doc.setHtml(html)
     doc.print(writer)
     return target_path
+
+
+def _render_scenario_section(score: dict) -> str:
+    """Render the multi-stage cyber campaign resilience evidence (Task 1).
+
+    Returns an empty string when no campaign has been scored, so existing
+    single-attack reports are unchanged.
+    """
+    if not score:
+        return ""
+
+    grade = score.get("grade", "N/A")
+    dr = score.get("detection_rate")
+    dr_pct = f"{dr * 100:.0f}%" if dr is not None else "--"
+    mttd = score.get("mean_ttd_s")
+    mttd_s = f"{mttd:.1f} s" if mttd is not None else "--"
+    max_xte = score.get("max_xte_m")
+    xte_lim = score.get("xte_limit_m")
+    cpa = score.get("min_cpa_m")
+    xte_breached = score.get("xte_breached")
+
+    stage_rows = ""
+    for st in score.get("stages", []):
+        ttd = st.get("ttd_s")
+        ttd_txt = f"{ttd:.1f} s" if ttd is not None else "—"
+        det = st.get("detected")
+        det_txt = "DETECTED" if det else ("—" if st.get("attack") is None else "MISSED")
+        det_colour = "#059669" if det else ("#64748B" if st.get("attack") is None else "#DC2626")
+        stage_rows += f"""
+        <tr>
+            <td style="padding: 5px; border: 1px solid #CBD5E1; text-align:center;">{st.get('index')}</td>
+            <td style="padding: 5px; border: 1px solid #CBD5E1;">{st.get('name','')}</td>
+            <td style="padding: 5px; border: 1px solid #CBD5E1; font-family: monospace;">{st.get('attack') or 'baseline'}</td>
+            <td style="padding: 5px; border: 1px solid #CBD5E1; font-family: monospace; text-align:center;">{ttd_txt}</td>
+            <td style="padding: 5px; border: 1px solid #CBD5E1; font-weight:bold; text-align:center; color:{det_colour};">{det_txt}</td>
+        </tr>"""
+
+    xte_txt = f"{max_xte:.1f} m" if max_xte is not None else "--"
+    if xte_lim is not None:
+        xte_txt += f" (limit {xte_lim:.0f} m{' — BREACHED' if xte_breached else ''})"
+    cpa_txt = f"{cpa:.0f} m" if cpa is not None else "n/a"
+
+    return f"""
+        <h3 style="font-size: 11pt; color: #0F172A; margin-bottom: 6px; margin-top: 18px;">
+            2. Multi-Stage Cyber Campaign Resilience Evidence
+        </h3>
+        <table class="meta-table">
+            <tr>
+                <td style="width:25%; font-weight:bold; color:#64748B;">RESILIENCE GRADE:</td>
+                <td style="width:35%; font-weight:bold;">{grade}</td>
+                <td style="width:20%; font-weight:bold; color:#64748B;">DETECTION RATE:</td>
+                <td style="width:20%; font-family: monospace;">{dr_pct}</td>
+            </tr>
+            <tr>
+                <td style="font-weight:bold; color:#64748B;">MEAN TIME-TO-DETECT:</td>
+                <td style="font-family: monospace;">{mttd_s}</td>
+                <td style="font-weight:bold; color:#64748B;">MAX CROSS-TRACK ERROR:</td>
+                <td style="font-family: monospace;">{xte_txt}</td>
+            </tr>
+            <tr>
+                <td style="font-weight:bold; color:#64748B;">MIN CPA MARGIN:</td>
+                <td style="font-family: monospace;">{cpa_txt}</td>
+                <td></td><td></td>
+            </tr>
+        </table>
+        <table class="results-table">
+            <thead>
+                <tr>
+                    <th style="width: 8%;">Stage</th>
+                    <th style="width: 44%;">Campaign Phase</th>
+                    <th style="width: 20%;">Attack Vector</th>
+                    <th style="width: 14%;">TTD</th>
+                    <th style="width: 14%;">Detection</th>
+                </tr>
+            </thead>
+            <tbody>{stage_rows}</tbody>
+        </table>
+    """

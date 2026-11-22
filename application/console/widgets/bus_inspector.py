@@ -86,6 +86,8 @@ class BusInspectorPanel(QFrame):
         self.active_twin = "interceptor_usv"
         self.active_site = "kochi"
         self._seq = 100
+        # Latest multi-stage campaign resilience score (set by the main window)
+        self.scenario_score = None
 
     def set_context(self, twin: str, site: str):
         self.active_twin = twin
@@ -200,7 +202,8 @@ class BusInspectorPanel(QFrame):
             generate_pdf_report(
                 out_path=path,
                 vessel_name=self.active_twin,
-                site_name=self.active_site
+                site_name=self.active_site,
+                scenario_score=self.scenario_score,
             )
             QMessageBox.information(self, "Audit Report Exported", f"Official IACS UR E26/E27 audit report successfully saved to:\n{path}")
         except Exception as e:

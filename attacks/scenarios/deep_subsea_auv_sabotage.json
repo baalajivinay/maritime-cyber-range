@@ -1,0 +1,46 @@
+{
+  "id": "deep_subsea_auv_sabotage",
+  "name": "Deep Subsea AUV Sabotage",
+  "description": "A submerged AUV conducting a survey is attacked through its acoustic positioning chain: first a USBL two-way-travel-time delay-skew biases its believed position, then the acoustic transponder channel is jammed into a blackout, denying position fixes entirely.",
+  "twin": "maya_auv",
+  "site": "kochi",
+  "domain": "underwater",
+  "duration_s": 75.0,
+  "planned_track": {
+    "origin_east_m": 0.0,
+    "origin_north_m": 0.0,
+    "course_deg": 45.0,
+    "xte_limit_m": 40.0
+  },
+  "stages": [
+    {
+      "index": 0,
+      "name": "Submerged Survey Underway",
+      "t_start": 0.0,
+      "t_end": 15.0,
+      "attack": null,
+      "params": {},
+      "narrative": "AUV holds depth and tracks its survey line on USBL + DVL + dead-reckoning fusion. Acoustic link nominal."
+    },
+    {
+      "index": 1,
+      "name": "USBL Acoustic Delay-Skew Spoofing",
+      "t_start": 15.0,
+      "t_end": 45.0,
+      "attack": "acoustic_spoof",
+      "params": {"rate": 1.5},
+      "narrative": "Forged transponder replies inject a growing two-way-travel-time bias, skewing the acoustic range and walking the believed subsea position.",
+      "detect": {"metric": "innovation", "threshold": 3.5}
+    },
+    {
+      "index": 2,
+      "name": "Acoustic Transponder Jamming (Blackout)",
+      "t_start": 45.0,
+      "t_end": 75.0,
+      "attack": "acoustic_jam",
+      "params": {},
+      "narrative": "The attacker floods the acoustic band, denying USBL fixes. The vehicle must survive on inertial dead-reckoning alone.",
+      "detect": {"metric": "innovation", "threshold": 3.5}
+    }
+  ]
+}

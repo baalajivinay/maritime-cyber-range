@@ -27,6 +27,8 @@ from application.console.widgets.ecdis import ECDISPanel
 from application.console.widgets.attack_panel import AttackPanel
 from application.console.widgets.telemetry_graph import TelemetryGraphPanel
 from application.console.widgets.bus_inspector import BusInspectorPanel
+from application.console.widgets.scenario_bar import ScenarioControlBar
+from scenario_runner import load_scenario, ScenarioRunner
 from communication.unified_backend import UnifiedBackend
 from communication.secure_protocol import SecureTelemetryChannel
 from attacks.advanced_attacks import AttackExecutionManager
@@ -65,6 +67,10 @@ class MCRMainWindow(QMainWindow):
         self.physics = MarineDynamicsEngine(self.active_twin, self.active_site)
         self.attack_mgr = AttackExecutionManager()
         self.security = SecureTelemetryChannel()
+
+        # Multi-stage cyber campaign runner (Task 1). None until a scenario loads.
+        self.scenario_runner = None
+        self.last_scenario_score = None
 
         # Build UI Architecture
         self._build_central_workstation()
@@ -203,6 +209,15 @@ class MCRMainWindow(QMainWindow):
         self.header.twin_changed.connect(self._on_select_twin)
         self.header.site_changed.connect(self._on_select_site)
         main_vbox.addWidget(self.header)
+
+        # 1b. Scenario Control Bar (multi-stage cyber campaign transport)
+        self.scenario_bar = ScenarioControlBar(self)
+        self.scenario_bar.scenario_loaded.connect(self._on_scenario_loaded)
+        self.scenario_bar.play_requested.connect(self._on_scenario_play)
+        self.scenario_bar.pause_requested.connect(self._on_scenario_pause)
+        self.scenario_bar.reset_requested.connect(self._on_scenario_reset)
+        self.scenario_bar.seek_requested.connect(self._on_scenario_seek)
+        main_vbox.addWidget(self.scenario_bar)
 
         # 2. Main Vertical Splitter (65% Operational Workstation / 35% Diagnostics)
         v_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -407,6 +422,82 @@ class MCRMainWindow(QMainWindow):
         lon = home_lon + (east_m / (111132.954 * math.cos(math.radians(home_lat))))
         return lat, lon
 
+    # =========================================================================
+    # Scenario Campaign Handlers (Task 1)
+    # =========================================================================
+    def _on_scenario_loaded(self, scenario_id: str):
+        try:
+            scenario = load_scenario(scenario_id)
+        except Exception as e:
+            QMessageBox.critical(self, "Scenario Load Error", f"Could not load '{scenario_id}':\n{e}")
+            return
+
+        self.scenario_runner = ScenarioRunner(scenario)
+        self.last_scenario_score = None
+
+        # Align twin + site to the scenario and reset the vessel to the origin
+        self._on_select_twin(self.scenario_runner.twin)
+        self._on_select_site(self.scenario_runner.site)
+        idx = self.header.twin_combo.findData(self.scenario_runner.twin)
+        if idx >= 0:
+            self.header.twin_combo.blockSignals(True)
+            self.header.twin_combo.setCurrentIndex(idx)
+            self.header.twin_combo.blockSignals(False)
+        idx = self.header.site_combo.findData(self.scenario_runner.site)
+        if idx >= 0:
+            self.header.site_combo.blockSignals(True)
+            self.header.site_combo.setCurrentIndex(idx)
+            self.header.site_combo.blockSignals(False)
+
+        # Arm the vessel and give it a waypoint down the planned fairway so it
+        # is actually underway when the first stage begins.
+        self.attack_mgr.stop_attack()
+        self.physics.armed = True
+        self._command_fairway_waypoint()
+        self.header.btn_arm.blockSignals(True)
+        self.header.btn_arm.setChecked(True)
+        self.header.btn_arm.setText("Disarm")
+        self.header.btn_arm.blockSignals(False)
+
+        self.scenario_bar.set_loaded(True)
+        self.inspector.log_event("SCENARIO", f"Loaded campaign '{self.scenario_runner.name}' "
+                                             f"({len(self.scenario_runner.stages)} stages, "
+                                             f"{self.scenario_runner.duration_s:.0f}s)")
+
+    def _command_fairway_waypoint(self):
+        if not self.scenario_runner:
+            return
+        course = math.radians(self.scenario_runner.track_course_deg)
+        reach = max(400.0, self.physics.cfg["max_speed_mps"] * self.scenario_runner.duration_s)
+        east = self.physics.east_m + reach * math.sin(course)
+        north = self.physics.north_m + reach * math.cos(course)
+        self.physics.set_target_waypoint(east, north)
+        self.map_view.canvas.target_wp = (east, north)
+
+    def _on_scenario_play(self):
+        if self.scenario_runner:
+            if self.scenario_runner.state == ScenarioRunner.STATE_IDLE:
+                self._command_fairway_waypoint()
+            self.scenario_runner.play()
+            self.inspector.log_event("SCENARIO", "Campaign PLAY")
+
+    def _on_scenario_pause(self):
+        if self.scenario_runner:
+            self.scenario_runner.pause()
+            self.inspector.log_event("SCENARIO", "Campaign PAUSE")
+
+    def _on_scenario_reset(self):
+        if self.scenario_runner:
+            self.scenario_runner.reset()
+            self.attack_mgr.stop_attack()
+            self._command_fairway_waypoint()
+            self.last_scenario_score = None
+            self.inspector.log_event("SCENARIO", "Campaign RESET")
+
+    def _on_scenario_seek(self, fraction: float):
+        if self.scenario_runner:
+            self.scenario_runner.seek(fraction * self.scenario_runner.duration_s)
+
     def _on_attack_triggered(self, attack_name: str, params: dict):
         if attack_name == "gps_spoof":
             mode = params.get("mode", "ramp")
@@ -471,6 +562,11 @@ class MCRMainWindow(QMainWindow):
             )
             state = phys_state
 
+        # 2b. Advance multi-stage cyber campaign (drives attack_mgr per stage)
+        scenario_status = None
+        if self.scenario_runner is not None:
+            scenario_status = self.scenario_runner.step(dt, self.attack_mgr, self.physics)
+
         # 3. Advance Cyber Attack Execution State
         own_pos = (self.physics.east_m, self.physics.north_m)
         own_vel = (self.physics.u * math.sin(self.physics.psi), self.physics.u * math.cos(self.physics.psi))
@@ -509,6 +605,13 @@ class MCRMainWindow(QMainWindow):
             else:
                 self.lbl_sb_fix.setText("3D GNSS (14 Sats, HDOP 0.8)")
             self.lbl_sb_fix.setStyleSheet("color: #989aa8;")
+
+        # 4b. Score the active campaign and refresh the scenario bar
+        if self.scenario_runner is not None and scenario_status is not None:
+            self.scenario_runner.record(state)
+            self.last_scenario_score = self.scenario_runner.score.as_dict()
+            self.inspector.scenario_score = self.last_scenario_score
+            self.scenario_bar.update_view(scenario_status, self.last_scenario_score)
 
         # 5. Broadcast Telemetry to all Widgets
         self.conning.update_telemetry(state)

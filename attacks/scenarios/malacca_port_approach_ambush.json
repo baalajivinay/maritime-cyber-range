@@ -1,0 +1,56 @@
+{
+  "id": "malacca_port_approach_ambush",
+  "name": "Strait of Malacca Port Approach Ambush",
+  "description": "A fast interceptor USV on a port-approach transit is drawn off the fairway by an insidious sub-threshold GNSS walk-off, then threatened by an injected AIS phantom on a starboard crossing (COLREGS Rule 15), and finally has its throttle and rudder seized by an unauthorized C2 RC override near a navigational hazard.",
+  "twin": "interceptor_usv",
+  "site": "kochi",
+  "domain": "surface",
+  "duration_s": 90.0,
+  "planned_track": {
+    "origin_east_m": 0.0,
+    "origin_north_m": 0.0,
+    "course_deg": 45.0,
+    "xte_limit_m": 50.0
+  },
+  "stages": [
+    {
+      "index": 0,
+      "name": "Normal Transit Underway",
+      "t_start": 0.0,
+      "t_end": 15.0,
+      "attack": null,
+      "params": {},
+      "narrative": "Vessel transits the fairway under autopilot LOS guidance. Baseline telemetry established; all sensors nominal."
+    },
+    {
+      "index": 1,
+      "name": "Sub-Threshold GNSS Walk-off Spoofing",
+      "t_start": 15.0,
+      "t_end": 35.0,
+      "attack": "gps_spoof",
+      "params": {"mode": "ramp", "drift_rate": 1.1, "bearing_deg": 135.0},
+      "narrative": "Insidious low-rate pseudorange walk-off pulls the believed fix off the fairway, inducing the autopilot to steer the TRUE track toward shallows.",
+      "detect": {"metric": "innovation", "threshold": 3.5}
+    },
+    {
+      "index": 2,
+      "name": "AIS Phantom Collision Threat (Rule 15 Starboard Crossing)",
+      "t_start": 35.0,
+      "t_end": 60.0,
+      "attack": "ais_spoof",
+      "params": {"scenario": "crossing"},
+      "narrative": "A phantom contact is injected on a starboard crossing course, forcing a COLREGS Rule 15 give-way decision against a target that does not physically exist.",
+      "detect": {"metric": "collision_risk"}
+    },
+    {
+      "index": 3,
+      "name": "Unauthorized C2 RC Override Seizure",
+      "t_start": 60.0,
+      "t_end": 90.0,
+      "attack": "c2_replay",
+      "params": {"cmd_type": "rc_override"},
+      "narrative": "An attacker replays/forges RC override frames, seizing throttle and rudder to drive the vessel hard-over toward the hazard.",
+      "detect": {"metric": "c2_override"}
+    }
+  ]
+}
