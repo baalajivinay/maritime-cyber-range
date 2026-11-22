@@ -213,6 +213,9 @@ class ChartCanvas(QWidget):
         return east, north
 
     def paintEvent(self, event):
+        # Defensive clamp: keep the scale in a sane range even if set directly,
+        # so no draw routine can be driven into a pathological (zero-step) loop.
+        self.scale_m_to_px = max(0.02, min(50.0, self.scale_m_to_px))
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -422,19 +425,24 @@ class ChartCanvas(QWidget):
 
         step_m = 100.0
         step_px = step_m * self.scale_m_to_px
+        # Guard against pathological zoom: a sub-pixel grid step would make the
+        # integer increment round to 0 and loop forever (DoS). Skip the grid
+        # when it is too fine to be legible, and step with floats regardless.
+        if step_px < 4.0:
+            return
 
         cx = self.width() / 2.0 + self.pan_x
         cy = self.height() / 2.0 + self.pan_y
 
-        start_x = int(cx % step_px)
-        while start_x < self.width():
-            p.drawLine(start_x, 0, start_x, self.height())
-            start_x += int(step_px)
+        x = cx % step_px
+        while x < self.width():
+            p.drawLine(int(x), 0, int(x), self.height())
+            x += step_px
 
-        start_y = int(cy % step_px)
-        while start_y < self.height():
-            p.drawLine(0, start_y, self.width(), start_y)
-            start_y += int(step_px)
+        y = cy % step_px
+        while y < self.height():
+            p.drawLine(0, int(y), self.width(), int(y))
+            y += step_px
 
     def _draw_range_rings(self, p: QPainter):
         vx, vy = self.m_to_screen(*self.true_pos)
