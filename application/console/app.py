@@ -35,6 +35,7 @@ from attacks.advanced_attacks import AttackExecutionManager
 from attacks.ot_protocols import OTProtocolEngine
 from attacks.detection.defense import DefenseController
 from scaleup.physics.marine_dynamics import MarineDynamicsEngine
+from scaleup.physics.harbor_traffic import HarborTrafficSim
 
 SITE_COORDS = {
     "kochi": (9.90000, 76.20000),
@@ -71,6 +72,9 @@ class MCRMainWindow(QMainWindow):
         self.ot_engine = OTProtocolEngine()
         self.defense = DefenseController()
         self.active_directive = None
+        self.traffic = HarborTrafficSim(self.active_site)   # background fleet (Task 5)
+        self.colregs_enabled = True
+        self.last_colregs = None
         self.security = SecureTelemetryChannel()
 
         # Multi-stage cyber campaign runner (Task 1). None until a scenario loads.
@@ -329,6 +333,8 @@ class MCRMainWindow(QMainWindow):
         self.physics.set_site(site_key, lat, lon)
         self.map_view.set_site(lat, lon)
         self.inspector.set_context(self.active_twin, site_key)
+        if hasattr(self, "traffic"):
+            self.traffic.set_site(site_key)
 
     def _sync_domain_ui(self):
         domain = TWIN_DOMAINS.get(self.active_twin, "surface")
@@ -639,6 +645,17 @@ class MCRMainWindow(QMainWindow):
         own_vel = (self.physics.u * math.sin(self.physics.psi), self.physics.u * math.cos(self.physics.psi))
         atk_overlay = self.attack_mgr.update(dt, own_pos, own_vel)
 
+        # 2b2. Harbor traffic + multi-contact COLREGS autopilot (Task 5)
+        self.traffic.step(dt)
+        colregs_bias = 0.0
+        if self.colregs_enabled and self.physics.armed:
+            self.last_colregs = self.traffic.evaluate(
+                (self.physics.east_m, self.physics.north_m),
+                math.degrees(self.physics.psi) % 360.0,
+                max(0.1, self.physics.u))
+            if self.last_colregs.action in ("give_way", "alter"):
+                colregs_bias = self.last_colregs.course_change_deg
+
         # 2c. Autonomous Defense directive (Task 3): computed BEFORE the physics
         #     step so it can override the autopilot (failover / loiter / suppress).
         radar_tracks = self._current_radar_tracks()
@@ -661,6 +678,7 @@ class MCRMainWindow(QMainWindow):
                 active_attack=self.attack_mgr.active_attack,
                 attack_params=self.attack_mgr.params,
                 defense=directive.as_dict(),
+                colregs_bias_deg=colregs_bias,
             )
 
         # Merge attack overlay into state
@@ -712,6 +730,21 @@ class MCRMainWindow(QMainWindow):
             for t in self.ot_engine.radar_targets()
         ]
         self._stream_ot_frames()
+
+        # 4c. Background traffic + COLREGS status for rendering
+        state["traffic"] = self.traffic.ais_tracks()
+        if self.last_colregs is not None:
+            state["colregs_action"] = self.last_colregs.action
+            state["colregs_rule"] = self.last_colregs.rule
+            state["colregs_risk_count"] = self.last_colregs.risk_count
+            if (self.last_colregs.risk_count and state["active_attack"] is None
+                    and not state.get("defense_banner")):
+                act = self.last_colregs.action.replace("_", "-").upper()
+                self.lbl_sb_cpa.setText(
+                    f"COLREGS {act}: {self.last_colregs.rule} "
+                    f"({self.last_colregs.risk_count} contact(s))")
+                colour = "#eb5757" if self.last_colregs.action in ("give_way", "alter") else "#f2994a"
+                self.lbl_sb_cpa.setStyleSheet(f"color: {colour}; font-weight: bold;")
 
         # 4b. Score the active campaign and refresh the scenario bar
         if self.scenario_runner is not None and scenario_status is not None:

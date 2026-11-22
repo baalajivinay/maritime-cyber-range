@@ -129,6 +129,7 @@ class ChartCanvas(QWidget):
         self.collision_risk = False
         self.usbl_offset_m = 0.0
         self.radar_false_targets = []   # ARPA synthetic blips (Task 2)
+        self.traffic = []               # background merchant fleet (Task 5)
 
         # Dragging / Panning State
         self._dragging = False
@@ -161,6 +162,7 @@ class ChartCanvas(QWidget):
         self.collision_risk = state.get("collision_risk", False)
         self.usbl_offset_m = state.get("usbl_offset_m", 0.0)
         self.radar_false_targets = state.get("radar_false_targets", []) or []
+        self.traffic = state.get("traffic", []) or []
 
         if lat is not None and lon is not None:
             dn = (float(lat) - self.center_lat) * DEG_TO_M
@@ -244,6 +246,10 @@ class ChartCanvas(QWidget):
             self._draw_route(p)
         elif self.target_wp:
             self._draw_waypoint(p)
+
+        # 7a. Background merchant fleet AIS contacts (Task 5)
+        if self.traffic:
+            self._draw_traffic(p)
 
         # 7b. Radar / ARPA synthetic false targets (Task 2)
         if self.radar_false_targets:
@@ -518,6 +524,39 @@ class ChartCanvas(QWidget):
 
         p.setPen(QColor("#00d2ff"))
         p.drawText(bx + 6, by + 13, badge_txt)
+
+    def _draw_traffic(self, p: QPainter):
+        """Draw AIS background traffic as true-scale contacts with CPA vectors;
+        contacts in COLREGS risk are highlighted."""
+        p.setFont(QFont("-apple-system, sans-serif", 7))
+        for t in self.traffic:
+            tx, ty = self.m_to_screen(t.get("east_m", 0.0), t.get("north_m", 0.0))
+            risk = t.get("risk", False)
+            col = QColor("#eb5757") if risk else QColor("#7fb0d6")
+            # Hull triangle oriented on course
+            p.save()
+            p.translate(tx, ty)
+            p.rotate(t.get("course", 0.0))
+            hull = QPolygonF([QPointF(0, -9), QPointF(5, 7), QPointF(-5, 7)])
+            p.setPen(QPen(col, 1.4))
+            p.setBrush(QBrush(col))
+            p.drawPolygon(hull)
+            # 60 s velocity vector
+            spd = t.get("speed", 0.0)
+            vlen = spd * 60.0 * self.scale_m_to_px
+            p.setPen(QPen(col, 1, Qt.PenStyle.SolidLine))
+            p.drawLine(0, -9, 0, int(-9 - vlen))
+            p.restore()
+            if risk:
+                rr = 60.0 * self.scale_m_to_px
+                p.setPen(QPen(QColor(235, 87, 87, 120), 1, Qt.PenStyle.DashLine))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(QPointF(tx, ty), rr, rr)
+            p.setPen(QColor(self._pal["text_dim"]) if not risk else QColor("#eb5757"))
+            label = t.get("name", "AIS")
+            if t.get("cpa_m") is not None and risk:
+                label += f"  CPA {t['cpa_m']:.0f}m"
+            p.drawText(int(tx + 8), int(ty + 3), label)
 
     def _draw_radar_false_targets(self, p: QPainter):
         """Draw injected ARPA blips with their (false) tracking vectors."""

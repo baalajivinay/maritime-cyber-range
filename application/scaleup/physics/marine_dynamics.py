@@ -211,7 +211,7 @@ class MarineDynamicsEngine:
         self.target_wp = None
 
     def step(self, dt: float, active_attack: Optional[str] = None, attack_params: Optional[dict] = None,
-             defense: Optional[dict] = None) -> Dict[str, Any]:
+             defense: Optional[dict] = None, colregs_bias_deg: float = 0.0) -> Dict[str, Any]:
         """
         Advances the 6-DOF / 3-DOF hydrodynamics state by dt seconds.
 
@@ -256,6 +256,10 @@ class MarineDynamicsEngine:
 
                 if dist_to_wp > 4.0:
                     desired_psi = math.atan2(dx, dy)  # 0 = North, pi/2 = East
+                    # COLREGS multi-contact avoidance bias (starboard positive)
+                    desired_psi += colregs_bias_deg * DEG_TO_RAD
+                    if colregs_bias_deg:
+                        self.mode = "COLREGS_GIVEWAY"
                     psi_err = (desired_psi - self.psi + math.pi) % (2 * math.pi) - math.pi
 
                     # Proportional-Derivative (PD) helm autopilot
@@ -270,7 +274,13 @@ class MarineDynamicsEngine:
             else:
                 self.mode = "GUIDED_CRUISE"
                 self.throttle_pct = 65.0
-                self.rudder_cmd_deg = 0.0
+                if colregs_bias_deg:
+                    # Give-way alteration while cruising: steer to heading + bias
+                    self.mode = "COLREGS_GIVEWAY"
+                    self.rudder_cmd_deg = max(-self.cfg["max_rudder_deg"],
+                                              min(self.cfg["max_rudder_deg"], colregs_bias_deg))
+                else:
+                    self.rudder_cmd_deg = 0.0
         else:
             self.mode = "MANUAL_DISARMED"
             self.throttle_pct = 0.0
