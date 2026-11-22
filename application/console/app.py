@@ -81,6 +81,7 @@ class MCRMainWindow(QMainWindow):
         self.scenario_runner = None
         self.last_scenario_score = None
         self._active_wp = None   # waypoint currently commanded to the autopilot
+        self._boot_thread = None  # in-flight best-effort SITL boot thread
 
         # Build UI Architecture
         self._build_central_workstation()
@@ -345,6 +346,10 @@ class MCRMainWindow(QMainWindow):
             self.lbl_sb_fix.setText("3D GNSS (14 Sats, HDOP 0.8)")
 
     def _on_start_clicked(self):
+        # Idempotent: ignore re-entrant Start while already running so repeated
+        # clicks cannot stack background boots / engine loops (thread leak).
+        if self.is_running:
+            return
         site_key = self.header.site_combo.currentData() or "kochi"
         twin_key = self.header.twin_combo.currentData() or "interceptor_usv"
         domain = TWIN_DOMAINS.get(twin_key, "surface")
@@ -365,14 +370,25 @@ class MCRMainWindow(QMainWindow):
         self.header.set_running_state(True)
         self.inspector.set_context(twin_key, site_key)
 
-        # Background SITL launch
-        threading.Thread(target=self._boot_backend_bg, args=(site_key, twin_key, domain), daemon=True).start()
+        # Background SITL launch — only one boot in flight at a time.
+        if self._boot_thread is None or not self._boot_thread.is_alive():
+            self._boot_thread = threading.Thread(
+                target=self._boot_backend_bg, args=(site_key, twin_key, domain), daemon=True)
+            self._boot_thread.start()
 
     def _boot_backend_bg(self, site, twin, domain):
         try:
             self.backend.boot(site, twin, domain)
         except Exception:
             pass
+        # Race guard: if the operator pressed Stop while this boot was still in
+        # flight, the engine (and its polling loop) came up after teardown ran
+        # and would leak. Tear it down now that it exists.
+        if not self.is_running:
+            try:
+                self.backend.teardown()
+            except Exception:
+                pass
 
     def _on_stop_clicked(self):
         self.is_running = False
@@ -391,9 +407,12 @@ class MCRMainWindow(QMainWindow):
         threading.Thread(target=self._teardown_bg, daemon=True).start()
 
     def _teardown_bg(self):
+        # Always attempt teardown (it is a no-op when no engine is up). This is
+        # unconditional so a boot still in flight is not missed: teardown sets
+        # the engine's stop flag, and _boot_backend_bg re-checks is_running to
+        # clean up any engine that came up after this ran.
         try:
-            if self.backend.engine is not None:
-                self.backend.teardown()
+            self.backend.teardown()
         except Exception:
             pass
 
@@ -770,8 +789,13 @@ class MCRMainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.timer.stop()
-        if self.backend.engine is not None:
-            self._teardown_bg()
+        self.is_running = False
+        # Synchronously tear down any live/booting engine so no background
+        # polling thread or child process outlives the window.
+        try:
+            self.backend.teardown()
+        except Exception:
+            pass
         event.accept()
 
 
