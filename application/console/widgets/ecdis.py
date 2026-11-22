@@ -64,6 +64,7 @@ class ChartCanvas(QWidget):
         self.tcpa_s = None
         self.collision_risk = False
         self.usbl_offset_m = 0.0
+        self.radar_false_targets = []   # ARPA synthetic blips (Task 2)
 
         # Dragging / Panning State
         self._dragging = False
@@ -93,6 +94,7 @@ class ChartCanvas(QWidget):
         self.tcpa_s = state.get("tcpa_s")
         self.collision_risk = state.get("collision_risk", False)
         self.usbl_offset_m = state.get("usbl_offset_m", 0.0)
+        self.radar_false_targets = state.get("radar_false_targets", []) or []
 
         if lat is not None and lon is not None:
             dn = (float(lat) - self.center_lat) * DEG_TO_M
@@ -168,6 +170,10 @@ class ChartCanvas(QWidget):
         # 7. Commanded Waypoint & Target Course
         if self.target_wp:
             self._draw_waypoint(p)
+
+        # 7b. Radar / ARPA synthetic false targets (Task 2)
+        if self.radar_false_targets:
+            self._draw_radar_false_targets(p)
 
         # 8. AIS Ghost Contact & Collision Sector
         if self.ghost_vessel:
@@ -309,6 +315,27 @@ class ChartCanvas(QWidget):
 
         p.setPen(QColor("#00d2ff"))
         p.drawText(bx + 6, by + 13, badge_txt)
+
+    def _draw_radar_false_targets(self, p: QPainter):
+        """Draw injected ARPA blips with their (false) tracking vectors."""
+        p.setFont(QFont("-apple-system, sans-serif", 7, QFont.Weight.Bold))
+        for t in self.radar_false_targets:
+            tx, ty = self.m_to_screen(t.get("east_m", 0.0), t.get("north_m", 0.0))
+            colour = QColor("#f59e0b")  # amber: unverified radar contact
+            # ARPA blip: hollow square (IHO radar target convention)
+            p.setPen(QPen(colour, 1.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(QRectF(tx - 5, ty - 5, 10, 10))
+            # Tracking vector
+            course = t.get("course", 0.0) * DEG_TO_RAD
+            spd = t.get("speed", 0.0)
+            vec = spd * 30.0 * self.scale_m_to_px
+            ex = tx + math.sin(course) * vec
+            ey = ty - math.cos(course) * vec
+            p.setPen(QPen(colour, 1, Qt.PenStyle.DashLine))
+            p.drawLine(int(tx), int(ty), int(ex), int(ey))
+            p.setPen(colour)
+            p.drawText(int(tx + 7), int(ty - 6), f"{t.get('track_id','T?')} (RADAR?)")
 
     def _draw_ghost(self, p: QPainter):
         ge, gn = self.ghost_vessel["pos"]

@@ -32,6 +32,7 @@ from scenario_runner import load_scenario, ScenarioRunner
 from communication.unified_backend import UnifiedBackend
 from communication.secure_protocol import SecureTelemetryChannel
 from attacks.advanced_attacks import AttackExecutionManager
+from attacks.ot_protocols import OTProtocolEngine
 from scaleup.physics.marine_dynamics import MarineDynamicsEngine
 
 SITE_COORDS = {
@@ -66,6 +67,7 @@ class MCRMainWindow(QMainWindow):
         self.backend = UnifiedBackend()
         self.physics = MarineDynamicsEngine(self.active_twin, self.active_site)
         self.attack_mgr = AttackExecutionManager()
+        self.ot_engine = OTProtocolEngine()
         self.security = SecureTelemetryChannel()
 
         # Multi-stage cyber campaign runner (Task 1). None until a scenario loads.
@@ -238,6 +240,7 @@ class MCRMainWindow(QMainWindow):
         self.attack_panel = AttackPanel(self)
         self.attack_panel.attack_triggered.connect(self._on_attack_triggered)
         self.attack_panel.attack_stopped.connect(self._on_attack_stopped)
+        self.attack_panel.ot_toggled.connect(self._on_ot_toggled)
         h_upper.addWidget(self.attack_panel)
 
         h_upper.setSizes([240, 910, 310])
@@ -528,6 +531,22 @@ class MCRMainWindow(QMainWindow):
         if self.backend.engine:
             self.backend.stop_attack()
 
+    def _on_ot_toggled(self, vector: str, on: bool):
+        """Enable/disable an OT bus tampering vector (Task 2)."""
+        self.ot_engine.set_attack(vector, on)
+        self.inspector.log_event("OT-BUS", f"{vector} {'ENABLED' if on else 'disabled'}")
+
+    def _stream_ot_frames(self):
+        """Pump OT bus frames into the inspector at ~2 Hz to avoid flooding."""
+        self._ot_frame_tick = getattr(self, "_ot_frame_tick", 0) + 1
+        if self._ot_frame_tick % 5 != 0:
+            return
+        if not self.ot_engine.any_active():
+            return
+        for f in self.ot_engine.frames():
+            if f.is_anomaly:
+                self.inspector.add_packet(f.proto, f.payload, is_anomaly=True, note=f.verdict)
+
     # =========================================================================
     # Main Real-Time 10 Hz Telemetry & Physics Loop
     # =========================================================================
@@ -605,6 +624,16 @@ class MCRMainWindow(QMainWindow):
             else:
                 self.lbl_sb_fix.setText("3D GNSS (14 Sats, HDOP 0.8)")
             self.lbl_sb_fix.setStyleSheet("color: #989aa8;")
+
+        # 4a. Advance OT bus tampering (NMEA/ARPA/J1939) and stream to widgets
+        ot_overlay = self.ot_engine.update(dt, state)
+        state.update(ot_overlay)
+        state["radar_false_targets"] = [
+            {"east_m": t.east_m, "north_m": t.north_m, "course": t.course_deg,
+             "speed": t.speed_mps, "track_id": t.track_id, "synthetic": t.synthetic}
+            for t in self.ot_engine.radar_targets()
+        ]
+        self._stream_ot_frames()
 
         # 4b. Score the active campaign and refresh the scenario bar
         if self.scenario_runner is not None and scenario_status is not None:

@@ -23,6 +23,7 @@ from application.console.theme import (
 class AttackPanel(QFrame):
     attack_triggered = pyqtSignal(str, dict)
     attack_stopped = pyqtSignal()
+    ot_toggled = pyqtSignal(str, bool)   # OT bus tampering vector toggled
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -218,8 +219,43 @@ class AttackPanel(QFrame):
         l_c2.addLayout(row_c2_action)
 
         l.addWidget(box_c2)
+
+        # 4. Integrated Bridge / Engine-Room OT Bus Tampering (Task 2)
+        l.addWidget(self._build_ot_group())
+
         l.addStretch()
         self.stack.addWidget(page)
+
+    def _build_ot_group(self) -> QGroupBox:
+        """IBS/OT protocol tampering toggles: NMEA sensors, ARPA, engine CAN."""
+        box = QGroupBox("Integrated Bridge / Engine OT Bus")
+        lo = QVBoxLayout(box)
+        lo.setSpacing(5)
+
+        desc = QLabel("Forge IBS sensor & engine CAN traffic (NMEA 0183/2000, J1939).")
+        desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        lo.addWidget(desc)
+
+        self.ot_buttons = {}
+        specs = [
+            ("depth_spoof", "Echo-Sounder Depth Spoof ($SDDPT)"),
+            ("heading_spoof", "Gyrocompass Heading Corrupt ($HEHDT)"),
+            ("stw_spoof", "Water-Speed (STW) Falsify ($VHW)"),
+            ("arpa_false_targets", "Radar / ARPA False Targets"),
+            ("engine_sabotage", "Engine CAN J1939 Sabotage (Limp)"),
+        ]
+        for key, label in specs:
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setStyleSheet(self._btn_style())
+            btn.toggled.connect(lambda on, k=key: self.ot_toggled.emit(k, on))
+            lo.addWidget(btn)
+            self.ot_buttons[key] = btn
+
+        self.lbl_ot_status = QLabel("Engine: nominal  |  ARPA: clear")
+        self.lbl_ot_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        lo.addWidget(self.lbl_ot_status)
+        return box
 
     # =========================================================================
     # Underwater AUV Attack Suite
@@ -445,6 +481,23 @@ class AttackPanel(QFrame):
 
     def update_telemetry(self, state: dict):
         active_atk = state.get("active_attack")
+
+        # OT bus status line (engine governor + ARPA false-target count)
+        if hasattr(self, "lbl_ot_status"):
+            if state.get("ot_active"):
+                rpm = state.get("engine_rpm", 0.0)
+                cool = state.get("coolant_c", 0.0)
+                limp = state.get("engine_limp_mode", False)
+                fakes = state.get("arpa_false_target_count", 0)
+                eng = "LIMP MODE" if limp else (
+                    "OVERHEAT" if state.get("engine_overheat") else f"{rpm:.0f}rpm")
+                col = COLOR_RED if (limp or state.get("engine_overheat")) else TEXT_MUTED
+                self.lbl_ot_status.setText(
+                    f"Engine: {eng} ({cool:.0f}°C)  |  ARPA ghosts: {fakes}")
+                self.lbl_ot_status.setStyleSheet(f"color: {col}; font-size: 11px; font-weight: bold;")
+            else:
+                self.lbl_ot_status.setText("Engine: nominal  |  ARPA: clear")
+                self.lbl_ot_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
 
         # Update Surface telemetry
         spoof_offset = state.get("spoof_offset_m")
