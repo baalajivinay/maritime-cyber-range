@@ -33,11 +33,16 @@ def encode_aivdm_type1(mmsi: int, lat: float, lon: float, speed_knots: float, co
     Generates a valid ITU-R M.1371 Type 1 Position Report AIVDM NMEA sentence
     using standard 6-bit ASCII armoring.
     """
-    # Clip and convert coordinates to 1/10000 min
-    lat_i = int(lat * 600000) & 0x7FFFFFF
-    lon_i = int(lon * 600000) & 0xFFFFFFF
-    sog_i = min(1022, int(speed_knots * 10))
-    cog_i = int(course_deg * 10) % 3600
+    # Clip and convert coordinates to 1/10000 min. Every field is clamped and
+    # masked to its unsigned bit-width so adversarial / out-of-range inputs
+    # (negative speed, negative or huge course, oversized MMSI) can never emit a
+    # '-' sign or an over-long field into the 6-bit-armored payload.
+    mmsi = int(mmsi) & 0x3FFFFFFF                       # 30-bit MMSI
+    lat_i = int(lat * 600000) & 0x7FFFFFF               # 27-bit
+    lon_i = int(lon * 600000) & 0xFFFFFFF               # 28-bit
+    sog_i = max(0, min(1023, int(speed_knots * 10)))    # 10-bit (1023 = n/a)
+    cog_i = int(course_deg * 10) % 3600                 # 12-bit (0..3599)
+    true_hdg_i = int(course_deg) % 360                  # 9-bit (0..359)
 
     # Build 168-bit binary string
     bits = ""
@@ -51,7 +56,7 @@ def encode_aivdm_type1(mmsi: int, lat: float, lon: float, speed_knots: float, co
     bits += f"{lon_i:028b}"           # Longitude (28 bits)
     bits += f"{lat_i:027b}"           # Latitude (27 bits)
     bits += f"{cog_i:012b}"           # Course over ground (12 bits)
-    bits += f"{int(course_deg):09b}"  # True heading (9 bits)
+    bits += f"{true_hdg_i:09b}"       # True heading (9 bits)
     bits += f"{int(time.time()) % 60:06b}"  # Timestamp seconds (6 bits)
     bits += f"{0:02b}"                # Maneuver indicator (2 bits)
     bits += f"{0:03b}"                # Spare (3 bits)
