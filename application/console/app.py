@@ -484,6 +484,13 @@ class MCRMainWindow(QMainWindow):
         self.scenario_runner = ScenarioRunner(scenario)
         self.last_scenario_score = None
 
+        # Keep the selector in step with the loaded campaign
+        idx = self.scenario_bar.combo.findData(self.scenario_runner.scenario_id)
+        if idx >= 0 and self.scenario_bar.combo.currentIndex() != idx:
+            self.scenario_bar.combo.blockSignals(True)
+            self.scenario_bar.combo.setCurrentIndex(idx)
+            self.scenario_bar.combo.blockSignals(False)
+
         # Align twin + site to the scenario and reset the vessel to the origin
         self._on_select_twin(self.scenario_runner.twin)
         self._on_select_site(self.scenario_runner.site)
