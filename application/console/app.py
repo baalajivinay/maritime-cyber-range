@@ -33,6 +33,7 @@ from communication.unified_backend import UnifiedBackend
 from communication.secure_protocol import SecureTelemetryChannel
 from attacks.advanced_attacks import AttackExecutionManager
 from attacks.ot_protocols import OTProtocolEngine
+from attacks.detection.defense import DefenseController
 from scaleup.physics.marine_dynamics import MarineDynamicsEngine
 
 SITE_COORDS = {
@@ -68,6 +69,8 @@ class MCRMainWindow(QMainWindow):
         self.physics = MarineDynamicsEngine(self.active_twin, self.active_site)
         self.attack_mgr = AttackExecutionManager()
         self.ot_engine = OTProtocolEngine()
+        self.defense = DefenseController()
+        self.active_directive = None
         self.security = SecureTelemetryChannel()
 
         # Multi-stage cyber campaign runner (Task 1). None until a scenario loads.
@@ -210,6 +213,7 @@ class MCRMainWindow(QMainWindow):
         self.header.arm_toggled.connect(self._on_arm_toggled)
         self.header.twin_changed.connect(self._on_select_twin)
         self.header.site_changed.connect(self._on_select_site)
+        self.header.defense_toggled.connect(self._on_defense_toggled)
         main_vbox.addWidget(self.header)
 
         # 1b. Scenario Control Bar (multi-stage cyber campaign transport)
@@ -373,6 +377,7 @@ class MCRMainWindow(QMainWindow):
         self.header.btn_arm.setText("Arm Vehicle")
         self.header.btn_arm.blockSignals(False)
         self.attack_mgr.stop_attack()
+        self.defense.reset()
         self.header.set_running_state(False)
 
         threading.Thread(target=self._teardown_bg, daemon=True).start()
@@ -462,6 +467,12 @@ class MCRMainWindow(QMainWindow):
         self.header.btn_arm.setText("Disarm")
         self.header.btn_arm.blockSignals(False)
 
+        # Campaigns demonstrate resilience: arm the autonomous defence.
+        self.defense.set_enabled(True)
+        self.header.btn_defense.blockSignals(True)
+        self.header.btn_defense.setChecked(True)
+        self.header.btn_defense.blockSignals(False)
+
         self.scenario_bar.set_loaded(True)
         self.inspector.log_event("SCENARIO", f"Loaded campaign '{self.scenario_runner.name}' "
                                              f"({len(self.scenario_runner.stages)} stages, "
@@ -493,6 +504,7 @@ class MCRMainWindow(QMainWindow):
         if self.scenario_runner:
             self.scenario_runner.reset()
             self.attack_mgr.stop_attack()
+            self.defense.reset()
             self._command_fairway_waypoint()
             self.last_scenario_score = None
             self.inspector.log_event("SCENARIO", "Campaign RESET")
@@ -528,6 +540,7 @@ class MCRMainWindow(QMainWindow):
 
     def _on_attack_stopped(self):
         self.attack_mgr.stop_attack()
+        self.defense.reset()
         if self.backend.engine:
             self.backend.stop_attack()
 
@@ -535,6 +548,28 @@ class MCRMainWindow(QMainWindow):
         """Enable/disable an OT bus tampering vector (Task 2)."""
         self.ot_engine.set_attack(vector, on)
         self.inspector.log_event("OT-BUS", f"{vector} {'ENABLED' if on else 'disabled'}")
+
+    def _on_defense_toggled(self, on: bool):
+        """Arm/disarm the autonomous defense fail-safe (Task 3)."""
+        self.defense.set_enabled(on)
+        self.inspector.log_event(
+            "DEFENSE", f"Autonomous defense {'ARMED' if on else 'disarmed'}")
+
+    def _current_radar_tracks(self):
+        """Radar/optical tracks available to the COLREGS verification gate.
+
+        Synthetic ARPA blips are injected and marked synthetic (they do not
+        corroborate an AIS contact). Real background traffic (Task 5) is added
+        here as independent radar truth.
+        """
+        tracks = [
+            {"east_m": t.east_m, "north_m": t.north_m, "synthetic": t.synthetic}
+            for t in self.ot_engine.radar_targets()
+        ]
+        traffic = getattr(self, "traffic", None)
+        if traffic is not None:
+            tracks.extend(traffic.radar_tracks())
+        return tracks
 
     def _stream_ot_frames(self):
         """Pump OT bus frames into the inspector at ~2 Hz to avoid flooding."""
@@ -564,34 +599,42 @@ class MCRMainWindow(QMainWindow):
             self.map_view.canvas.update()
             self.inspector.log_event("NAV", "Direct-to waypoint reached; entering station keeping / cruise")
 
-        # 2. Check if live MAVLink SITL connection exists
+        # 2. Advance multi-stage cyber campaign (drives attack_mgr per stage)
+        scenario_status = None
+        if self.scenario_runner is not None:
+            scenario_status = self.scenario_runner.step(dt, self.attack_mgr, self.physics)
+
+        # 2b. Advance Cyber Attack Execution State (pre-step own position)
+        own_pos = (self.physics.east_m, self.physics.north_m)
+        own_vel = (self.physics.u * math.sin(self.physics.psi), self.physics.u * math.cos(self.physics.psi))
+        atk_overlay = self.attack_mgr.update(dt, own_pos, own_vel)
+
+        # 2c. Autonomous Defense directive (Task 3): computed BEFORE the physics
+        #     step so it can override the autopilot (failover / loiter / suppress).
+        radar_tracks = self._current_radar_tracks()
+        directive = self.defense.update(
+            dt, {"domain": self.physics.cfg["domain"]}, atk_overlay, radar_tracks)
+        for cat, msg in directive.new_events:
+            self.inspector.log_event(cat, msg)
+        self.active_directive = directive
+
+        # 3. Marine hydrodynamics step (or live SITL), now defense-aware
         backend_state = self.backend.state
         has_live_mav = (self.backend.connected and backend_state.get("lat") is not None)
-
         if has_live_mav:
             self.lbl_sb_engine.setText("Engine: MAVLink SITL Link (tcp:5760)")
             self.lbl_sb_engine.setStyleSheet("color: #27ae60; font-weight: bold;")
             state = dict(backend_state)
         else:
-            # High-Fidelity Marine Hydrodynamics Engine Step
-            phys_state = self.physics.step(
+            state = self.physics.step(
                 dt,
                 active_attack=self.attack_mgr.active_attack,
-                attack_params=self.attack_mgr.params
+                attack_params=self.attack_mgr.params,
+                defense=directive.as_dict(),
             )
-            state = phys_state
-
-        # 2b. Advance multi-stage cyber campaign (drives attack_mgr per stage)
-        scenario_status = None
-        if self.scenario_runner is not None:
-            scenario_status = self.scenario_runner.step(dt, self.attack_mgr, self.physics)
-
-        # 3. Advance Cyber Attack Execution State
-        own_pos = (self.physics.east_m, self.physics.north_m)
-        own_vel = (self.physics.u * math.sin(self.physics.psi), self.physics.u * math.cos(self.physics.psi))
-        atk_overlay = self.attack_mgr.update(dt, own_pos, own_vel)
 
         # Merge attack overlay into state
+        state.update(directive.as_dict())
         state["active_attack"] = atk_overlay["active_attack"]
         state["spoof_offset_m"] = atk_overlay["gps_offset_m"] if atk_overlay["active_attack"] == "gps_spoof" else None
         state["ghost_vessel"] = atk_overlay["ghost_vessel"]
@@ -624,6 +667,11 @@ class MCRMainWindow(QMainWindow):
             else:
                 self.lbl_sb_fix.setText("3D GNSS (14 Sats, HDOP 0.8)")
             self.lbl_sb_fix.setStyleSheet("color: #989aa8;")
+
+        # 4-def. Reflect autonomous-defense posture on the GNSS/fix status cell
+        if state.get("gnss_isolated"):
+            self.lbl_sb_fix.setText(f"FAILOVER: {state.get('nav_source', 'DVL + DR')}")
+            self.lbl_sb_fix.setStyleSheet("color: #2f80ed; font-weight: bold;")
 
         # 4a. Advance OT bus tampering (NMEA/ARPA/J1939) and stream to widgets
         ot_overlay = self.ot_engine.update(dt, state)

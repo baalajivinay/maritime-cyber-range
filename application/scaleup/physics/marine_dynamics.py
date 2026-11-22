@@ -210,21 +210,36 @@ class MarineDynamicsEngine:
     def clear_target_waypoint(self):
         self.target_wp = None
 
-    def step(self, dt: float, active_attack: Optional[str] = None, attack_params: Optional[dict] = None) -> Dict[str, Any]:
+    def step(self, dt: float, active_attack: Optional[str] = None, attack_params: Optional[dict] = None,
+             defense: Optional[dict] = None) -> Dict[str, Any]:
         """
         Advances the 6-DOF / 3-DOF hydrodynamics state by dt seconds.
+
+        ``defense`` is the optional autonomous-defense directive (Task 3). When
+        present it can override the attack-driven control law: quarantine the
+        actuators into a station-keeping loiter, or suppress a phantom-AIS
+        evasive manoeuvre.
         """
         self._sim_time += dt
         attack_params = attack_params or {}
+        defense = defense or {}
 
         # 1. Autopilot / LOS Guidance Control Law
         if self.armed:
-            if active_attack == "c2_replay" or active_attack == "c2_override":
+            if defense.get("actuator_quarantine") or defense.get("loiter"):
+                # Hijacked channel severed: autonomous station-keeping loiter.
+                # A steady throttle + constant helm holds a tight circle, which
+                # keeps the vessel near its current position pending operator
+                # intervention, instead of running toward the hazard.
+                self.mode = "DEFENSE_LOITER"
+                self.throttle_pct = 28.0
+                self.rudder_cmd_deg = 20.0
+            elif active_attack == "c2_replay" or active_attack == "c2_override":
                 # Attacker seized actuators: Force hard starboard rudder & full throttle
                 self.mode = "MANUAL_HIJACKED"
                 self.throttle_pct = 95.0
                 self.rudder_cmd_deg = 32.0  # Hard right turn into hazard/circle
-            elif active_attack == "ais_spoof":
+            elif active_attack == "ais_spoof" and not defense.get("suppress_ais_evasion"):
                 # COLREGS Rule 14 meeting situation: Own-ship alters course to starboard (+25 deg)
                 self.mode = "COLREGS_RULE14_EVASION"
                 self.throttle_pct = 70.0

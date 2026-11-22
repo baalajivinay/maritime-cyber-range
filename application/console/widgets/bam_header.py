@@ -27,6 +27,7 @@ class BAMHeaderWidget(QWidget):
     arm_toggled = pyqtSignal(bool)
     twin_changed = pyqtSignal(str)
     site_changed = pyqtSignal(str)
+    defense_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -168,6 +169,29 @@ class BAMHeaderWidget(QWidget):
         self.btn_arm.toggled.connect(self._on_arm_toggled)
         layout.addWidget(self.btn_arm)
 
+        # Autonomous Defense arming toggle (Task 3)
+        self.btn_defense = QPushButton("Auto-Defense")
+        self.btn_defense.setCheckable(True)
+        self.btn_defense.setToolTip(
+            "Arm autonomous fail-safe: GNSS/acoustic failover, COLREGS phantom "
+            "gate, and C2 actuator quarantine + loiter")
+        self.btn_defense.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #2e303b;
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 4px;
+                padding: 5px 12px;
+                font-weight: 600;
+            }}
+            QPushButton:checked {{
+                background-color: {COLOR_BLUE};
+                border-color: {COLOR_BLUE};
+                color: #ffffff;
+            }}
+        """)
+        self.btn_defense.toggled.connect(self.defense_toggled.emit)
+        layout.addWidget(self.btn_defense)
+
     def _on_arm_toggled(self, checked: bool):
         self.btn_arm.setText("Disarm" if checked else "Arm Vehicle")
         self.arm_toggled.emit(checked)
@@ -195,6 +219,29 @@ class BAMHeaderWidget(QWidget):
     def update_telemetry(self, state: dict):
         mode = state.get("mode", "MANUAL")
         self.mode_pill.setText(str(mode).upper())
+
+        # Autonomous-defense banner takes precedence over the raw threat banner
+        defense_banner = state.get("defense_banner")
+        if defense_banner:
+            self.lbl_bam_alert.setText(defense_banner)
+            self.lbl_bam_alert.setStyleSheet(f"""
+                background-color: #16263b;
+                color: {COLOR_BLUE};
+                border: 1px solid #27486e;
+                border-radius: 10px;
+                padding: 3px 10px;
+                font-size: 10px;
+                font-weight: bold;
+            """)
+            armed = state.get("armed", False)
+            if armed != self.btn_arm.isChecked():
+                self.btn_arm.blockSignals(True)
+                self.btn_arm.setChecked(armed)
+                self.btn_arm.setText("Disarm" if armed else "Arm Vehicle")
+                self.btn_arm.blockSignals(False)
+            mode = state.get("mode", "MANUAL")
+            self.mode_pill.setText(str(mode).upper())
+            return
 
         active_atk = state.get("active_attack")
         if active_atk == "gps_spoof":
