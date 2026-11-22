@@ -15,7 +15,7 @@ The platform provides a type-approved tactical human-machine interface (IEC 6228
 ## Tactical Marine Workstation Showcase
 
 <p align="center">
-  <img src="screenshots/mcr_tactical_testbed_v2.png" width="98%" alt="Maritime Cyber Range Tactical Testbed Workstation" />
+  <img src="documentation/screenshots/testbed_professional_workstation.png" width="98%" alt="Maritime Cyber Range Tactical Testbed Workstation" />
 </p>
 
 ---
@@ -24,48 +24,61 @@ The platform provides a type-approved tactical human-machine interface (IEC 6228
 
 The testbed operates across four integrated functional layers:
 
-1. **Bridge Alert Management & Conning Workstation (`mcr_console/widgets/`):**
-   * **BAM Header (IEC 62288):** Standardized multi-status alert banner with prioritized Alarm / Warning / Normal states, vessel twin selector, and mission lifecycle controls.
-   * **Conning Information Display (CID):** High-contrast gyro compass rose, Rate-of-Turn (ROT) meter, dual-rudder deflection gauge, Speed Over Ground (SOG), and propulsion telemetry.
-   * **Tactical 2D Vector Nautical Chart (ECDIS - IEC 61174):** Real-time S-57 nautical chart showing bathymetry fairway, lateral navigational buoys, true own-ship ground truth vs. autopilot believed ghost position, dynamic drift divergence vector (`Δpos`), and interactive click-to-guide waypoint routing.
-2. **Cyber-Physical Resilience Test Suite (`attacks/` & `mcr_console/widgets/attack_panel.py`):**
-   * Pre-configured IACS UR E26 / UR E27 test cases (`MCR-SEC-01` to `MCR-SEC-04`) with live walk-off drift rate and power ratio parameter sliders.
-   * Instant fail-safe trigger and autonomous containment logging.
-3. **Real-Time Innovation Anomaly Filter (`detection/` & `mcr_console/widgets/telemetry_graph.py`):**
-   * Live scrolling oscilloscope tracking the Extended Kalman Filter innovation residual $\nu_k$ against Amber Warning ($3.0\text{ m}$) and Red Failsafe ($8.0\text{ m}$) statistical tripwires.
-4. **OT Fieldbus Inspector & One-Click Audit Generator (`mcr_console/report_generator.py`):**
-   * Real-time Wireshark-style stream of NMEA 0183 (`$GPRMC`, `$GPGGA`, `$AIVDM`) and MAVLink 2 frames with invalid checksum and kinematic violation flags.
+1. **Bridge Alert Management & Conning Workstation (`application/console/widgets/`):**
+   * **BAM Header (IEC 62288 / IEC 62923):** Standardized multi-status alert banner with prioritized Alarm / Warning / Normal states, vehicle twin selector, and mission lifecycle controls.
+   * **Conning Information Display (CID):** High-contrast gyro compass rose, analog Rudder Angle Indicator (-35° to +35°), Rate-of-Turn (ROT) meter, Speed Over Ground (SOG), and engine telegraph.
+   * **Tactical 2D Vector Nautical Chart (ECDIS - IEC 61174):** Real-time nautical chart showing bathymetric fairway, range rings (100m, 250m, 500m), True Motion Vectors (1-min/3-min predictor ticks), AIS collision warning sectors, dynamic GPS drift divergence vector (`Δpos`), and interactive click-to-steer waypoint navigation with auto-arm.
+2. **Cyber-Physical Resilience Test Suite (`attacks/` & `application/console/widgets/attack_panel.py`):**
+   * Pre-configured IACS UR E26 / UR E27 test cases with live parameter controls: sub-threshold GNSS walk-off spoofing, COLREGS Rule 14/15 AIS collision encounters, C2 actuator seizure, and acoustic USBL spoofing.
+   * Dynamic CPA (Closest Point of Approach) and TCPA (Time to CPA) threat calculation.
+3. **Real-Time Innovation Anomaly Filter (`attacks/detection/` & `application/console/widgets/telemetry_graph.py`):**
+   * Live scrolling oscilloscope tracking the Extended Kalman Filter innovation residual against statistical tripwires.
+4. **Fieldbus Protocol Inspector & One-Click Audit Generator (`application/console/report_generator.py`):**
+   * Real-time stream of NMEA 0183 (`$GPRMC`, `$GPGGA`, `$AIVDM`) and MAVLink 2 frames with cryptographic integrity verification (HMAC-SHA256 signing block and anti-replay sliding window).
    * One-click export of formal **IACS UR E26 Type-Approval PDF Audit Certificates** with cryptographic SHA-256 seals.
 
 ---
 
-## 🚀 Quick Start: Running the Application
+## 🚀 Quick Start: Installation & Running
 
-### Launching the Tactical Console
+### 1. Prerequisites & Dependencies
+
+The testbed runs on Linux (Ubuntu 20.04 / 22.04 / 24.04 or compatible X11/Wayland display) with Python 3.10+:
+
+```bash
+# Clone the repository
+git clone https://github.com/baalajivinay/maritime-cyber-range.git
+cd maritime-cyber-range
+
+# Install runtime dependencies
+pip install PyQt6 pygame pymavlink pytest reportlab
+```
+
+### 2. Launching the Tactical Console
 
 ```bash
 # Launch the primary Tactical Conning & Cyber Testbed Workstation
-./run_app.sh        # Or: tools/app.sh
+./run_app.sh
 ```
 
-### Operator Workflow:
-1. **Mission Setup:** Select the test harbour (**Mumbai**, **Kochi**, or **Visakhapatnam**) and choose the vessel digital twin (e.g., **MT Andaman Tug**).
-2. **Start Mission:** Click **BOOT SITL & TESTBED**. The application initializes the physics and connects to the ArduPilot SIL core.
-3. **Arm & Navigate:** Click **ARM PROPULSION**, then left-click on the 2D nautical chart to assign dynamic destination waypoints in `GUIDED` mode.
-4. **Execute Cyber Resilience Attack:** Select a test case (e.g., `MCR-SEC-01: GNSS Walk-off Spoof`), adjust the drift rate slider, and click **⚡ INJECT ATTACK**.
-5. **Observe Containment:** Watch the ghost vessel diverge on the chart, observe the red tripwire breach on the EKF3 innovation graph, and inspect the flagged NMEA sentences in the fieldbus log.
-6. **Export Evidence:** Click **📄 EXPORT CLASS AUDIT REPORT (PDF)** to generate the formal compliance certificate.
+### 3. Operator Workflow:
+1. **Vehicle Twin & Harbour Selection:** Select the test harbour (**Kochi**, **Mumbai**, or **Visakhapatnam**) and choose the vehicle digital twin (e.g., **Fast Interceptor USV**, **MT Andaman Tug**, or **Maya AUV**).
+2. **Start Testbed:** Click **Start Testbed** or directly left-click on the ECDIS chart to assign a destination waypoint. The vehicle automatically arms and autonomous Line-of-Sight (LOS) autopilot engages.
+3. **Execute Cyber Resilience Attack:** Select an attack (e.g., *GNSS Walk-off Spoofing*, *AIS Phantom Collision*, *C2 Actuator Override*), adjust parameters, and click **⚡ Inject Attack**.
+4. **Observe Containment:** Watch the drift divergence line or collision sector on the chart, observe the BAM alert banner transition, and inspect the flagged frames in the protocol log.
+5. **Export Audit Certificate:** Click **📄 Export Audit Certificate (PDF)** or press `Ctrl+E` to generate the formal compliance certificate.
 
 ---
 
 ## 🚢 Calibrated Vehicle Twins
 
-| Vehicle Twin | Domain | Physics Engine | Dynamics & Role |
-| :--- | :--- | :--- | :--- |
-| **Fast Interceptor USV** | Surface | Gazebo DART | Monohull planing craft, twin waterjets, high-speed patrol ($\sim 30\text{ knots}$). |
-| **Coastal Survey USV** | Surface | Gazebo DART | Twin-demihull catamaran, high roll stability for hydrographic sonar survey. |
-| **Maya AUV** | Subsurface | Stonefish | Torpedo-class autonomous submersible with 3D waypoint following. |
-| **AUV-150** | Subsurface | Stonefish | Deep-rated survey submersible operating under closed-loop depth-hold control. |
+| Vehicle Twin | Domain | Dynamics & Role |
+| :--- | :--- | :--- |
+| **Fast Interceptor USV** | Surface | Monohull planing craft, twin waterjets, high-speed patrol ($\sim 30\text{ knots}$). |
+| **Coastal Survey USV** | Surface | Twin-demihull catamaran, high roll stability for hydrographic sonar survey. |
+| **MT Andaman Tug** | Surface | Displacement hull with high bollard pull and deep draft handling. |
+| **Maya AUV** | Subsurface | Torpedo-class autonomous submersible with 3D depth and pitch dynamics. |
+| **AUV-150** | Subsurface | Deep-rated flatfish survey submersible with closed-loop depth-hold control. |
 
 ---
 
@@ -73,9 +86,9 @@ The testbed operates across four integrated functional layers:
 
 Each geographical test harbor reproduces cited Indian regional oceanography:
 
-* **Kochi Naval Base (Littoral):** Water density $1022.4\text{ kg/m}^3$, tidal current $0.35\text{ m/s}$ ($160^\circ$), shallow-water acoustic multipath.
-* **Mumbai Offshore (Shipping Corridor):** Water density $1022.9\text{ kg/m}^3$, tidal current $0.60\text{ m/s}$ ($20^\circ$), high-density AIS traffic.
-* **Visakhapatnam (Eastern Fleet Basin):** Water density $1020.5\text{ kg/m}^3$, tidal current $0.45\text{ m/s}$ ($40^\circ$), deep-water approaches.
+* **Kochi Port (Littoral):** Water density $1022.4\text{ kg/m}^3$, tidal current $0.35\text{ m/s}$ ($160^\circ$).
+* **Mumbai Offshore (Shipping Corridor):** Water density $1022.9\text{ kg/m}^3$, tidal current $0.60\text{ m/s}$ ($20^\circ$).
+* **Visakhapatnam (Eastern Fleet Basin):** Water density $1020.5\text{ kg/m}^3$, tidal current $0.45\text{ m/s}$ ($40^\circ$).
 
 ---
 
@@ -83,29 +96,30 @@ Each geographical test harbor reproduces cited Indian regional oceanography:
 
 ```
 maritime-cyber-range/
-├── godot_app/          # Godot 4 3D tactical viewer (world.gd, shaders, assets)
-├── tools/              # Launchers (tools/app.sh, godot_relay.py, teardown_all.sh)
-├── vehicle_twins/      # Parameters & configurations for all 4 vehicle models
-├── attacks/            # Cyber-physical attack injection suite (GPS, AIS, C2, Acoustic)
-├── detection/          # Real-time statistical anomaly detectors (CUSUM, Kinematic)
-├── sim_config/         # Gazebo worlds, SDF vehicle models & hydrodynamic plugins
-├── stonefish/          # Stonefish 6-DOF hydrodynamics bridge & scenario definitions
-├── nodes/              # Backend MAVLink telemetry bridges & AIS avoidance logic
-├── scaleup/            # Oceanographic site definitions, acoustic physics & unit tests
-├── screenshots/        # High-resolution 3D app screenshots & architecture diagram
-└── docs/               # Detailed technical documentation & run guides
+├── application/         # Tactical workstation UI (PyQt6), vehicle twins, Fossen hydrodynamics
+├── attacks/             # Cyber-physical attack injection suite (GNSS, AIS, C2, USBL)
+├── communication/       # MAVLink 2.0 HMAC signing, anti-replay, AIS IEC 62320-1 auth, SITL
+├── documentation/       # System overview, running guides, validation criteria, screenshots
+├── logs/                # Telemetry traces, session audits, incident reports
+└── run_app.sh           # Main application launcher
 ```
 
 ---
 
-## 🧪 Running the Verification Test Suite
-
-Run the full automated physics, adversarial, and detection test suite:
+## 🧪 Running the Verification Test Suites
 
 ```bash
-python3 -m pytest scaleup/tests/
+# 1. Run core hydrodynamics, security & adversarial unit tests (64 tests)
+PYTHONPATH=$PWD:$PWD/application:$PWD/communication:$PWD/attacks pytest application/scaleup/tests/
+
+# 2. Run full 12-stage aggressive integration test suite
+PYTHONPATH=$PWD:$PWD/application:$PWD/communication:$PWD/attacks python3 communication/test_aggressive_debugging.py
+
+# 3. Validate vehicle twin contracts (all 5 twins)
+for p in interceptor_usv survey_usv mt_andaman_tug maya_auv auv150; do
+  PYTHONPATH=$PWD:$PWD/application:$PWD/communication python3 communication/validate_vehicle.py "$p" || exit 1
+done
 ```
-*(All 58 test suites pass in sub-second execution verifying acoustic latency, CUSUM drift detection, hydrodynamic drag, and schema parity).*
 
 ---
 
