@@ -13,7 +13,10 @@ Features:
 - Pan, zoom (+, -, 1:1, Recenter) interactive controls.
 """
 import math
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTableWidget, QTableWidgetItem, QHeaderView,
+)
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPolygonF, QFont, QPainterPath
 from PyQt6.QtCore import Qt, QPointF, QRectF, pyqtSignal
 
@@ -27,6 +30,56 @@ from application.console.theme import (
 DEG_TO_M = 111320.0
 DEG_TO_RAD = math.pi / 180.0
 RAD_TO_DEG = 180.0 / math.pi
+
+# =============================================================================
+# IEC 62288 display palettes (Day / Dusk / Night).
+# Night minimises luminance for dark-adapted bridge watchkeeping.
+# =============================================================================
+DAY_PALETTE = {
+    "water_deep": "#dfe9f2", "water_shallow": "#b9d4ea", "fairway": "#eef4fb",
+    "land": "#e4dcc6", "grid": "#c3d1e0", "text": "#1b2a3a", "text_dim": "#51627a",
+    "safety_contour": "#5d7794", "depth_label": "#3b556e",
+}
+DUSK_PALETTE = {
+    "water_deep": "#2a3442", "water_shallow": "#334256", "fairway": "#33465c",
+    "land": "#434334", "grid": "#3c4a5c", "text": "#c7d3e0", "text_dim": "#8494a6",
+    "safety_contour": "#6f89a6", "depth_label": "#9fb3c8",
+}
+NIGHT_PALETTE = {
+    "water_deep": "#06090d", "water_shallow": "#0a121c", "fairway": "#0c1623",
+    "land": "#17160f", "grid": "#13202c", "text": "#8fb4c9", "text_dim": "#4a6476",
+    "safety_contour": "#1f3850", "depth_label": "#2f5068",
+}
+PALETTES = {"day": DAY_PALETTE, "dusk": DUSK_PALETTE, "night": NIGHT_PALETTE}
+
+
+def default_s52_features():
+    """A representative IHO S-52 feature set laid out in local metres around the
+    site origin: lateral buoyage marking the fairway, cardinal marks on a
+    hazard, a lighthouse with a nominal-range arc, and bathymetric contours."""
+    return {
+        "depth_contours": [
+            {"depth_m": 5.0, "radius_m": 120.0, "safety": False},
+            {"depth_m": 10.0, "radius_m": 230.0, "safety": True},   # safety contour
+            {"depth_m": 20.0, "radius_m": 360.0, "safety": False},
+        ],
+        "shallow_patch": {"east_m": -180.0, "north_m": 140.0, "radius_m": 70.0},
+        "buoys": [
+            # IALA Region A: port hand = red can, starboard hand = green cone
+            {"kind": "port", "east_m": -70.0, "north_m": -40.0, "name": "No.1"},
+            {"kind": "port", "east_m": 40.0, "north_m": 120.0, "name": "No.3"},
+            {"kind": "starboard", "east_m": 60.0, "north_m": -40.0, "name": "No.2"},
+            {"kind": "starboard", "east_m": 170.0, "north_m": 120.0, "name": "No.4"},
+        ],
+        "cardinals": [
+            {"kind": "north", "east_m": -180.0, "north_m": 230.0, "name": "N Card"},
+            {"kind": "east", "east_m": 260.0, "north_m": 60.0, "name": "E Card"},
+        ],
+        "lights": [
+            {"east_m": -240.0, "north_m": -120.0, "name": "Lt Ho",
+             "range_m": 300.0, "colour": "#fbbf24"},
+        ],
+    }
 
 
 class ChartCanvas(QWidget):
@@ -53,8 +106,19 @@ class ChartCanvas(QWidget):
         self.domain = "surface"
         self.trail = []
 
-        # Target Waypoint
-        self.target_wp = None           # (East m, North m)
+        # Target Waypoint (active leg) + full multi-leg route (Task 4)
+        self.target_wp = None           # (East m, North m) — active leg target
+        self.route = []                 # [(East m, North m), ...] ordered WPs
+        self.route_idx = 0              # index of the active (not-yet-reached) WP
+        self.xte_limit_m = 50.0         # cross-track error corridor half-width
+        self.turn_radius_m = 60.0       # advisory wheel-over turn radius
+
+        # IEC 62288 display palette mode: "day" | "dusk" | "night"
+        self.palette_mode = "day"
+        self._pal = dict(DAY_PALETTE)
+
+        # IHO S-52 charted features (buoys, cardinals, lights, contours)
+        self.s52_features = default_s52_features()
 
         # Attack Overlays
         self.spoofed_pos = None         # (East m, North m)
@@ -76,6 +140,8 @@ class ChartCanvas(QWidget):
         self.true_pos = (0.0, 0.0)
         self.trail.clear()
         self.target_wp = None
+        self.route = []
+        self.route_idx = 0
         self.spoofed_pos = None
         self.ghost_vessel = None
         self.pan_x = 0.0
@@ -148,14 +214,20 @@ class ChartCanvas(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 1. Nautical Water Background
-        p.fillRect(self.rect(), QColor(MAP_WATER))
+        # 1. Nautical Water Background (palette-aware, IEC 62288)
+        p.fillRect(self.rect(), QColor(self._pal["water_deep"]))
+
+        # 1b. Bathymetric depth contours & shallow-water shading (S-52)
+        self._draw_depth_contours(p)
 
         # 2. Navigable Fairway Channel
         self._draw_fairway(p)
 
         # 3. Coordinate Grid
         self._draw_grid(p)
+
+        # 3b. IHO S-52 charted features (buoys, cardinals, lights)
+        self._draw_s52_features(p)
 
         # 4. Range Rings (100m, 250m, 500m)
         self._draw_range_rings(p)
@@ -167,8 +239,10 @@ class ChartCanvas(QWidget):
         # 6. Navigation Trail
         self._draw_trail(p)
 
-        # 7. Commanded Waypoint & Target Course
-        if self.target_wp:
+        # 7. Route (multi-leg) or single commanded waypoint
+        if self.route:
+            self._draw_route(p)
+        elif self.target_wp:
             self._draw_waypoint(p)
 
         # 7b. Radar / ARPA synthetic false targets (Task 2)
@@ -199,16 +273,145 @@ class ChartCanvas(QWidget):
         path.moveTo(p1[0], p1[1])
         path.cubicTo(p2[0], p2[1], p3[0], p3[1], p4[0], p4[1])
 
-        fairway_pen = QPen(QColor(MAP_FAIRWAY), 130 * self.scale_m_to_px, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        fairway_pen = QPen(QColor(self._pal["fairway"]), 130 * self.scale_m_to_px, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
         p.setPen(fairway_pen)
         p.drawPath(path)
 
-        edge_pen = QPen(QColor("#2d4157"), 1, Qt.PenStyle.DashLine)
+        edge_pen = QPen(QColor(self._pal["safety_contour"]), 1, Qt.PenStyle.DashLine)
         p.setPen(edge_pen)
         p.drawPath(path)
 
+    def _draw_depth_contours(self, p: QPainter):
+        """Concentric bathymetric contours with shallow-water shading and a
+        highlighted safety contour (IHO S-52)."""
+        ox, oy = self.m_to_screen(0.0, 0.0)
+        contours = sorted(self.s52_features.get("depth_contours", []),
+                          key=lambda c: c["radius_m"], reverse=True)
+        for c in contours:
+            r = c["radius_m"] * self.scale_m_to_px
+            if c.get("safety"):
+                # Safety contour: bold dashed boundary separating safe water
+                p.setBrush(QBrush(QColor(self._pal["water_shallow"])))
+                p.setPen(QPen(QColor(self._pal["safety_contour"]), 2, Qt.PenStyle.DashLine))
+            else:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(self._pal["safety_contour"]), 1, Qt.PenStyle.DotLine))
+            p.drawEllipse(QPointF(ox, oy), r, r)
+            p.setPen(QColor(self._pal["depth_label"]))
+            p.setFont(QFont("-apple-system, sans-serif", 7))
+            p.drawText(int(ox + r * 0.7), int(oy - r * 0.7), f"{c['depth_m']:.0f}m")
+
+        # Discrete shallow danger patch
+        sp = self.s52_features.get("shallow_patch")
+        if sp:
+            sx, sy = self.m_to_screen(sp["east_m"], sp["north_m"])
+            rr = sp["radius_m"] * self.scale_m_to_px
+            p.setBrush(QBrush(QColor(173, 216, 120, 70)))
+            p.setPen(QPen(QColor("#9aa84f"), 1, Qt.PenStyle.DashLine))
+            p.drawEllipse(QPointF(sx, sy), rr, rr)
+
+    def _draw_s52_features(self, p: QPainter):
+        """IALA lateral buoyage, cardinal marks and lighthouse sector/range arc."""
+        # Lighthouses with nominal-range arcs
+        for lt in self.s52_features.get("lights", []):
+            lx, ly = self.m_to_screen(lt["east_m"], lt["north_m"])
+            rng = lt.get("range_m", 250.0) * self.scale_m_to_px
+            p.setPen(QPen(QColor(lt.get("colour", "#fbbf24")), 1, Qt.PenStyle.DotLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(lx, ly), rng, rng)
+            p.setBrush(QBrush(QColor(lt.get("colour", "#fbbf24"))))
+            p.setPen(QPen(QColor(self._pal["text"]), 1))
+            # Magenta flare star is standard; approximate with a filled diamond
+            star = QPolygonF([QPointF(lx, ly - 6), QPointF(lx + 4, ly),
+                              QPointF(lx, ly + 6), QPointF(lx - 4, ly)])
+            p.drawPolygon(star)
+            p.setPen(QColor(self._pal["text"]))
+            p.setFont(QFont("-apple-system, sans-serif", 7, QFont.Weight.Bold))
+            p.drawText(int(lx + 8), int(ly - 6), lt.get("name", "Lt"))
+
+        # Lateral buoyage: port = red can, starboard = green cone
+        for b in self.s52_features.get("buoys", []):
+            bx, by = self.m_to_screen(b["east_m"], b["north_m"])
+            if b["kind"] == "port":
+                p.setBrush(QBrush(QColor("#d64545")))
+                p.setPen(QPen(QColor("#8a2a2a"), 1))
+                p.drawRect(QRectF(bx - 3, by - 5, 6, 10))          # can
+            else:
+                p.setBrush(QBrush(QColor("#2f9e44")))
+                p.setPen(QPen(QColor("#1d6b2e"), 1))
+                cone = QPolygonF([QPointF(bx, by - 6), QPointF(bx + 4, by + 4),
+                                  QPointF(bx - 4, by + 4)])
+                p.drawPolygon(cone)                                 # cone
+            p.setPen(QColor(self._pal["text_dim"]))
+            p.setFont(QFont("-apple-system, sans-serif", 6))
+            p.drawText(int(bx + 6), int(by + 3), b.get("name", ""))
+
+        # Cardinal marks (N/E/S/W) — yellow/black pillar with topmark direction
+        for c in self.s52_features.get("cardinals", []):
+            cx, cy = self.m_to_screen(c["east_m"], c["north_m"])
+            p.setBrush(QBrush(QColor("#1a1a1a")))
+            p.setPen(QPen(QColor("#f2c200"), 2))
+            p.drawEllipse(QPointF(cx, cy), 4, 4)
+            # Topmark cones indicate the quadrant of safe water
+            p.setPen(QColor("#f2c200"))
+            p.setFont(QFont("-apple-system, sans-serif", 6, QFont.Weight.Bold))
+            glyph = {"north": "▲▲", "east": "▲▼", "south": "▼▼", "west": "▼▲"}.get(c["kind"], "◆")
+            p.drawText(int(cx - 6), int(cy - 7), glyph)
+            p.setPen(QColor(self._pal["text_dim"]))
+            p.drawText(int(cx + 7), int(cy + 3), c.get("name", ""))
+
+    def _draw_route(self, p: QPainter):
+        """Multi-leg route with XTE corridor, turn-radius circles and WP badges."""
+        vx, vy = self.m_to_screen(*self.true_pos)
+        pts = [(vx, vy)] + [self.m_to_screen(e, n) for (e, n) in self.route]
+
+        # XTE corridor (dashed parallels) + leg lines
+        for i in range(len(pts) - 1):
+            x1, y1 = pts[i]
+            x2, y2 = pts[i + 1]
+            done = i < self.route_idx
+            leg_col = QColor("#5a6b7a") if done else QColor("#00d2ff")
+            p.setPen(QPen(leg_col, 2 if not done else 1,
+                          Qt.PenStyle.SolidLine if not done else Qt.PenStyle.DashLine))
+            p.drawLine(int(x1), int(y1), int(x2), int(y2))
+
+            # XTE limit parallels
+            dx, dy = x2 - x1, y2 - y1
+            ln = math.hypot(dx, dy) or 1.0
+            nx, ny = -dy / ln, dx / ln
+            off = self.xte_limit_m * self.scale_m_to_px
+            p.setPen(QPen(QColor(0, 210, 255, 90), 1, Qt.PenStyle.DotLine))
+            for s in (off, -off):
+                p.drawLine(int(x1 + nx * s), int(y1 + ny * s),
+                           int(x2 + nx * s), int(y2 + ny * s))
+
+        # Turn-radius circles at intermediate waypoints
+        for i in range(1, len(self.route) - 1):
+            wx, wy = self.m_to_screen(*self.route[i])
+            tr = self.turn_radius_m * self.scale_m_to_px
+            p.setPen(QPen(QColor(0, 210, 255, 120), 1, Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(wx, wy), tr, tr)
+
+        # Waypoint reticles + labels
+        legs = self.route_legs()
+        p.setFont(QFont("-apple-system, sans-serif", 8, QFont.Weight.Bold))
+        for i, (e, n) in enumerate(self.route):
+            wx, wy = self.m_to_screen(e, n)
+            row = legs[i]
+            col = QColor("#5a6b7a") if row["done"] else (
+                QColor("#ffd166") if row["active"] else QColor("#00d2ff"))
+            p.setPen(QPen(col, 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(wx, wy), 7, 7)
+            p.setBrush(QBrush(col))
+            p.drawEllipse(QPointF(wx, wy), 2.0, 2.0)
+            p.setPen(col)
+            p.drawText(int(wx + 9), int(wy - 6),
+                       f"{row['wp']} {row['course_deg']:03.0f}°/{row['dist_m']:.0f}m")
+
     def _draw_grid(self, p: QPainter):
-        pen = QPen(QColor(MAP_GRID), 1, Qt.PenStyle.DotLine)
+        pen = QPen(QColor(self._pal["grid"]), 1, Qt.PenStyle.DotLine)
         p.setPen(pen)
 
         step_m = 100.0
@@ -504,15 +707,73 @@ class ChartCanvas(QWidget):
 
     def clear_waypoint(self):
         self.target_wp = None
+        self.route = []
+        self.route_idx = 0
         self.waypoint_cleared.emit()
+        self.update()
+
+    # ------------------------------------------------------------ route (Task 4)
+    def append_route_wp(self, east: float, north: float):
+        """Append a leg waypoint. The first appended WP becomes the active
+        target immediately."""
+        self.route.append((east, north))
+        if len(self.route) == 1:
+            self.route_idx = 0
+            self.target_wp = self.route[0]
+            self.waypoint_commanded.emit(east, north)
+        self.update()
+
+    def active_route_wp(self):
+        if 0 <= self.route_idx < len(self.route):
+            return self.route[self.route_idx]
+        return None
+
+    def advance_route(self):
+        """Advance to the next leg once the active WP is reached. Returns the
+        new active waypoint, or None when the route is complete."""
+        if not self.route:
+            return None
+        self.route_idx += 1
+        nxt = self.active_route_wp()
+        self.target_wp = nxt
+        if nxt is not None:
+            self.waypoint_commanded.emit(nxt[0], nxt[1])
+        return nxt
+
+    def route_complete(self):
+        return bool(self.route) and self.route_idx >= len(self.route)
+
+    def route_legs(self):
+        """Compute the route table rows: leg distance, true course, XTE limit,
+        turn radius. Leg 1 starts at own-ship."""
+        rows = []
+        prev = self.true_pos
+        for i, wp in enumerate(self.route):
+            de = wp[0] - prev[0]
+            dn = wp[1] - prev[1]
+            dist = math.hypot(de, dn)
+            course = (math.degrees(math.atan2(de, dn)) + 360.0) % 360.0
+            rows.append({
+                "wp": f"WP-{i + 1:02d}",
+                "dist_m": dist,
+                "course_deg": course,
+                "xte_m": self.xte_limit_m,
+                "turn_r_m": self.turn_radius_m if 0 < i < len(self.route) - 1 else 0.0,
+                "active": i == self.route_idx,
+                "done": i < self.route_idx,
+            })
+            prev = wp
+        return rows
+
+    def set_palette(self, mode: str):
+        self.palette_mode = mode if mode in PALETTES else "day"
+        self._pal = dict(PALETTES[self.palette_mode])
         self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             east, north = self.screen_to_m(event.position().x(), event.position().y())
-            self.target_wp = (east, north)
-            self.waypoint_commanded.emit(east, north)
-            self.update()
+            self.append_route_wp(east, north)
         elif event.button() in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
             self._dragging = True
             self._drag_start = event.position()
@@ -554,17 +815,29 @@ class ECDISPanel(QWidget):
         lbl.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_PRIMARY};")
         header.addWidget(lbl)
 
-        hint = QLabel("Left-click: Steer to Destination  •  Right-drag: Pan  •  Scroll: Zoom")
+        hint = QLabel("Left-click: Add Route WP  •  Right-drag: Pan  •  Scroll: Zoom")
         hint.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED};")
         header.addWidget(hint)
 
         header.addStretch()
 
-        # Navigation WP Clear Button
-        btn_clear_wp = QPushButton("Clear WP")
+        # IEC 62288 palette mode (Day / Dusk / Night)
+        self._pal_buttons = {}
+        for mode in ("day", "dusk", "night"):
+            b = QPushButton(mode.capitalize())
+            b.setCheckable(True)
+            b.setFixedHeight(24)
+            b.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+            b.clicked.connect(lambda _=False, m=mode: self._set_palette(m))
+            header.addWidget(b)
+            self._pal_buttons[mode] = b
+        self._pal_buttons["day"].setChecked(True)
+
+        # Navigation route clear button
+        btn_clear_wp = QPushButton("Clear Route")
         btn_clear_wp.setFixedHeight(24)
         btn_clear_wp.setStyleSheet("padding: 2px 8px; font-size: 11px;")
-        btn_clear_wp.setToolTip("Cancel active steered waypoint")
+        btn_clear_wp.setToolTip("Clear the planned route and all waypoints")
         btn_clear_wp.clicked.connect(self._clear_waypoint)
         header.addWidget(btn_clear_wp)
 
@@ -592,8 +865,50 @@ class ECDISPanel(QWidget):
         self.canvas.waypoint_cleared.connect(self.waypoint_cleared.emit)
         layout.addWidget(self.canvas, 1)
 
+        # Route Table (leg distance, true course, XTE limit, turn radius)
+        self.route_table = QTableWidget(0, 5)
+        self.route_table.setHorizontalHeaderLabels(
+            ["WP", "LEG DIST", "TRUE CRS", "XTE LIMIT", "TURN R"])
+        self.route_table.verticalHeader().setVisible(False)
+        self.route_table.setFixedHeight(104)
+        self.route_table.setShowGrid(False)
+        self.route_table.setStyleSheet("font-size: 11px;")
+        hh = self.route_table.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        for c in range(1, 5):
+            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.route_table)
+
+    def _set_palette(self, mode: str):
+        for m, b in self._pal_buttons.items():
+            b.setChecked(m == mode)
+        self.canvas.set_palette(mode)
+
+    def _refresh_route_table(self):
+        legs = self.canvas.route_legs()
+        self.route_table.setRowCount(len(legs))
+        for r, leg in enumerate(legs):
+            cells = [
+                leg["wp"],
+                f"{leg['dist_m']:.0f} m",
+                f"{leg['course_deg']:05.1f}°",
+                f"±{leg['xte_m']:.0f} m",
+                f"{leg['turn_r_m']:.0f} m" if leg["turn_r_m"] else "—",
+            ]
+            for c, txt in enumerate(cells):
+                item = QTableWidgetItem(txt)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if leg["active"]:
+                    item.setForeground(QColor("#ffd166"))
+                elif leg["done"]:
+                    item.setForeground(QColor(TEXT_MUTED))
+                else:
+                    item.setForeground(QColor("#00d2ff"))
+                self.route_table.setItem(r, c, item)
+
     def _clear_waypoint(self):
         self.canvas.clear_waypoint()
+        self._refresh_route_table()
 
     def _zoom_in(self):
         self.canvas.scale_m_to_px = min(6.0, self.canvas.scale_m_to_px * 1.25)
@@ -614,3 +929,4 @@ class ECDISPanel(QWidget):
 
     def update_telemetry(self, state: dict):
         self.canvas.update_telemetry(state)
+        self._refresh_route_table()

@@ -76,6 +76,7 @@ class MCRMainWindow(QMainWindow):
         # Multi-stage cyber campaign runner (Task 1). None until a scenario loads.
         self.scenario_runner = None
         self.last_scenario_score = None
+        self._active_wp = None   # waypoint currently commanded to the autopilot
 
         # Build UI Architecture
         self._build_central_workstation()
@@ -372,6 +373,7 @@ class MCRMainWindow(QMainWindow):
         self.physics.armed = False
         self.physics.clear_target_waypoint()
         self.map_view.canvas.clear_waypoint()
+        self._active_wp = None
         self.header.btn_arm.blockSignals(True)
         self.header.btn_arm.setChecked(False)
         self.header.btn_arm.setText("Arm Vehicle")
@@ -400,6 +402,37 @@ class MCRMainWindow(QMainWindow):
             else:
                 self.backend.disarm()
 
+    def _sync_route(self):
+        """Advance the multi-leg route (Task 4): when the physics autopilot
+        reaches the active waypoint it clears its target; move to the next leg,
+        or finish the route. Also commands an externally-set direct-to target."""
+        canvas = self.map_view.canvas
+        active_wp = getattr(self, "_active_wp", None)
+
+        if self.physics.target_wp is None and active_wp is not None:
+            # The active waypoint has been reached.
+            if canvas.route and not canvas.route_complete():
+                nxt = canvas.advance_route()   # emits -> _on_waypoint_commanded
+                if nxt is None:
+                    canvas.target_wp = None
+                    self._active_wp = None
+                    self.inspector.log_event("NAV", "Route complete; station keeping / cruise")
+                else:
+                    self.inspector.log_event(
+                        "NAV", f"Leg reached; proceeding to WP-{canvas.route_idx + 1:02d}")
+            else:
+                canvas.target_wp = None
+                canvas.route = []
+                canvas.route_idx = 0
+                self._active_wp = None
+                self.inspector.log_event("NAV", "Waypoint reached; station keeping / cruise")
+            canvas.update()
+
+        # Legacy direct-to target set on the canvas without a route
+        if (self.physics.target_wp is None and canvas.target_wp is not None
+                and getattr(self, "_active_wp", None) is None and not canvas.route):
+            self._on_waypoint_commanded(canvas.target_wp[0], canvas.target_wp[1])
+
     def _on_waypoint_commanded(self, east_m: float, north_m: float):
         # 1. Automatically Arm Vehicle if disarmed so operator immediately sees vessel navigate
         if not self.physics.armed:
@@ -411,6 +444,7 @@ class MCRMainWindow(QMainWindow):
 
         # 2. Command hydrodynamics autopilot Line-Of-Sight (LOS) guidance
         self.physics.set_target_waypoint(east_m, north_m)
+        self._active_wp = (east_m, north_m)
         self.map_view.canvas.target_wp = (east_m, north_m)
         self.map_view.canvas.update()
         self.inspector.log_event("NAV", f"Waypoint commanded: East={east_m:.1f}m, North={north_m:.1f}m -> Autopilot LOS engaged")
@@ -422,6 +456,7 @@ class MCRMainWindow(QMainWindow):
 
     def _on_waypoint_cleared(self):
         self.physics.clear_target_waypoint()
+        self._active_wp = None
         self.inspector.log_event("NAV", "Waypoint cancelled: returning to default cruise / loiter")
 
     def _meters_to_latlon(self, east_m: float, north_m: float) -> tuple:
@@ -486,6 +521,7 @@ class MCRMainWindow(QMainWindow):
         east = self.physics.east_m + reach * math.sin(course)
         north = self.physics.north_m + reach * math.cos(course)
         self.physics.set_target_waypoint(east, north)
+        self._active_wp = (east, north)
         self.map_view.canvas.target_wp = (east, north)
 
     def _on_scenario_play(self):
@@ -590,14 +626,8 @@ class MCRMainWindow(QMainWindow):
         utc_ts = time.strftime("%H:%M:%SZ", time.gmtime())
         self.lbl_sb_time.setText(utc_ts)
 
-        # 1. Synchronize chart canvas waypoint with physics autopilot
-        chart_wp = self.map_view.canvas.target_wp
-        if chart_wp and not self.physics.target_wp:
-            self._on_waypoint_commanded(chart_wp[0], chart_wp[1])
-        elif not self.physics.target_wp and chart_wp is not None:
-            self.map_view.canvas.target_wp = None
-            self.map_view.canvas.update()
-            self.inspector.log_event("NAV", "Direct-to waypoint reached; entering station keeping / cruise")
+        # 1. Synchronize chart route/waypoint with the physics autopilot.
+        self._sync_route()
 
         # 2. Advance multi-stage cyber campaign (drives attack_mgr per stage)
         scenario_status = None
