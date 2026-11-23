@@ -10,7 +10,7 @@ Provides domain-adaptive attack execution:
 """
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSlider, QComboBox, QGroupBox, QStackedWidget, QWidget
+    QSlider, QComboBox, QGroupBox, QStackedWidget, QWidget, QScrollArea
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 
@@ -29,10 +29,11 @@ class AttackPanel(QFrame):
         super().__init__(parent)
         self.setProperty("class", "panel")
         self.setFixedWidth(310)
+        self.setMinimumHeight(160)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
         # Header with domain indicator
         header_row = QHBoxLayout()
@@ -56,7 +57,38 @@ class AttackPanel(QFrame):
 
         # Stacked Widget: Page 0 = Surface Attacks, Page 1 = Underwater Attacks
         self.stack = QStackedWidget(self)
-        layout.addWidget(self.stack)
+
+        # Wrap stack in sleek scroll area so attack panels never constrain workstation height
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll.setStyleSheet("""
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QScrollArea > QWidget > QWidget {
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #15161c;
+                width: 6px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #2e303b;
+                min-height: 20px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #3d4251;
+            }
+        """)
+        self.scroll.setWidget(self.stack)
+        layout.addWidget(self.scroll, 1)
 
         # Build Surface and Underwater pages
         self._build_surface_ui()
@@ -98,15 +130,15 @@ class AttackPanel(QFrame):
         page = QWidget()
         l = QVBoxLayout(page)
         l.setContentsMargins(0, 0, 0, 0)
-        l.setSpacing(10)
+        l.setSpacing(6)
 
         # 1. GNSS Spoofing
         box_gps = QGroupBox("GNSS / GPS Spoofing")
         l_gps = QVBoxLayout(box_gps)
-        l_gps.setSpacing(6)
+        l_gps.setSpacing(4)
 
         desc_gps = QLabel("Insidious walk-off or step injection into satellite fix.")
-        desc_gps.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        desc_gps.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         l_gps.addWidget(desc_gps)
 
         # Mode Selection
@@ -155,10 +187,10 @@ class AttackPanel(QFrame):
         # 2. AIS Spoofing
         box_ais = QGroupBox("AIS Collision Spoofing")
         l_ais = QVBoxLayout(box_ais)
-        l_ais.setSpacing(6)
+        l_ais.setSpacing(4)
 
         desc_ais = QLabel("Broadcasts unauthenticated AIVDM collision threats.")
-        desc_ais.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        desc_ais.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         l_ais.addWidget(desc_ais)
 
         row_ais_scen = QHBoxLayout()
@@ -192,10 +224,10 @@ class AttackPanel(QFrame):
         # 3. C2 Hijack
         box_c2 = QGroupBox("C2 Command & Control")
         l_c2 = QVBoxLayout(box_c2)
-        l_c2.setSpacing(6)
+        l_c2.setSpacing(4)
 
         desc_c2 = QLabel("Injects forged MAVLink telemetry commands.")
-        desc_c2.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        desc_c2.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         l_c2.addWidget(desc_c2)
 
         self.combo_c2 = QComboBox()
@@ -230,10 +262,10 @@ class AttackPanel(QFrame):
         """IBS/OT protocol tampering toggles: NMEA sensors, ARPA, engine CAN."""
         box = QGroupBox("Integrated Bridge / Engine OT Bus")
         lo = QVBoxLayout(box)
-        lo.setSpacing(5)
+        lo.setSpacing(3)
 
         desc = QLabel("Forge IBS sensor & engine CAN traffic (NMEA 0183/2000, J1939).")
-        desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         lo.addWidget(desc)
 
         self.ot_buttons = {}
@@ -264,15 +296,15 @@ class AttackPanel(QFrame):
         page = QWidget()
         l = QVBoxLayout(page)
         l.setContentsMargins(0, 0, 0, 0)
-        l.setSpacing(10)
+        l.setSpacing(6)
 
         # 1. USBL Acoustic Positioning Spoofing
         box_usbl = QGroupBox("USBL Acoustic Positioning")
         l_usbl = QVBoxLayout(box_usbl)
-        l_usbl.setSpacing(6)
+        l_usbl.setSpacing(4)
 
         desc_usbl = QLabel("Manipulates acoustic transponder travel-time delays.")
-        desc_usbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        desc_usbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         l_usbl.addWidget(desc_usbl)
 
         row_usbl_rate = QHBoxLayout()
@@ -309,10 +341,10 @@ class AttackPanel(QFrame):
         # 2. Acoustic Telemetry Disruption
         box_ac = QGroupBox("Acoustic Channel Telemetry")
         l_ac = QVBoxLayout(box_ac)
-        l_ac.setSpacing(6)
+        l_ac.setSpacing(4)
 
         desc_ac = QLabel("Simulates multipath noise & acoustic telemetry blackout.")
-        desc_ac.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        desc_ac.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         l_ac.addWidget(desc_ac)
 
         row_ac_action = QHBoxLayout()
@@ -333,10 +365,10 @@ class AttackPanel(QFrame):
         # 3. C2 Telecommand Hijack
         box_c2_sub = QGroupBox("Subsea Telecommand Hijack")
         l_c2_sub = QVBoxLayout(box_c2_sub)
-        l_c2_sub.setSpacing(6)
+        l_c2_sub.setSpacing(4)
 
         desc_c2_sub = QLabel("Forces emergency surface or thrust cut commands.")
-        desc_c2_sub.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        desc_c2_sub.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         l_c2_sub.addWidget(desc_c2_sub)
 
         self.combo_c2_sub = QComboBox()
@@ -368,7 +400,8 @@ class AttackPanel(QFrame):
                 background-color: #2e303b;
                 border: 1px solid {PANEL_BORDER};
                 border-radius: 4px;
-                padding: 5px 12px;
+                padding: 4px 8px;
+                font-size: 11px;
                 font-weight: 600;
             }}
             QPushButton:hover {{

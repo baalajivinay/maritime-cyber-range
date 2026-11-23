@@ -28,10 +28,11 @@ class BAMHeaderWidget(QWidget):
     twin_changed = pyqtSignal(str)
     site_changed = pyqtSignal(str)
     defense_toggled = pyqtSignal(bool)
+    fullscreen_toggled = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(54)
+        self.setFixedHeight(50)
         self.setStyleSheet(f"""
             QWidget {{
                 background-color: {BG_PANEL_HEADER};
@@ -40,8 +41,8 @@ class BAMHeaderWidget(QWidget):
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 6, 14, 6)
-        layout.setSpacing(12)
+        layout.setContentsMargins(12, 4, 12, 4)
+        layout.setSpacing(10)
 
         # 1. Main Title
         title = QLabel("Testbed")
@@ -191,6 +192,26 @@ class BAMHeaderWidget(QWidget):
         """)
         self.btn_defense.toggled.connect(self.defense_toggled.emit)
         layout.addWidget(self.btn_defense)
+
+        # Fullscreen Toggle Button
+        self.btn_fullscreen = QPushButton("⛶ Fullscreen")
+        self.btn_fullscreen.setToolTip("Toggle Full Screen Mode (F11)")
+        self.btn_fullscreen.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #2e303b;
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 4px;
+                padding: 5px 12px;
+                font-weight: 600;
+                color: {TEXT_PRIMARY};
+            }}
+            QPushButton:hover {{
+                background-color: #383a48;
+                color: #ffffff;
+            }}
+        """)
+        self.btn_fullscreen.clicked.connect(self.fullscreen_toggled.emit)
+        layout.addWidget(self.btn_fullscreen)
 
     def _on_arm_toggled(self, checked: bool):
         self.btn_arm.setText("Disarm" if checked else "Arm Vehicle")

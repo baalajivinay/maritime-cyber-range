@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QMessageBox, QMenuBar, QMenu, QStatusBar, QLabel, QFileDialog
 )
 from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer, Qt, QEvent
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path:
@@ -57,13 +57,24 @@ class MCRMainWindow(QMainWindow):
         super().__init__()
         # Title explicitly set to Testbed per user requirement
         self.setWindowTitle("Testbed")
-        self.resize(1460, 900)
+
+        # Responsive window sizing capped comfortably within screen geometry
+        screen = QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            target_w = min(1600, max(1100, avail.width() - 40))
+            target_h = min(920, max(680, avail.height() - 60))
+            self.resize(target_w, target_h)
+        else:
+            self.resize(1460, 900)
+
         self.setStyleSheet(TESTBED_QSS)
 
         # Active Context
         self.active_site = "kochi"
         self.active_twin = "interceptor_usv"
         self.is_running = False
+        self._is_fullscreen = False
 
         # Professional Engines
         self.backend = UnifiedBackend()
@@ -145,7 +156,37 @@ class MCRMainWindow(QMainWindow):
             act.triggered.connect(lambda ch, k=key: self._on_select_site(k))
             menu_site.addAction(act)
 
-        # 4. Security Menu
+        # 4. View Menu
+        menu_view = menubar.addMenu("&View")
+        self.act_fullscreen = QAction("&Full Screen", self)
+        self.act_fullscreen.setShortcut(QKeySequence("F11"))
+        self.act_fullscreen.setCheckable(True)
+        self.act_fullscreen.setChecked(self.isFullScreen())
+        self.act_fullscreen.triggered.connect(self.toggle_fullscreen)
+        menu_view.addAction(self.act_fullscreen)
+
+        menu_view.addSeparator()
+
+        act_day = QAction("&Day Theme (ECDIS)", self)
+        act_day.triggered.connect(lambda: self.map_view._set_palette("day"))
+        menu_view.addAction(act_day)
+
+        act_dusk = QAction("Du&sk Theme (ECDIS)", self)
+        act_dusk.triggered.connect(lambda: self.map_view._set_palette("dusk"))
+        menu_view.addAction(act_dusk)
+
+        act_night = QAction("&Night Theme (ECDIS)", self)
+        act_night.triggered.connect(lambda: self.map_view._set_palette("night"))
+        menu_view.addAction(act_night)
+
+        menu_view.addSeparator()
+
+        act_reset_layout = QAction("&Reset Workstation Layout", self)
+        act_reset_layout.setShortcut(QKeySequence("Ctrl+R"))
+        act_reset_layout.triggered.connect(self._reset_layout)
+        menu_view.addAction(act_reset_layout)
+
+        # 5. Security Menu
         menu_sec = menubar.addMenu("&Security")
         act_sign = QAction("MAVLink 2.0 HMAC-SHA256 Signing: Active", self)
         act_sign.setEnabled(False)
@@ -159,7 +200,7 @@ class MCRMainWindow(QMainWindow):
         act_cert.triggered.connect(self._show_key_dialog)
         menu_sec.addAction(act_cert)
 
-        # 5. Help Menu
+        # 6. Help Menu
         menu_help = menubar.addMenu("&Help")
         act_about = QAction("About Testbed...", self)
         act_about.triggered.connect(self._show_about_dialog)
@@ -220,6 +261,7 @@ class MCRMainWindow(QMainWindow):
         self.header.twin_changed.connect(self._on_select_twin)
         self.header.site_changed.connect(self._on_select_site)
         self.header.defense_toggled.connect(self._on_defense_toggled)
+        self.header.fullscreen_toggled.connect(self.toggle_fullscreen)
         main_vbox.addWidget(self.header)
 
         # 1b. Scenario Control Bar (multi-stage cyber campaign transport)
@@ -231,46 +273,105 @@ class MCRMainWindow(QMainWindow):
         self.scenario_bar.seek_requested.connect(self._on_scenario_seek)
         main_vbox.addWidget(self.scenario_bar)
 
-        # 2. Main Vertical Splitter (65% Operational Workstation / 35% Diagnostics)
-        v_splitter = QSplitter(Qt.Orientation.Vertical)
-        v_splitter.setHandleWidth(2)
+        # 2. Main Vertical Splitter (60% Operational Workstation / 40% Diagnostics)
+        self.v_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.v_splitter.setHandleWidth(2)
 
         # --- Upper Workstation (Conning | ECDIS Chart | Cyber Attacks) ---
-        h_upper = QSplitter(Qt.Orientation.Horizontal)
-        h_upper.setHandleWidth(2)
+        self.h_upper = QSplitter(Qt.Orientation.Horizontal)
+        self.h_upper.setHandleWidth(2)
 
         self.conning = ConningPanel(self)
-        h_upper.addWidget(self.conning)
+        self.h_upper.addWidget(self.conning)
 
         self.map_view = ECDISPanel(self)
         self.map_view.waypoint_commanded.connect(self._on_waypoint_commanded)
         self.map_view.waypoint_cleared.connect(self._on_waypoint_cleared)
-        h_upper.addWidget(self.map_view)
+        self.h_upper.addWidget(self.map_view)
 
         self.attack_panel = AttackPanel(self)
         self.attack_panel.attack_triggered.connect(self._on_attack_triggered)
         self.attack_panel.attack_stopped.connect(self._on_attack_stopped)
         self.attack_panel.ot_toggled.connect(self._on_ot_toggled)
-        h_upper.addWidget(self.attack_panel)
+        self.h_upper.addWidget(self.attack_panel)
 
-        h_upper.setSizes([240, 910, 310])
-        v_splitter.addWidget(h_upper)
+        self.h_upper.setStretchFactor(0, 0)
+        self.h_upper.setStretchFactor(1, 1)
+        self.h_upper.setStretchFactor(2, 0)
+        self.h_upper.setSizes([240, 910, 310])
+        self.v_splitter.addWidget(self.h_upper)
 
         # --- Lower Diagnostics (Innovation Graph | Protocol Bus Stream) ---
-        h_lower = QSplitter(Qt.Orientation.Horizontal)
-        h_lower.setHandleWidth(2)
+        self.h_lower = QSplitter(Qt.Orientation.Horizontal)
+        self.h_lower.setHandleWidth(2)
+        self.h_lower.setMinimumHeight(200)
 
         self.telemetry_graph = TelemetryGraphPanel(self)
-        h_lower.addWidget(self.telemetry_graph)
+        self.telemetry_graph.setMinimumHeight(180)
+        self.h_lower.addWidget(self.telemetry_graph)
 
         self.inspector = BusInspectorPanel(self)
-        h_lower.addWidget(self.inspector)
+        self.inspector.setMinimumHeight(180)
+        self.h_lower.addWidget(self.inspector)
 
-        h_lower.setSizes([580, 880])
-        v_splitter.addWidget(h_lower)
+        self.h_lower.setStretchFactor(0, 2)
+        self.h_lower.setStretchFactor(1, 3)
+        self.h_lower.setSizes([560, 900])
+        self.v_splitter.addWidget(self.h_lower)
 
-        v_splitter.setSizes([570, 310])
-        main_vbox.addWidget(v_splitter, 1)
+        self.v_splitter.setStretchFactor(0, 3)
+        self.v_splitter.setStretchFactor(1, 2)
+        self.v_splitter.setSizes([480, 260])
+        main_vbox.addWidget(self.v_splitter, 1)
+
+    def toggle_fullscreen(self):
+        """Toggles between standard windowed view and full-screen workstation mode."""
+        now_fs = self.isFullScreen() or getattr(self, "_is_fullscreen", False)
+        if now_fs:
+            self._is_fullscreen = False
+            self.showNormal()
+            if hasattr(self, "act_fullscreen"):
+                self.act_fullscreen.setChecked(False)
+            if hasattr(self, "header") and hasattr(self.header, "btn_fullscreen"):
+                self.header.btn_fullscreen.setText("⛶ Fullscreen")
+        else:
+            self._is_fullscreen = True
+            self.showFullScreen()
+            if hasattr(self, "act_fullscreen"):
+                self.act_fullscreen.setChecked(True)
+            if hasattr(self, "header") and hasattr(self.header, "btn_fullscreen"):
+                self.header.btn_fullscreen.setText("⛶ Exit Fullscreen")
+
+    def changeEvent(self, event):
+        """Synchronize fullscreen state when window state changes externally."""
+        if event.type() == QEvent.Type.WindowStateChange:
+            is_fs = self.isFullScreen()
+            self._is_fullscreen = is_fs
+            if hasattr(self, "act_fullscreen"):
+                self.act_fullscreen.setChecked(is_fs)
+            if hasattr(self, "header") and hasattr(self.header, "btn_fullscreen"):
+                self.header.btn_fullscreen.setText("⛶ Exit Fullscreen" if is_fs else "⛶ Fullscreen")
+        super().changeEvent(event)
+
+    def keyPressEvent(self, event):
+        """Global key handlers: F11 for fullscreen toggle."""
+        if event.key() == Qt.Key.Key_F11:
+            self.toggle_fullscreen()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def _reset_layout(self):
+        """Restores optimal balanced workstation splitter proportions."""
+        if hasattr(self, "v_splitter"):
+            total_h = self.v_splitter.height() or 800
+            upper_h = max(380, int(total_h * 0.60))
+            lower_h = max(220, total_h - upper_h)
+            self.v_splitter.setSizes([upper_h, lower_h])
+        if hasattr(self, "h_upper"):
+            self.h_upper.setSizes([240, 910, 310])
+        if hasattr(self, "h_lower"):
+            self.h_lower.setSizes([560, 900])
 
     # =========================================================================
     # Status Bar

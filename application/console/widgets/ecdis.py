@@ -926,6 +926,9 @@ class ECDISPanel(QWidget):
             hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.route_table)
 
+    def set_palette(self, mode: str):
+        self._set_palette(mode)
+
     def _set_palette(self, mode: str):
         for m, b in self._pal_buttons.items():
             b.setChecked(m == mode)
